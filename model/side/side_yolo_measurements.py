@@ -365,7 +365,7 @@ class YOLOGoatMeasurements:
         
         return result
     
-    def process_batch(self, image_dir: str, output_file: str = 'yolo_measurements.json',
+    def process_batch(self, image_dir: str, output_file: str = 'side_yolo_measurements.json',
                      conf_threshold: float = 0.1):
         """
         Process all images in a directory
@@ -450,7 +450,7 @@ def main():
                        help='Calibration JSON file from calibration_tool.py')
     parser.add_argument('--image', help='Single image to process')
     parser.add_argument('--batch', help='Directory of images to process')
-    parser.add_argument('--output', default='yolo_measurements.json',
+    parser.add_argument('--output', default='side_yolo_measurements.json',
                        help='Output JSON file')
     parser.add_argument('--conf', type=float, default=0.1,
                        help='YOLO confidence threshold (default: 0.1)')

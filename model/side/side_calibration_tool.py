@@ -115,7 +115,7 @@ class CalibrationTool:
         self.avg_spacing = avg_pixels_per_10cm
         self.std_spacing = std_pixels_per_10cm
     
-    def save_calibration(self, output_file: str = "calibration.json"):
+    def save_calibration(self, output_file: str = "side_calibration.json"):
         """Save calibration to file"""
         calibration_data = {
             'image_path': str(self.image_path),
@@ -203,7 +203,7 @@ def main():
     
     parser = argparse.ArgumentParser(description='Manual Calibration Tool - Multi-point Centimeters')
     parser.add_argument('image', help='Path to side-view image with visible cm ruler (0-70cm)')
-    parser.add_argument('--output', default='calibration.json',
+    parser.add_argument('--output', default='side_calibration.json',
                        help='Output calibration file')
     
     args = parser.parse_args()
