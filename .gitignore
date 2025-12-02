@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# YOLO training (large files)
+YOLO_MODEL_STUFF
+runs/
+data.yaml
+
+# Pretrained base model (downloadable)
+yolov8n-seg.pt
+
+# Debug images (generated, not source)
+debug/
+
+# Output files (generated)
+*.json
+!calibration.json
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
