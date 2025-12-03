@@ -7,9 +7,24 @@ TO RUN: SIDE
 cd model/side
 
 python side_yolo_measurements.py \
- --model YOLO_MODEL_STUFF/runs/segment/train/weights/best.pt \
- --calibration calibration.json \
- --batch side_pics/ \
+ --model best.pt \
+ --calibration side_calibration.json \
+ --batch ../pictures/side/ \
  --debug
 
-TODO FRONT AND TOP
+TO RUN: TOP
+
+cd model/top
+
+python top_yolo_measurements.py \
+ --model best.pt \
+ --calibration top_calibration.json \
+ --batch ../pictures/top/ \
+ --conf 0.3 \
+ --debug
+
+TODO FRONT
+
+TRAIN
+
+yolo segment train data=data.yaml model=yolov8n-seg.pt epochs=50 imgsz=640 batch=8
