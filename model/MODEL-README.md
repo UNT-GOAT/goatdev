@@ -20,6 +20,11 @@ python top_yolo_measurements.py \
  --model best.pt \
  --calibration top_calibration.json \
  --batch ../pictures/top/ \
+ --conf 0.3 \
  --debug
 
 TODO FRONT
+
+TRAIN
+
+yolo segment train data=data.yaml model=yolov8n-seg.pt epochs=50 imgsz=640 batch=8
