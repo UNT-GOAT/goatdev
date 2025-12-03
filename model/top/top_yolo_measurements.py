@@ -1,42 +1,29 @@
-"""
-Hi! Please read :P - Ethan
+'''
+FIND USAGE IN MODEL-README.md
 
-NOTE - HOW I GOT THIS WORKING:
-I manually traced goat outlines on 20 images using RoboFlow to create segmentation masks, then split them for training/validation. 
-These are the usable top images that we got from Becky on google photos. These are in /train and /val. 
-Each of these has an /images and /labels subfolder. Images are the actual images, and labels are the data containing the segmentation masks in YOLO format.
-I then trained YOLOv8-seg for epochs using these folders, which learned to recognize and segment goats from above by fine-tuning pretrained weights. 
-Now when you run this using a new image, YOLO will output a segmentation mask of the goat in the image using its weights from these dirs.
+yolo based measurements for top images of goats
+uses top_calibration.json for cm to pixels conversion. this will eventually be hardcoded once cameras are fixed.
+using model top/best.pt
 
-NOTE - MEASUREMENT CALIBRATION: 
-Uses manual calibration from calibration_tool_top.py which measures grating width across multiple images.
-- Chute internal width: 40.64 cm (16 inches)
+OUTPUTS: top_yolo_measurements.json in the following format for each goat:
 
-NOTE - OUTPUTS:
-Outputs a top_yolo_measurements.json with measurements for each image processed in the following format:
-
-    top_yolo_measurements.json
         {
-            "filename": "IMG_xxx.jpg",
+            "filename": "IMG_20251113_093527751_HDR_jpg.rf.a0b44d374199251ffd01c478f468ce91.jpg",
             "success": true,
             "image_width": 4080,
             "image_height": 3072,
             "calibration_method": "manual",
-            "pixels_per_cm": 25.4,
-            "yolo_confidence": 0.45,
-            "body_width_cm": 32.1,
-            "body_length_cm": 95.3,
-            "body_area_square_cm": 2850.2,
-            "length_to_width_ratio": 2.97,
-            "debug_image": "debug/debug_IMG_xxx.jpg"
+            "pixels_per_cm": 25.73,
+            "yolo_confidence": 0.785,
+            "max_width_pixels": 845,
+            "max_width_col": 1613,
+            "body_width_cm": 32.84,
+            "body_area_square_cm": 1435.25,
+            "debug_image": "debug/debug_IMG_20251113_093527751_HDR_jpg.rf.a0b44d374199251ffd01c478f468ce91.jpg"
         }
 
-Also outputs a debug folder with images showing the segmentation mask and measurement lines drawn on the image for visual verification.
-
-Currently, with such a small dataset, we cannot expect high confidence scores. 
-They do a fine job for now, but we can expect dramatic improvements with more training data.
-
-"""
+OUTPUTS: debug/ folder with images showing segmentation mask and measurement lines (if --debug flag is used)
+'''
 
 import cv2
 import numpy as np

@@ -1,6 +1,8 @@
 
 """
-NOT FOR FREQUENT USE - Find 'Measurements Calibration' in side_yolo_measurements.py for more details.
+DO NOT RERUN BUT GOOD TO HAVE FOR REFERENCE
+
+OUTPUTS - side_calibration.json for average cm to pixels conversion based on multi-point selection in test images
 """
 
 import cv2

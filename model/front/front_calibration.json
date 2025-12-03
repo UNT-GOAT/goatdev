@@ -1,0 +1,221 @@
+{
+  "method": "manual_multi_image_average",
+  "view": "front",
+  "grating_width_cm": 40.64,
+  "num_images": 16,
+  "measurements": [
+    {
+      "image": "IMG_20251113_092637137_HDR.jpg",
+      "left_point": [
+        1721,
+        2274
+      ],
+      "right_point": [
+        2512,
+        2248
+      ],
+      "pixel_distance": 791.43,
+      "pixels_per_cm": 19.4741
+    },
+    {
+      "image": "IMG_20251113_092917609_HDR.jpg",
+      "left_point": [
+        1372,
+        2362
+      ],
+      "right_point": [
+        2213,
+        2357
+      ],
+      "pixel_distance": 841.01,
+      "pixels_per_cm": 20.6943
+    },
+    {
+      "image": "IMG_20251113_093105318_HDR.jpg",
+      "left_point": [
+        1317,
+        2346
+      ],
+      "right_point": [
+        2236,
+        2327
+      ],
+      "pixel_distance": 919.2,
+      "pixels_per_cm": 22.618
+    },
+    {
+      "image": "IMG_20251113_093320411.jpg",
+      "left_point": [
+        1477,
+        2342
+      ],
+      "right_point": [
+        2339,
+        2352
+      ],
+      "pixel_distance": 862.06,
+      "pixels_per_cm": 21.2121
+    },
+    {
+      "image": "IMG_20251113_093708576_HDR.jpg",
+      "left_point": [
+        1451,
+        2169
+      ],
+      "right_point": [
+        2320,
+        2172
+      ],
+      "pixel_distance": 869.01,
+      "pixels_per_cm": 21.383
+    },
+    {
+      "image": "IMG_20251113_093814113_HDR.jpg",
+      "left_point": [
+        1627,
+        2336
+      ],
+      "right_point": [
+        2541,
+        2313
+      ],
+      "pixel_distance": 914.29,
+      "pixels_per_cm": 22.4973
+    },
+    {
+      "image": "IMG_20251113_093955076_HDR.jpg",
+      "left_point": [
+        1563,
+        2077
+      ],
+      "right_point": [
+        2456,
+        2106
+      ],
+      "pixel_distance": 893.47,
+      "pixels_per_cm": 21.985
+    },
+    {
+      "image": "IMG_20251113_094048700_HDR.jpg",
+      "left_point": [
+        1487,
+        2012
+      ],
+      "right_point": [
+        2339,
+        2017
+      ],
+      "pixel_distance": 852.01,
+      "pixels_per_cm": 20.9649
+    },
+    {
+      "image": "IMG_20251113_094145410_HDR.jpg",
+      "left_point": [
+        1433,
+        2126
+      ],
+      "right_point": [
+        2273,
+        2142
+      ],
+      "pixel_distance": 840.15,
+      "pixels_per_cm": 20.673
+    },
+    {
+      "image": "IMG_20251113_094244496_HDR.jpg",
+      "left_point": [
+        1379,
+        2280
+      ],
+      "right_point": [
+        2321,
+        2270
+      ],
+      "pixel_distance": 942.05,
+      "pixels_per_cm": 23.1804
+    },
+    {
+      "image": "IMG_20251113_094348521_HDR.jpg",
+      "left_point": [
+        1536,
+        2222
+      ],
+      "right_point": [
+        2507,
+        2223
+      ],
+      "pixel_distance": 971.0,
+      "pixels_per_cm": 23.8927
+    },
+    {
+      "image": "IMG_20251113_094506093_HDR.jpg",
+      "left_point": [
+        1423,
+        1992
+      ],
+      "right_point": [
+        2384,
+        1994
+      ],
+      "pixel_distance": 961.0,
+      "pixels_per_cm": 23.6467
+    },
+    {
+      "image": "IMG_20251113_094556884_HDR.jpg",
+      "left_point": [
+        1418,
+        2165
+      ],
+      "right_point": [
+        2317,
+        2149
+      ],
+      "pixel_distance": 899.14,
+      "pixels_per_cm": 22.1246
+    },
+    {
+      "image": "IMG_20251113_094726326_HDR.jpg",
+      "left_point": [
+        1659,
+        1815
+      ],
+      "right_point": [
+        2510,
+        1812
+      ],
+      "pixel_distance": 851.01,
+      "pixels_per_cm": 20.9401
+    },
+    {
+      "image": "IMG_20251113_094833659_HDR.jpg",
+      "left_point": [
+        1619,
+        2113
+      ],
+      "right_point": [
+        2537,
+        2108
+      ],
+      "pixel_distance": 918.01,
+      "pixels_per_cm": 22.5889
+    },
+    {
+      "image": "IMG_20251113_094958394_HDR.jpg",
+      "left_point": [
+        1555,
+        1943
+      ],
+      "right_point": [
+        2578,
+        1958
+      ],
+      "pixel_distance": 1023.11,
+      "pixels_per_cm": 25.1749
+    }
+  ],
+  "pixels_per_cm": 22.0656,
+  "std_deviation": 1.4083,
+  "variation_percent": 6.38,
+  "min_pixels_per_cm": 19.4741,
+  "max_pixels_per_cm": 25.1749
+}
