@@ -1,4 +1,4 @@
-# Goat Grading System
+# Model Portion of Goat Grading System
 
 AI-powered body measurement system for automatic goat grading at Becky's slaughter facility. Captures measurements from three camera angles (side, top, front).
 
