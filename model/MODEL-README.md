@@ -57,6 +57,14 @@ goatdev/
 
 ## How to Run
 
+### First Setup Your Environment
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip3 install -r requirements.txt
+```
+
 ### **1. Full Batch Goat Processing (recommended)**
 
 Runs **side/top/front** models for every goat in `images/grouped_by_goat/`, merges results, attaches weights, and outputs batch_results.json
