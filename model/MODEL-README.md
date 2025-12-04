@@ -16,52 +16,19 @@ AI-powered body measurement system for automatic goat grading at Becky's slaught
 goatdev/
 └── model/                              # All ML/measurement code
     ├── front/                          # Front view (chest width)
-    │   ├── YOLO_MODEL_STUFF/           # Training dataset
-    │   │   ├── train/
-    │   │   │   ├── images/             # Training images
-    │   │   │   └── labels/             # YOLO segmentation masks
-    │   │   ├── valid/                  # Validation split
-    │   │   │   ├── images/
-    │   │   │   └── labels/
-    │   │   ├── test/                   # Test split
-    │   │   │   ├── images/
-    │   │   │   └── labels/
-    │   │   └── data.yaml               # Dataset configuration
     │   ├── best.pt                     # Trained model weights
     │   ├── front_calibration_tool.py   # Manual calibration tool
     │   ├── front_calibration.json      # Calibration results
     │   └── front_yolo_measurements.py  # Measurement script
     │
     ├── side/                           # Side view (3 heights)
-    │   ├── YOLO_MODEL_STUFF/           # Training dataset
-    │   │   ├── train/
-    │   │   │   ├── images/
-    │   │   │   └── labels/
-    │   │   ├── valid/
-    │   │   │   ├── images/
-    │   │   │   └── labels/
-    │   │   ├── test/
-    │   │   │   ├── images/
-    │   │   │   └── labels/
-    │   │   └── data.yaml
-    │   ├── best.pt                     # Trained model weights
+    │   ├── best.pt
     │   ├── side_calibration_tool.py
     │   ├── side_calibration.json
     │   └── side_yolo_measurements.py
     │
     ├── top/                            # Top view (body width)
-    │   ├── YOLO_MODEL_STUFF/           # Training dataset
-    │   │   ├── train/
-    │   │   │   ├── images/
-    │   │   │   └── labels/
-    │   │   ├── valid/
-    │   │   │   ├── images/
-    │   │   │   └── labels/
-    │   │   ├── test/
-    │   │   │   ├── images/
-    │   │   │   └── labels/
-    │   │   └── data.yaml
-    │   ├── best.pt                     # Trained model weights
+    │   ├── best.pt
     │   ├── top_calibration_tool.py
     │   ├── top_calibration.json
     │   └── top_yolo_measurements.py
