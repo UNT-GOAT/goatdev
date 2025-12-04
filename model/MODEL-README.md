@@ -66,7 +66,7 @@ goatdev/
     │   ├── top_calibration.json
     │   └── top_yolo_measurements.py
     │
-    ├── pictures/                       # Raw images from Becky
+    ├── raw_images/                       # Raw images from Becky
     │   ├── front/
     │   ├── side/
     │   ├── top/
@@ -91,7 +91,7 @@ cd model/side
 python side_yolo_measurements.py \
   --model best.pt \
   --calibration side_calibration.json \
-  --batch ../pictures/side/ \
+  --batch ../images/side/ \
   --debug
 ```
 
@@ -103,7 +103,7 @@ cd model/top
 python top_yolo_measurements.py \
   --model best.pt \
   --calibration top_calibration.json \
-  --batch ../pictures/top/ \
+  --batch ../images/top/ \
   --debug
 ```
 
@@ -115,7 +115,7 @@ cd model/front
 python front_yolo_measurements.py \
   --model best.pt \
   --calibration front_calibration.json \
-  --batch ../pictures/front/ \
+  --batch ../images/front/ \
   --debug
 ```
 
@@ -123,7 +123,7 @@ python front_yolo_measurements.py \
 
 ### Side View
 
-![Side View Debug Output](pictures/readme_example_pics/side_debug.jpg)
+![Side View Debug Output](images/readme_example_pics/side_debug.jpg)
 
 **Masks:** Single-class segmentation (goat body only)
 
@@ -135,7 +135,7 @@ python front_yolo_measurements.py \
 
 ### Top View
 
-![Top View Debug Output](pictures/readme_example_pics/top_debug.jpg)
+![Top View Debug Output](images/readme_example_pics/top_debug.jpg)
 
 **Masks:** Two-class segmentation (body + head separately)
 
@@ -150,7 +150,7 @@ The magenta vertical lines show the detected torso region where measurements are
 
 ### Front View
 
-![Front View Debug Output](pictures/readme_example_pics/front_debug.jpg)
+![Front View Debug Output](images/readme_example_pics/front_debug.jpg)
 
 **Masks:** Two-class segmentation (body + head separately)
 
