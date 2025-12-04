@@ -4,11 +4,11 @@ AI-powered body measurement system for automatic goat grading at Becky's slaught
 
 ## What Each Model Measures
 
-| View      | Measurements                             | Model Type               |
-| --------- | ---------------------------------------- | ------------------------ |
-| **Side**  | Head height, Withers height, Rump height | Single-class (goat body) |
-| **Top**   | Body width (torso, excludes head)        | Two-class (body + head)  |
-| **Front** | Chest/shoulder width                     | Two-class (body + head)  |
+| View      | Measurements                             | Model Type                 |
+| --------- | ---------------------------------------- | -------------------------- |
+| **Side**  | Head height, Withers height, Rump height | Single-class (entire goat) |
+| **Top**   | Body width (torso, excludes head)        | Two-class (body + head)    |
+| **Front** | Chest/shoulder width                     | Two-class (body + head)    |
 
 ## Project Structure
 
@@ -148,6 +148,7 @@ A great example of why seperate head masking is needed:
 
 **Measurements:**
 
+- **Body axis** (noted to help with width calculation, asserts 90°)
 - **Body width** (red horizontal line with caps)
 
 The magenta vertical lines show the detected torso region where measurements are taken. By separating head and body masks, the system avoids measuring head width when goats turn their heads sideways. Only the widest part of the torso is measured.

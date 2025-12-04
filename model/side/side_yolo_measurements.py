@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Dict, Optional
 from ultralytics import YOLO
 
-class YOLOGoatMeasurements:
+class YOLOGoatMeasurementsSide:
     def __init__(self, model_path: str, pixels_per_cm: Optional[float] = None):
         """
         Initialize YOLO measurement extractor
@@ -450,7 +450,7 @@ def main():
     print(f"Using YOLO model: {args.model}")
     
     # Initialize extractor
-    extractor = YOLOGoatMeasurements(args.model, pixels_per_cm)
+    extractor = YOLOGoatMeasurementsSide(args.model, pixels_per_cm)
     extractor.debug = args.debug
     
     if args.image:
