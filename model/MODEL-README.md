@@ -70,6 +70,14 @@ goatdev/
     │   ├── front/
     │   ├── side/
     │   ├── top/
+    │   ├── grouped_by_goat/          # Used by mock_batch_process.py
+    │   │   ├── weights.json          # Weights associated with each goat by number
+    │   │   ├── 1/
+    │   │   │   ├── front_1.jpg/
+    │   │   │   ├── side_1.jpg/
+    │   │   │   └── top_1.jpg/
+    │   │   ├── 2/ ...
+    │   │   └── ...
     │   └── readme_example_pics/        # Example debug outputs for readme
     │
     ├── augment.py                      # Script for train/ data augmentation
@@ -81,7 +89,22 @@ goatdev/
 
 ## How to Run
 
-Front, top, and side models are separated for now. They are tested individually. See notes at top of \*yolo_measurements.py files for individual details.
+### **1. Full Batch Goat Processing (recommended)**
+
+Runs **side → top → front** models for every goat in `images/grouped_by_goat/`, merges results, attaches weights, and outputs batch_results.json
+
+```bash
+cd model/
+
+python mock_batch_process.py \
+  --path images/grouped_by_goat \
+  --output batch_results.json \
+  --debug
+```
+
+### **2. Running Models Individually**
+
+Each angle can still be run and tested on its own. See the top of each \*\_yolo_measurements.py for angle-specific notes.
 
 **SIDE VIEW:**
 
@@ -199,11 +222,36 @@ Uses manual calibrations from (top/side/front)\_calibration_tool.py in each resp
 
 ## Output Format
 
+### Full Batch Processing (all models together)
+
+```json
+{
+  "goat_id": "4",
+  "timestamp": "2025-12-03T23:13:48.926722",
+  "weight_lbs": 55,
+  "measurements": {
+    "head_height_cm": 72.73,
+    "withers_height_cm": 53.09,
+    "rump_height_cm": 55.47,
+    "top_body_width_cm": 34.51,
+    "front_body_width_cm": 32.31,
+    "avg_body_width_cm": 33.41
+  },
+  "confidence_scores": {
+    "side": 0.949,
+    "top": 0.969,
+    "front": 0.959
+  },
+  "all_views_successful": true,
+  "success": true
+}
+```
+
 ### Side View JSON
 
 ```json
 {
-  "filename": "IMG_20251113_094952971_jpg.rf.be22cb8faa8402cc1e11e26f74a4c5fa.jpg",
+  "filename": "IMG_xxx.jpg",
   "success": true,
   "image_width": 4080,
   "image_height": 3072,
@@ -216,7 +264,7 @@ Uses manual calibrations from (top/side/front)\_calibration_tool.py in each resp
   "withers_height_cm": 52.31,
   "rump_height_cm": 56.95,
   "body_area_square_cm": 2674.53,
-  "debug_image": "debug/debug_IMG_20251113_094952971_jpg.rf.be22cb8faa8402cc1e11e26f74a4c5fa.jpg"
+  "debug_image": "debug/debug_IMG_xxx.jpg"
 }
 ```
 
@@ -243,7 +291,7 @@ Uses manual calibrations from (top/side/front)\_calibration_tool.py in each resp
 
 ```json
 {
-  "filename": "IMG_20251113_094244496_HDR_jpg.rf.ad847b41e49ef6ebba4664c6c8a690e0.jpg",
+  "filename": "IMG_xxx.jpg",
   "success": true,
   "image_width": 4080,
   "image_height": 3072,
@@ -254,8 +302,9 @@ Uses manual calibrations from (top/side/front)\_calibration_tool.py in each resp
   "max_width_row": 1152,
   "body_width_cm": 36.94,
   "body_area_square_cm": 1608.07,
-  "debug_image": "debug/debug_IMG_20251113_094244496_HDR_jpg.rf.ad847b41e49ef6ebba4664c6c8a690e0.jpg"
+  "debug_image": "debug/debug_IMG_xxx.jpg"
 }
 ```
 
-Also outputs a debug folder with images showing the segmentation mask and measurement lines drawn on the image for visual verification.
+These outputs a debug folder with images showing the segmentation mask and measurement lines drawn on the image for visual verification.
+mock_batch_process.py saves these debug images to model/batch_debug/
