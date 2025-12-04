@@ -17,10 +17,11 @@ data.yaml
 yolov8n-seg.pt
 
 # Debug images (generated, not source)
-debug/
+*debug/
 
 # Latest model measurements (generated, not source)
 *measurements.json
+*results.json
 
 # Drive uploads files for training
 *driveupload
