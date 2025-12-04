@@ -148,6 +148,7 @@ A great example of why seperate head masking is needed:
 
 **Measurements:**
 
+- **Body axis** (noted to help with width calculation, asserts 90°)
 - **Body width** (red horizontal line with caps)
 
 The magenta vertical lines show the detected torso region where measurements are taken. By separating head and body masks, the system avoids measuring head width when goats turn their heads sideways. Only the widest part of the torso is measured.
