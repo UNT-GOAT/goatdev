@@ -66,11 +66,11 @@ goatdev/
     │   ├── top_calibration.json
     │   └── top_yolo_measurements.py
     │
-    ├── raw_images/                       # Raw images from Becky
+    ├── images/                       # Raw images from Becky
     │   ├── front/
     │   ├── side/
     │   ├── top/
-    │   └── readme_example_pics/        # Example debug outputs
+    │   └── readme_example_pics/        # Example debug outputs for readme
     │
     ├── augment.py                      # Script for train/ data augmentation
     ├── venv/                           # Python env, set this up to run
