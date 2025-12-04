@@ -1,0 +1,207 @@
+{
+  "method": "manual_multi_image_average",
+  "grating_width_cm": 40.64,
+  "num_images": 15,
+  "measurements": [
+    {
+      "image": "IMG_20251113_092948413_HDR.jpg",
+      "top_point": [
+        2452,
+        950
+      ],
+      "bottom_point": [
+        2443,
+        1957
+      ],
+      "pixel_distance": 1007.04,
+      "pixels_per_cm": 24.7795
+    },
+    {
+      "image": "IMG_20251113_093118374.jpg",
+      "top_point": [
+        2870,
+        1136
+      ],
+      "bottom_point": [
+        2919,
+        2082
+      ],
+      "pixel_distance": 947.27,
+      "pixels_per_cm": 23.3088
+    },
+    {
+      "image": "IMG_20251113_093409199_HDR.jpg",
+      "top_point": [
+        2661,
+        1228
+      ],
+      "bottom_point": [
+        2653,
+        2216
+      ],
+      "pixel_distance": 988.03,
+      "pixels_per_cm": 24.3118
+    },
+    {
+      "image": "IMG_20251113_093527751_HDR.jpg",
+      "top_point": [
+        2372,
+        1251
+      ],
+      "bottom_point": [
+        2469,
+        2241
+      ],
+      "pixel_distance": 994.74,
+      "pixels_per_cm": 24.4769
+    },
+    {
+      "image": "IMG_20251113_093616795_HDR.jpg",
+      "top_point": [
+        3166,
+        816
+      ],
+      "bottom_point": [
+        3155,
+        1805
+      ],
+      "pixel_distance": 989.06,
+      "pixels_per_cm": 24.3371
+    },
+    {
+      "image": "IMG_20251113_093821027_HDR.jpg",
+      "top_point": [
+        1663,
+        1255
+      ],
+      "bottom_point": [
+        1698,
+        2279
+      ],
+      "pixel_distance": 1024.6,
+      "pixels_per_cm": 25.2116
+    },
+    {
+      "image": "IMG_20251113_093946711_HDR.jpg",
+      "top_point": [
+        2558,
+        975
+      ],
+      "bottom_point": [
+        2537,
+        2203
+      ],
+      "pixel_distance": 1228.18,
+      "pixels_per_cm": 30.221
+    },
+    {
+      "image": "IMG_20251113_094055464_HDR.jpg",
+      "top_point": [
+        1941,
+        1105
+      ],
+      "bottom_point": [
+        1944,
+        2121
+      ],
+      "pixel_distance": 1016.0,
+      "pixels_per_cm": 25.0001
+    },
+    {
+      "image": "IMG_20251113_094155911_HDR.jpg",
+      "top_point": [
+        2154,
+        1099
+      ],
+      "bottom_point": [
+        2197,
+        2164
+      ],
+      "pixel_distance": 1065.87,
+      "pixels_per_cm": 26.2271
+    },
+    {
+      "image": "IMG_20251113_094158223_HDR.jpg",
+      "top_point": [
+        2198,
+        1087
+      ],
+      "bottom_point": [
+        2182,
+        2151
+      ],
+      "pixel_distance": 1064.12,
+      "pixels_per_cm": 26.1841
+    },
+    {
+      "image": "IMG_20251113_094643592_HDR.jpg",
+      "top_point": [
+        2008,
+        1192
+      ],
+      "bottom_point": [
+        2024,
+        2316
+      ],
+      "pixel_distance": 1124.11,
+      "pixels_per_cm": 27.6603
+    },
+    {
+      "image": "IMG_20251113_094731932_HDR.jpg",
+      "top_point": [
+        3043,
+        1149
+      ],
+      "bottom_point": [
+        3079,
+        2164
+      ],
+      "pixel_distance": 1015.64,
+      "pixels_per_cm": 24.9911
+    },
+    {
+      "image": "IMG_20251113_094842243_HDR.jpg",
+      "top_point": [
+        1814,
+        1097
+      ],
+      "bottom_point": [
+        1812,
+        2236
+      ],
+      "pixel_distance": 1139.0,
+      "pixels_per_cm": 28.0266
+    },
+    {
+      "image": "IMG_20251113_095006047_HDR.jpg",
+      "top_point": [
+        1223,
+        1023
+      ],
+      "bottom_point": [
+        1264,
+        2023
+      ],
+      "pixel_distance": 1000.84,
+      "pixels_per_cm": 24.627
+    },
+    {
+      "image": "IMG_20251113_095053148_HDR.jpg",
+      "top_point": [
+        1561,
+        1084
+      ],
+      "bottom_point": [
+        1546,
+        2165
+      ],
+      "pixel_distance": 1081.1,
+      "pixels_per_cm": 26.602
+    }
+  ],
+  "pixels_per_cm": 25.731,
+  "std_deviation": 1.7366,
+  "variation_percent": 6.75,
+  "min_pixels_per_cm": 23.3088,
+  "max_pixels_per_cm": 30.221
+}

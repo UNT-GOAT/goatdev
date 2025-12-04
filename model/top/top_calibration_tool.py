@@ -1,23 +1,7 @@
 """
-Manual Calibration Tool for Top View - Floor Grating Width
+DO NOT RERUN BUT GOOD TO HAVE FOR REFERENCE
 
-This tool allows you to manually click on the left and right edges of the floor grating
-across multiple images, then calculates the average pixels_per_cm value.
-
-The floor grating spans the internal chute width: 40.64 cm (16 inches)
-
-Usage:
-    a few specific images:
-    python top_calibration_tool.py image1.jpg image2.jpg image3.jpg ...
-    
-    Or process entire top pics folder (recommended):
-    python top_calibration_tool.py ../pictures/top/*.jpg
-
-Instructions:
-    1. Click on the LEFT edge of the floor grating
-    2. Click on the RIGHT edge of the floor grating
-    3. Repeat for each image
-    4. Script calculates average pixels_per_cm and saves to top_calibration.json
+OUTPUTS - top_calibration.json for average cm to pixels conversion based on multi-point selection in test images
 """
 
 import cv2

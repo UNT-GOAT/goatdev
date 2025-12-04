@@ -1,49 +1,31 @@
+'''
+FIND USAGE IN MODEL-README.md
 
-"""
-Hi! Please read :P - Ethan
+yolo based measurements for side images of goats
+uses side_calibration.json for cm to pixels conversion. this will eventually be hardcoded once cameras are fixed.
+using model side/best.pt
 
-NOTE - HOW I GOT THIS WORKING:
-I manually traced goat outlines on 23 images using a RoboFlow to create segmentation masks, then split them into 18 for training and 5 for validation. 
-They are the usuable side images that we got from Becky on google photos.These are in /train and /val. 
-Each of these has an /images and /labels subfolder. Images are the of images, and labes are the data containing the segmentation masks in YOLO format.
-I then trained YOLOv8-seg for 10 epochs using these folder, which learned to recognize and segment goats from the labeled examples by fine-tuning pretrained weights. 
-Now when you run this using a new image, YOLO will output a segmentation mask of the goat in the image using its weights from theses dirs.
+OUTPUTS: side_yolo_measurements.json in the following format for each goat:
 
-NOTE - MEASUREMENT CALIBRATION: 
-Currently using calibration.json for cm-to-pixel values. Temporarily, this json is set by calibration_tool.py, this takes
-one of the side-goat pictures as input, allows the user to click on the marked cm distances on the glass, and takes the average pixels/cm value.
-Until we have fully stationary and standardized image capture, this is necessary for decently accurate measurements.
-This really only needs to be run once until we get more data, but still good to have around.
-
-NOTE - OUTPUTS:
-Outputs a side_yolo_measurements.json with measurements for each image processed in the followng format. A few of these fields will not be 
-needed in our end product but they are good to have temporarily for guidance and debugging.
-
-    side_yolo_measurements.json
         {
-            "filename": "IMG_20251113_093457026_HDR.jpg",
+            "filename": "IMG_20251113_094952971_jpg.rf.be22cb8faa8402cc1e11e26f74a4c5fa.jpg",
             "success": true,
             "image_width": 4080,
             "image_height": 3072,
             "calibration_method": "manual",
             "pixels_per_cm": 24.34,
-            "yolo_confidence": 0.327,
-            "body_length_cm": 84.85,
-            "length_to_height_ratio": 1.284,
-            "head_height_cm": 66.07,
-            "withers_height_cm": 55.55,
-            "rump_height_cm": 60.15,
-            "body_area_square_cm": 2491.45,
-            "debug_image": "debug/debug_IMG_20251113_093457026_HDR.jpg"
+            "yolo_confidence": 0.951,
+            "body_length_cm": 97.42,
+            "length_to_height_ratio": 1.453,
+            "head_height_cm": 67.06,
+            "withers_height_cm": 52.31,
+            "rump_height_cm": 56.95,
+            "body_area_square_cm": 2674.53,
+            "debug_image": "debug/debug_IMG_20251113_094952971_jpg.rf.be22cb8faa8402cc1e11e26f74a4c5fa.jpg"
         }
 
-Also outputs a debug folder with images showing the segmentation mask and measurement lines drawn on the image for visual verification.
-Check these out after each test run. Pretty neat.
-
-Currently, with such a small data, we cannot expect high confidence scores. 
-They do a fine job for now, but we can expect dramatic improvements with more training data.
-
-"""
+OUTPUTS: debug/ folder with images showing segmentation mask and measurement lines (if --debug flag is used)
+'''
 
 import cv2
 import numpy as np

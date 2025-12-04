@@ -19,9 +19,12 @@ yolov8n-seg.pt
 # Debug images (generated, not source)
 debug/
 
-# Output files (generated)
-*.json
-!calibration.json
+# Latest model measurements (generated, not source)
+*measurements.json
+
+# Drive uploads files for training
+*driveupload
+*drivedownload
 
 # macOS
 .DS_Store
