@@ -4,11 +4,11 @@ AI-powered body measurement system for automatic goat grading at Becky's slaught
 
 ## What Each Model Measures
 
-| View      | Measurements                             | Model Type               |
-| --------- | ---------------------------------------- | ------------------------ |
-| **Side**  | Head height, Withers height, Rump height | Single-class (goat body) |
-| **Top**   | Body width (torso, excludes head)        | Two-class (body + head)  |
-| **Front** | Chest/shoulder width                     | Two-class (body + head)  |
+| View      | Measurements                             | Model Type                 |
+| --------- | ---------------------------------------- | -------------------------- |
+| **Side**  | Head height, Withers height, Rump height | Single-class (entire goat) |
+| **Top**   | Body width (torso, excludes head)        | Two-class (body + head)    |
+| **Front** | Chest/shoulder width                     | Two-class (body + head)    |
 
 ## Project Structure
 
