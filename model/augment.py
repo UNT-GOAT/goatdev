@@ -1,6 +1,8 @@
 '''
 Data Augmentation Script for YOLO Polygon Segmentation
 
+NO NEED TO RUN THIS AGAIN - completed and saved augmented dataset already, just good to have.
+
 This script performs data augmentation on a YOLO-format dataset with polygon segmentation labels.
 I built this to accomodate the incredibly limited dataset we were given for all views of the goats
 This scipt takes the original yolo training images and labels, applies a series of augmentations using Albumentations,

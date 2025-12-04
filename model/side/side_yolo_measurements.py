@@ -1,5 +1,12 @@
 '''
-FIND USAGE IN MODEL-README.md
+USAGE:
+    cd model/side
+
+    python side_yolo_measurements.py \
+    --model best.pt \
+    --calibration side_calibration.json \
+    --batch ../images/side/ \
+    --debug
 
 yolo based measurements for side images of goats
 uses side_calibration.json for cm to pixels conversion. this will eventually be hardcoded once cameras are fixed.
@@ -338,9 +345,8 @@ class YOLOGoatMeasurementsSide:
                            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 0), 2)
             
             # Create debug directory if it doesn't exist
-            debug_dir = Path("debug")
+            debug_dir = Path(__file__).parent / 'debug'  # front/debug/ (relative to this script)
             debug_dir.mkdir(exist_ok=True)
-            
             output_path = debug_dir / f"debug_{Path(image_path).name}"
             cv2.imwrite(str(output_path), debug_img)
             result['debug_image'] = str(output_path)

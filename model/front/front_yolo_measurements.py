@@ -1,5 +1,12 @@
 '''
-FIND USAGE IN MODEL-README.md
+USAGE:
+    cd model/front
+
+    python front_yolo_measurements.py \
+    --model best.pt \
+    --calibration front_calibration.json \
+    --batch ../images/front/ \
+    --debug
 
 yolo based measurements for side images of goats
 uses front_calibration.json for cm to pixels conversion. this will eventually be hardcoded once cameras are fixed.
@@ -380,7 +387,7 @@ def main():
                        help='Calibration JSON file')
     parser.add_argument('--image', help='Single image to process')
     parser.add_argument('--batch', help='Directory of images to process')
-    parser.add_argument('--output', default='top_yolo_measurements.json')
+    parser.add_argument('--output', default='front_yolo_measurements.json')
     parser.add_argument('--conf', type=float, default=0.1)
     parser.add_argument('--debug', action='store_true')
     
