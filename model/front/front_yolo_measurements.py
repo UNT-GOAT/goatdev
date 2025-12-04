@@ -306,7 +306,7 @@ class YOLOGoatMeasurementsFront:
             cv2.putText(debug_img, "Blue=Body, Green=Head", 
                        (10, legend_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
-            debug_dir = Path("debug")
+            debug_dir = Path(__file__).parent / 'debug'  # front/debug/ (relative to this script)
             debug_dir.mkdir(exist_ok=True)
             output_path = debug_dir / f"debug_{Path(image_path).name}"
             cv2.imwrite(str(output_path), debug_img)
