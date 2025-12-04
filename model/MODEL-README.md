@@ -138,6 +138,7 @@ python front_yolo_measurements.py \
 <img src="images/readme_example_pics/top_debug.jpg" alt="top debug image" width="800"/>
 
 A great example of why seperate head masking is needed:\
+
 <img src="images/readme_example_pics/top_debug2.jpg" alt="top debug image2" width="800"/>
 
 **Masks:** Two-class segmentation (body + head separately)
