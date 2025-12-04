@@ -123,7 +123,7 @@ python front_yolo_measurements.py \
 
 ### Side View
 
-![Side View Debug Output](images/readme_example_pics/side_debug.jpg)
+<img src="images/readme_example_pics/side_debug.jpg" alt="side debug image" width="200"/>
 
 **Masks:** Single-class segmentation (goat body only)
 
@@ -135,7 +135,10 @@ python front_yolo_measurements.py \
 
 ### Top View
 
-![Top View Debug Output](images/readme_example_pics/top_debug.jpg)
+<img src="images/readme_example_pics/top_debug.jpg" alt="top debug image" width="200"/>
+
+A great example of why seperate head masking is needed:
+<img src="images/readme_example_pics/top_debug2.jpg" alt="top debug image2" width="200"/>
 
 **Masks:** Two-class segmentation (body + head separately)
 
@@ -150,7 +153,7 @@ The magenta vertical lines show the detected torso region where measurements are
 
 ### Front View
 
-![Front View Debug Output](images/readme_example_pics/front_debug.jpg)
+<img src="images/readme_example_pics/front_debug.jpg" alt="front debug image" width="200"/>
 
 **Masks:** Two-class segmentation (body + head separately)
 
