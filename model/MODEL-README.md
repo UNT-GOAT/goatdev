@@ -60,6 +60,8 @@ goatdev/
 ### First Setup Your Environment
 
 ```bash
+cd model/
+
 python3 -m venv venv
 source venv/bin/activate
 pip3 install -r requirements.txt
