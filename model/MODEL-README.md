@@ -80,6 +80,7 @@ goatdev/
     │   │   └── ...
     │   └── readme_example_pics/        # Example debug outputs for readme
     │
+    ├── mock_batch_process.py           # Mocks processing of goats with all model combined
     ├── augment.py                      # Script for train/ data augmentation
     ├── venv/                           # Python env, set this up to run
     ├── requirements.txt                # Python dependencies
@@ -91,7 +92,7 @@ goatdev/
 
 ### **1. Full Batch Goat Processing (recommended)**
 
-Runs **side → top → front** models for every goat in `images/grouped_by_goat/`, merges results, attaches weights, and outputs batch_results.json
+Runs **side/top/front** models for every goat in `images/grouped_by_goat/`, merges results, attaches weights, and outputs batch_results.json
 
 ```bash
 cd model/
