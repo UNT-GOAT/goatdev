@@ -3,7 +3,7 @@ from os.path import isfile, join
 import numpy
 import cv2 as cv
 # Loads all Files in A directory and Displays them one by one. Non image files will crash the system but that shouldn't be a problem
-
+#this code will not work on device other than Quinn's PC, will fix later
     
 
 mypath='C:/Users/quinn/OneDrive/Pictures'
