@@ -8,6 +8,11 @@ venv/
 env/
 ENV/
 
+# Frontend
+node_modules/
+dist/
+build/
+
 # YOLO training (large files)
 YOLO_MODEL
 runs/
