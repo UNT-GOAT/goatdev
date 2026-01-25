@@ -33,17 +33,17 @@ goatdev/
     │   ├── top_calibration.json
     │   └── top_yolo_measurements.py
     │
-    ├── images/                       # Raw images from Becky
+    ├── images/                         # Raw images from Becky
     │   ├── front/
     │   ├── side/
     │   ├── top/
-    │   ├── grouped_by_goat/          # Used by mock_batch_process.py
-    │   │   ├── weights.json          # Weights associated with each goat by number
-    │   │   ├── 1/
-    │   │   │   ├── front_1.jpg/
-    │   │   │   ├── side_1.jpg/
-    │   │   │   └── top_1.jpg/
-    │   │   ├── 2/ ...
+    │   ├── all_goats_grouped/          # Every image sorted by goat
+    │   │   ├── weights.json            # Weights associated with each goat by number
+    │   │   ├── 1/...
+    │   │   └── ...
+    │   ├── test_goats_groups/          # Used by mock_batch_process.py, only contains test pictures
+    │   │   ├── weights.json
+    │   │   ├── 1/...
     │   │   └── ...
     │   └── readme_example_pics/        # Example debug outputs for readme
     │
