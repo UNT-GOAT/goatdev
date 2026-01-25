@@ -3,27 +3,30 @@ Batch Goat Processing Script
 
 This is intended to mock the batch processing of goats through all angle models at one time, a POC.
 
-Processes all goats from grouped_by_goat folder through side, top, and front models.
+This script explicitly uses the same goats that are only is the TESTING section of the yolo models. The models were not trained on these goats.
+These are goats 2, 3, 4, and 7.
+
+Processes these goats from test_goats_grouped folder through side, top, and front models.
 Combines measurements with weights and outputs complete goat data.
 
 Directory structure expected:
-grouped_by_goat/
-├── weights.json              # {"1": 45.5, "2": 52.3, ...}
-├── 1/
-│   ├── side_1.jpg
-│   ├── top_1.jpg
-│   └── front_1.jpg
+test_goats_grouped/
+├── weights.json              # {"2": 45.5, "3": 52.3, ...}
 ├── 2/
 │   ├── side_2.jpg
 │   ├── top_2.jpg
 │   └── front_2.jpg
+├── 3/
+│   ├── side_3.jpg
+│   ├── top_3.jpg
+│   └── front_3.jpg
 ...
 
 USAGE:
     cd model/
 
     python mock_batch_process.py \
-        --path images/grouped_by_goat \
+        --path images/test_goats_grouped \
         --output batch_results.json \
         --debug
 
@@ -35,6 +38,8 @@ OUTPUT:
 TODO:
 - Between top and front for width, if no head mask detected in front AND not theyre not within certain threshold of eachother, 
   use top width as fallback. Do not average. Theres a good change the head got measured into the width for front view.
+
+- Configure batch structure for TEST FOLDER ONLY currently just doing everything, including stuff model has already seen.
 """
 
 import sys
@@ -194,6 +199,15 @@ class GoatProcessor:
             if valid_widths else None
         )
         
+        # Track per-view failures with reasons
+        view_errors = {}
+        if not side_results.get('success', False):
+            view_errors['side'] = side_results.get('error', 'Unknown error')
+        if not top_results.get('success', False):
+            view_errors['top'] = top_results.get('error', 'Unknown error')
+        if not front_results.get('success', False):
+            view_errors['front'] = front_results.get('error', 'Unknown error')
+
         # Combine results
         goat_data = {
             'goat_id': goat_num,
@@ -205,6 +219,7 @@ class GoatProcessor:
                 'top': top_results.get('yolo_confidence'),
                 'front': front_results.get('yolo_confidence')
             },
+            'view_errors': view_errors if view_errors else None,
             'all_views_successful': (
                 side_results.get('success', False) and
                 top_results.get('success', False) and
@@ -243,7 +258,11 @@ class GoatProcessor:
                 if not goat_data.get('success', False):
                     print(f"  ✗ Failed: {goat_data.get('error', 'Unknown error')}\n")
                 else:
-                    print(f"  ⚠ Partial success (some views failed)\n")
+                    view_errors = goat_data.get('view_errors', {})
+                    print(f"  ⚠ Partial success - failed views:")
+                    for view, error in view_errors.items():
+                        print(f"      {view}: {error}")
+                    print()
         
         # Save results
         output_data = {

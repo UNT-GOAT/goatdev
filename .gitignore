@@ -9,7 +9,7 @@ env/
 ENV/
 
 # YOLO training (large files)
-YOLO_MODEL_STUFF
+YOLO_MODEL
 runs/
 data.yaml
 

@@ -27,10 +27,10 @@ from pathlib import Path
 import albumentations as A
 
 
-DATASET_ROOT_DIR = "/Users/ethantenclay/Desktop/goat_seg_side-2" # <--------------- RENAME THIS, I'm using my roboflow dataset downlaod directly 
-OUTPUT_ROOT_DIR = "/Users/ethantenclay/Desktop/goatdev/model/side/aug_output"                           # already split into train/valid/test
+DATASET_ROOT_DIR = "/Users/ethantenclay/Downloads/goat_seg_front" # <--------------- RENAME THIS, I'm using my roboflow dataset downlaod directly 
+OUTPUT_ROOT_DIR = "/Users/ethantenclay/Desktop/goatdev/model/front/aug_output"                           # already split into train/valid/test
 
-AUG_PER_IMG = 20 # Generate 20 variants for each training image
+AUG_PER_IMG = 50 # Generate 20 variants for each training image
 SEED = 42
 
 

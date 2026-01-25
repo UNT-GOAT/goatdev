@@ -92,7 +92,7 @@ cd model/side
 python side_yolo_measurements.py \
   --model best.pt \
   --calibration side_calibration.json \
-  --batch ../images/side/ \
+  --batch YOLO_MODEL/test/images/ \
   --debug
 ```
 
@@ -104,7 +104,7 @@ cd model/top
 python top_yolo_measurements.py \
   --model best.pt \
   --calibration top_calibration.json \
-  --batch ../images/top/ \
+  --batch YOLO_MODEL/test/images/ \
   --debug
 ```
 
@@ -116,7 +116,7 @@ cd model/front
 python front_yolo_measurements.py \
   --model best.pt \
   --calibration front_calibration.json \
-  --batch ../images/front/ \
+  --batch YOLO_MODEL/test/images/ \
   --debug
 ```
 
