@@ -240,35 +240,40 @@ class YOLOGoatMeasurementsTop:
         )
         
         if len(results) == 0 or results[0].masks is None:
-            result['error'] = 'No goat detected'
+            result['error'] = 'No segmentation masks returned by YOLO'
             result['yolo_confidence'] = 0.0
             return result
-        
+
         detection = results[0]
-        
+
         if len(detection.boxes) == 0:
-            result['error'] = 'No goat detected'
+            n_masks = len(detection.masks) if detection.masks is not None else 0
+            result['error'] = f'YOLO returned {n_masks} masks but no bounding boxes (image: {image_path})'
             result['yolo_confidence'] = 0.0
             return result
-        
+
         # With 2-class model, we have separate body and head masks
         # Class 0 = goat_body, Class 1 = goat_head
         body_mask = None
         head_mask = None
         body_confidence = 0.0
-        
+        detected_classes = []
+
         for i, box in enumerate(detection.boxes):
             class_id = int(box.cls[0])
             conf = float(box.conf[0])
-            
+            detected_classes.append((class_id, conf))
+
             if class_id == 0:  # goat_body
                 body_mask = detection.masks[i].data[0].cpu().numpy()
                 body_confidence = conf
             elif class_id == 1:  # goat_head
                 head_mask = detection.masks[i].data[0].cpu().numpy()
-        
+
         if body_mask is None:
-            result['error'] = 'No body mask detected'
+            # Show what was detected instead
+            class_info = ', '.join([f'class {c} ({conf:.2f})' for c, conf in detected_classes])
+            result['error'] = f'No body (class 0) detected. Found: {class_info}'
             result['yolo_confidence'] = 0.0
             return result
         

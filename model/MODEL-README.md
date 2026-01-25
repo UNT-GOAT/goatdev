@@ -33,17 +33,17 @@ goatdev/
     │   ├── top_calibration.json
     │   └── top_yolo_measurements.py
     │
-    ├── images/                       # Raw images from Becky
+    ├── images/                         # Raw images from Becky
     │   ├── front/
     │   ├── side/
     │   ├── top/
-    │   ├── grouped_by_goat/          # Used by mock_batch_process.py
-    │   │   ├── weights.json          # Weights associated with each goat by number
-    │   │   ├── 1/
-    │   │   │   ├── front_1.jpg/
-    │   │   │   ├── side_1.jpg/
-    │   │   │   └── top_1.jpg/
-    │   │   ├── 2/ ...
+    │   ├── all_goats_grouped/          # Every image sorted by goat
+    │   │   ├── weights.json            # Weights associated with each goat by number
+    │   │   ├── 1/...
+    │   │   └── ...
+    │   ├── test_goats_groups/          # Used by mock_batch_process.py, only contains test pictures
+    │   │   ├── weights.json
+    │   │   ├── 1/...
     │   │   └── ...
     │   └── readme_example_pics/        # Example debug outputs for readme
     │
@@ -56,6 +56,16 @@ goatdev/
 ```
 
 ## How to Run
+
+### First Setup Your Environment
+
+```bash
+cd model/
+
+python3 -m venv venv
+source venv/bin/activate
+pip3 install -r requirements.txt
+```
 
 ### **1. Full Batch Goat Processing (recommended)**
 
@@ -82,7 +92,7 @@ cd model/side
 python side_yolo_measurements.py \
   --model best.pt \
   --calibration side_calibration.json \
-  --batch ../images/side/ \
+  --batch YOLO_MODEL/test/images/ \
   --debug
 ```
 
@@ -94,7 +104,7 @@ cd model/top
 python top_yolo_measurements.py \
   --model best.pt \
   --calibration top_calibration.json \
-  --batch ../images/top/ \
+  --batch YOLO_MODEL/test/images/ \
   --debug
 ```
 
@@ -106,7 +116,7 @@ cd model/front
 python front_yolo_measurements.py \
   --model best.pt \
   --calibration front_calibration.json \
-  --batch ../images/front/ \
+  --batch YOLO_MODEL/test/images/ \
   --debug
 ```
 
