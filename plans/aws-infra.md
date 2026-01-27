@@ -97,8 +97,6 @@ SUBJECT TO CHANGE once we get building this thing
 
 Cooper TODO: he been cookin here
 
-```
-
 ---
 
 ### 3. EC2 Instance
@@ -107,23 +105,21 @@ Cooper TODO: he been cookin here
 
 #### Instance Configuration
 
-| Setting | Value |
-|---------|-------|
-| Type | t3.medium (2 vCPU, 4GB RAM) |
-| AMI | Ubuntu 22.04 LTS |
-| Storage | 30GB gp3 |
-| Cost | ~$30/mo |
+| Setting | Value                       |
+| ------- | --------------------------- |
+| Type    | t3.medium (2 vCPU, 4GB RAM) |
+| AMI     | Ubuntu 22.04 LTS            |
+| Storage | 30GB gp3                    |
+| Cost    | ~$30/mo                     |
 
 #### Security Group
 
-| Type | Port | Source |
-|------|------|--------|
-| SSH | 22 | Your IP / Tailscale |
-| HTTP | 80 | 0.0.0.0/0 |
-| HTTPS | 443 | 0.0.0.0/0 |
-| Custom | 8000 | 0.0.0.0/0 (API) |
-
-```
+| Type   | Port | Source              |
+| ------ | ---- | ------------------- |
+| SSH    | 22   | Your IP / Tailscale |
+| HTTP   | 80   | 0.0.0.0/0           |
+| HTTPS  | 443  | 0.0.0.0/0           |
+| Custom | 8000 | 0.0.0.0/0 (API)     |
 
 #### API Server Code - beginning example subject to change
 
