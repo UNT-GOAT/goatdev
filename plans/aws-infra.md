@@ -12,8 +12,8 @@
   - [6. Processing Flow](#6-processing-flow)
   - [7. Monitoring (CloudWatch)](#7-monitoring-cloudwatch)
   - [8. GitHub Actions Deploy](#8-github-actions-deploy)
+  - [9. Account Setup Handoff](#9-account-setup--handoff)
 - [Cost Estimate](#cost-estimate)
-- [Quick Reference](#quick-reference)
 
 ---
 
