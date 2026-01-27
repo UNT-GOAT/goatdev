@@ -510,7 +510,7 @@ jobs:
 
 **Goal:** Create AWS account for facility, build everything, hand over ownership. We never touch billing.
 
-### Setup Phase (You)
+### Setup Phase - our team
 
 1. **Create AWS account**
    - Use facility's email
