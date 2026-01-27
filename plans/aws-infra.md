@@ -411,7 +411,7 @@ aws iam create-access-key --user-name pi-capture-user
 }
 ```
 
-> 📝 **Note:** Attach to EC2 instance via instance profile.
+> **Note:** Attach to EC2 instance via instance profile.
 
 #### Developer User
 
