@@ -506,6 +506,75 @@ jobs:
 
 ---
 
+## 9. Account Setup & Handoff
+
+**Goal:** Create AWS account for facility, build everything, hand over ownership. We never touch billing.
+
+### Setup Phase (You)
+
+1. **Create AWS account**
+   - Use facility's email
+   - Our payment method temporarily (or skip during free tier)
+   - Set temporary root password
+
+2. **Build everything**
+   - All infra in this doc
+   - Test end-to-end
+
+3. **Create their admin user**
+   - IAM user: `facility-admin`
+   - Console access with password
+   - This is their daily login (not root)
+
+4. **Create our team dev user**
+   - IAM user: `team-dev`
+   - AdministratorAccess
+   - MFA enabled
+   - Our ongoing access for maintenance
+
+### Handoff Meeting
+
+1. **Give them root credentials**
+   - Email: (their email)
+   - Password: (temporary, they change it)
+
+2. **Set up their payment**
+   - Billing → Payment Methods → Add their card
+   - Remove ours
+
+3. **Enable MFA on root**
+   - Use their phone
+   - Critical for security
+
+4. **Give them admin login**
+   - Console URL: `https://{account-id}.signin.aws.amazon.com/console`
+   - Username: `facility-admin`
+   - Password: (they change it)
+
+### Handoff Document
+
+```
+AWS Account Info
+================
+Account ID: xxxxxxxxxxxx
+Console URL: https://xxxxxxxxxxxx.signin.aws.amazon.com/console
+
+Root Login (emergencies only):
+- Email: facility-email@example.com
+- Password: [changed by us]
+
+Daily Login:
+- Username: facility-admin
+- Password: [changed by us]
+
+Monthly cost: ~$50-60
+Billing: aws.amazon.com/billing (logged in as root)
+
+Support contact: your-email@example.com
+```
+
+---
+
 ## Cost Estimate
 
 | Service            | Monthly Cost   |
