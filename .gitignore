@@ -12,6 +12,7 @@ ENV/
 node_modules/
 dist/
 build/
+.expo/
 
 # YOLO training (large files)
 YOLO_MODEL
