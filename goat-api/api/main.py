@@ -24,7 +24,7 @@ from .database import DatabaseService
 app = FastAPI(
     title="Goat Measurement API",
     description="AI-powered body measurement system for goat grading",
-    version="1.0.0"
+    version="1.0.1"
 )
 
 # CORS - allow tablet app to connect
