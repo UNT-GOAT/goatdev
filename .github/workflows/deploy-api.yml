@@ -27,7 +27,7 @@ jobs:
           script: |
             set -e
             echo "=== Deploying Goat API ==="
-            cd /home/ubuntu/goat-api
+            cd /home/ubuntu/goatdev/goat-api
             echo "Pulling latest code..."
             git pull origin main
             echo "Installing dependencies..."
