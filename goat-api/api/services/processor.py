@@ -14,9 +14,8 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-# Add model directories to path
-REPO_ROOT = Path(__file__).parent.parent.parent.parent  # goatdev/
-MODEL_BASE = REPO_ROOT / "model"
+# Add model directories to path using absolute path
+MODEL_BASE = Path("/home/ubuntu/goatdev/model")
 
 sys.path.insert(0, str(MODEL_BASE))
 sys.path.insert(0, str(MODEL_BASE / "side"))
