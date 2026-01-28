@@ -15,7 +15,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 
 # Add model directories to path
-MODEL_BASE = Path(__file__).parent.parent.parent
+MODEL_BASE = Path(__file__).parent.parent.parent.parent / "model"
 sys.path.insert(0, str(MODEL_BASE / "side"))
 sys.path.insert(0, str(MODEL_BASE / "top"))
 sys.path.insert(0, str(MODEL_BASE / "front"))
@@ -42,9 +42,9 @@ class ProcessingService:
         print("Loading YOLO models...")
         
         # Import model classes
-        from side_yolo_measurements import YOLOGoatMeasurementsSide
-        from top_yolo_measurements import YOLOGoatMeasurementsTop
-        from front_yolo_measurements import YOLOGoatMeasurementsFront
+        from model.side.side_yolo_measurements import YOLOGoatMeasurementsSide
+        from model.top.top_yolo_measurements import YOLOGoatMeasurementsTop
+        from model.front.front_yolo_measurements import YOLOGoatMeasurementsFront
         
         # Load calibrations
         with open(MODEL_BASE / "side" / "side_calibration.json", "r") as f:
