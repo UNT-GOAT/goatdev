@@ -39,7 +39,6 @@ TODO:
 - Between top and front for width, if no head mask detected in front AND not theyre not within certain threshold of eachother, 
   use top width as fallback. Do not average. Theres a good change the head got measured into the width for front view.
 
-- Configure batch structure for TEST FOLDER ONLY currently just doing everything, including stuff model has already seen.
 """
 
 import sys
