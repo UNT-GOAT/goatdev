@@ -44,9 +44,9 @@ class ProcessingService:
         print("Loading YOLO models...")
         
         # Import model classes
-        from model.side.side_yolo_measurements import YOLOGoatMeasurementsSide
-        from model.top.top_yolo_measurements import YOLOGoatMeasurementsTop
-        from model.front.front_yolo_measurements import YOLOGoatMeasurementsFront
+        from side_yolo_measurements import YOLOGoatMeasurementsSide
+        from top_yolo_measurements import YOLOGoatMeasurementsTop
+        from front_yolo_measurements import YOLOGoatMeasurementsFront
         
         # Load calibrations
         with open(MODEL_BASE / "side" / "side_calibration.json", "r") as f:
