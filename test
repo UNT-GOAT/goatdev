@@ -1,0 +1,4 @@
+TIMESTAMP="20260128_docker01"
+aws s3 cp model/images/test_goats_grouped/2/side_2.jpg s3://goat-captures-937249941844/captures/${TIMESTAMP}/${TIMESTAMP}_side.jpg --profile goatdev
+aws s3 cp model/images/test_goats_grouped/2/front_2.jpg s3://goat-captures-937249941844/captures/${TIMESTAMP}/${TIMESTAMP}_top.jpg --profile goatdev
+aws s3 cp model/images/test_goats_grouped/2/top_2.jpg s3://goat-captures-937249941844/captures/${TIMESTAMP}/${TIMESTAMP}_front.jpg --profile goatdev
