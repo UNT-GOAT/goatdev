@@ -24,6 +24,7 @@ yolov8n-seg.pt
 
 # Debug images (generated, not source)
 *debug/
+*test*
 
 # Latest model measurements (generated, not source)
 *measurements.json

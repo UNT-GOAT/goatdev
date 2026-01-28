@@ -1,5 +1,5 @@
 ultralytics==8.3.234
-numpy
+numpy<2
 opencv-python-headless
 fastapi
 uvicorn[standard]
