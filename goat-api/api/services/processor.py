@@ -14,8 +14,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-# Add model directories to path using absolute path
-MODEL_BASE = Path("/home/ubuntu/goatdev/model")
+MODEL_BASE = Path(os.getenv("MODEL_DIR", "/app/model"))
 
 sys.path.insert(0, str(MODEL_BASE))
 sys.path.insert(0, str(MODEL_BASE / "side"))
@@ -44,9 +43,9 @@ class ProcessingService:
         print("Loading YOLO models...")
         
         # Import model classes
-        from side_yolo_measurements import YOLOGoatMeasurementsSide
-        from top_yolo_measurements import YOLOGoatMeasurementsTop
-        from front_yolo_measurements import YOLOGoatMeasurementsFront
+        from side_yolo_measurements import YOLOGoatMeasurementsSide # type: ignore
+        from top_yolo_measurements import YOLOGoatMeasurementsTop # type: ignore
+        from front_yolo_measurements import YOLOGoatMeasurementsFront # type: ignore
         
         # Load calibrations
         with open(MODEL_BASE / "side" / "side_calibration.json", "r") as f:

@@ -1,23 +1,63 @@
-name: Deploy API to EC2
+# .github/workflows/deploy-api.yml
+name: Build and Deploy API
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "goat-api/**"
+      - "model/**"
+      - ".github/workflows/deploy-api.yml"
   workflow_dispatch:
-    inputs:
-      environment:
-        description: "Deployment environment"
-        required: true
-        default: "production"
-        type: choice
-        options:
-          - production
+
+env:
+  AWS_REGION: us-east-2
+  ECR_REPOSITORY: goat-api
+  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
+    outputs:
+      image_uri: ${{ steps.build.outputs.image_uri }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+          echo "Building $IMAGE_URI"
+          docker build -f goat-api/Dockerfile -t $IMAGE_URI .
+          docker tag $IMAGE_URI $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+          echo "Pushing to ECR..."
+          docker push $IMAGE_URI
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -27,19 +67,41 @@ jobs:
           script: |
             set -e
             echo "=== Deploying Goat API ==="
-            cd /home/ubuntu/goatdev/goat-api
-            echo "Pulling latest code..."
-            git pull origin main
-            echo "Installing dependencies..."
-            source venv/bin/activate
-            pip install -r requirements.txt
-            echo "Restarting service..."
-            sudo systemctl restart goat-api
-            sleep 3
-            sudo systemctl status goat-api --no-pager
+
+            # Login to ECR
+            aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 937249941844.dkr.ecr.us-east-2.amazonaws.com
+
+            # Pull latest image
+            echo "Pulling latest image..."
+            docker pull 937249941844.dkr.ecr.us-east-2.amazonaws.com/goat-api:latest
+
+            # Stop and remove old container
+            echo "Stopping old container..."
+            docker stop goat-api || true
+            docker rm goat-api || true
+
+            # Run new container
+            echo "Starting new container..."
+            docker run -d \
+              --name goat-api \
+              --restart unless-stopped \
+              -p 8000:8000 \
+              --env-file /home/ubuntu/goat-api.env \
+              937249941844.dkr.ecr.us-east-2.amazonaws.com/goat-api:latest
+
+            # Wait and check health
+            echo "Waiting for health check..."
+            sleep 15
+            docker ps
+            curl -f http://localhost:8000/health || echo "Health check failed"
+
+            # Cleanup old images
+            echo "Cleaning up old images..."
+            docker image prune -af
+
             echo "=== Deployment complete ==="
 
-      - name: Health check
+      - name: Verify deployment
         run: |
           sleep 5
-          curl -f http://${{ secrets.EC2_HOST }}:8000/health || echo "Health check failed - service may still be starting"
+          curl -f http://${{ secrets.EC2_HOST }}:8000/health

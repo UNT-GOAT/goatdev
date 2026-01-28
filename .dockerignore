@@ -1,0 +1,50 @@
+# goatdev/.dockerignore
+
+# Git and GitHub
+.git/
+.github/
+.gitignore
+
+# Other app directories
+goat-app/
+pi/
+plans/
+
+# Docs
+*.md
+
+# Python artifacts
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/venv/
+**/.env
+.pytest_cache/
+
+# OS files
+**/.DS_Store
+.DS_Store
+
+# Images
+**/YOLO_MODEL
+**/images
+**/batch_debug/
+**/debug
+**/*.jpg
+**/*.jpeg
+**/*.png
+**/*.gif
+**/*.bmp
+
+# Model files not needed at runtime
+model/augment.py
+model/batch_results.json
+model/mock_batch_process.py
+model/requirements.txt
+model/**/*_calibration_tool.py
+model/**/*_measurements.json
+model/**/yolov8n-seg.pt
+
+# goat-api files not needed at runtime
+goat-api/.env.example
+goat-api/scripts/
