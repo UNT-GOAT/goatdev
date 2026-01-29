@@ -1,4 +1,4 @@
-# Goat Measurement System - AWS Architecture
+# Goatdev - AWS Architecture - Current Headway
 
 ## Architecture Components
 
