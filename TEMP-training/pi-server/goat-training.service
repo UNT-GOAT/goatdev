@@ -1,0 +1,14 @@
+[Unit]
+Description=Goat Training Capture Server (TEMPORARY)
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/pi/training-capture/server.py
+WorkingDirectory=/home/pi/training-capture
+User=pi
+Restart=always
+RestartSec=5
+Environment=S3_TRAINING_BUCKET=goat-training-ACCOUNTID
+
+[Install]
+WantedBy=multi-user.target
