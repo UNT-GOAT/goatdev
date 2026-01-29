@@ -1,117 +1,133 @@
-# Raspberry Pi Setup and Maintainence Plan
+# Raspberry Pi Setup Guide
 
-## Table of Contents
+## Overview
 
-- [Hardware Requirements](#hardware-requirements)
-- [Setup Steps](#setup-steps)
-  - [1. Flash OS](#1-flash-os)
-  - [2. First Boot Setup](#2-first-boot-setup)
-  - [3. Install Tailscale](#3-install-tailscale)
-  - [4. Camera udev Rules](#4-camera-udev-rules)
-  - [5. Capture Server Code](#5-capture-server-code)
-  - [6. AWS Credentials](#6-aws-credentials)
-  - [7. Systemd Service](#7-systemd-service)
-  - [8. GitHub Actions Deploy](#8-github-actions-deploy)
-  - [9. Monitoring](#9-monitoring)
-- [Quick Reference](#quick-reference)
+The Pi runs two separate services:
 
----
+| Service       | Purpose                              | Port | Path                         |
+| ------------- | ------------------------------------ | ---- | ---------------------------- |
+| goat-capture  | Production - single photos on demand | 5000 | `/home/pi/goat-capture/`     |
+| goat-training | Temporary - 5s video recording       | 5001 | `/home/pi/training-capture/` |
 
-## Hardware Requirements
-
-**Goal:** Minimum hardware to capture 3 camera angles and upload to cloud.
-
-- Raspberry Pi 4 (4GB)
-- 32GB MicroSD card
-- USB-C power supply (5V 3A)
-- 3x USB extenders for cameras
-
----
-
-## Setup Steps
-
-### 1. Flash OS
-
-**Goal:** Get a lightweight, headless Linux system on the Pi that's ready for SSH on first boot.
-
-1. Download **Raspberry Pi OS Lite (64-bit)**
-2. Flash with **Raspberry Pi Imager**
-
-**In imager settings:**
-
-- Set hostname: `goat-pi`
-- Enable SSH
-- Set username/password: `pi` / `your-password`
-- Configure WiFi
-
----
-
-### 2. First Boot Setup
-
-**Goal:** Install everything needed to run the capture server and talk to AWS.
-
-```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y python3-pip python3-opencv libatlas-base-dev
-pip3 install flask boto3 opencv-python-headless
-mkdir -p /home/pi/goat-capture
+```
+/home/pi/
+├── goat-capture/           # PRODUCTION
+│   ├── server.py
+│   └── requirements.txt
+│
+└── training-capture/       # TEMPORARY - delete when done
+    ├── server.py
+    └── requirements.txt
 ```
 
 ---
 
-### 3. Install Tailscale
+## Hardware
 
-**Goal:** Remote SSH access from anywhere without dealing with port forwarding or static IPs at the facility.
+- Raspberry Pi 4 (4GB)
+- 32GB MicroSD card
+- USB-C power supply (5V 3A)
+- 3x USB cameras + extenders
+
+---
+
+## Initial Pi Setup
+
+### 1. Flash OS
+
+1. Download **Raspberry Pi OS Lite (64-bit)**
+2. Flash with **Raspberry Pi Imager**
+
+In imager settings:
+
+- Hostname: `goat-pi`
+- Enable SSH
+- Username/password: `pi` / `<password>`
+- Configure WiFi
+
+### 2. First Boot
+
+```bash
+ssh pi@goat-pi.local
+
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y python3-pip python3-venv ffmpeg git
+```
+
+### 3. Install Tailscale
 
 ```bash
 curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up
 ```
 
-> **Note:** Note the Tailscale IP (100.x.x.x) - this is how you'll SSH in remotely.
-
----
+Note the Tailscale IP (100.x.x.x) - this is how you'll access the Pi remotely.
 
 ### 4. Camera udev Rules
-
-**Goal:** Ensure each camera always maps to the same device name (`camera_side`, etc.) regardless of boot order or USB port detection order.
 
 Create `/etc/udev/rules.d/99-cameras.rules`:
 
 ```bash
+sudo nano /etc/udev/rules.d/99-cameras.rules
+```
+
+```
 SUBSYSTEM=="video4linux", ATTRS{idVendor}=="xxxx", ATTRS{idProduct}=="xxxx", KERNELS=="*-1", SYMLINK+="camera_side"
 SUBSYSTEM=="video4linux", ATTRS{idVendor}=="xxxx", ATTRS{idProduct}=="xxxx", KERNELS=="*-2", SYMLINK+="camera_top"
 SUBSYSTEM=="video4linux", ATTRS{idVendor}=="xxxx", ATTRS{idProduct}=="xxxx", KERNELS=="*-3", SYMLINK+="camera_front"
 ```
 
-**Find vendor/product IDs:**
+Find vendor/product IDs:
 
 ```bash
 lsusb
 ```
 
-**Reload rules:**
+Reload rules:
 
 ```bash
 sudo udevadm control --reload-rules
+sudo reboot
+```
+
+Verify:
+
+```bash
+ls -la /dev/camera_*
+```
+
+### 5. AWS Credentials
+
+```bash
+mkdir -p ~/.aws
+nano ~/.aws/credentials
+```
+
+```ini
+[default]
+aws_access_key_id = <KEY>
+aws_secret_access_key = <SECRET>
+region = us-east-2
 ```
 
 ---
 
-### 5. Capture Server Code
+## Production Service (goat-capture)
 
-**Goal:** Flask server that serves live preview frames (1/sec) and handles capture-to-S3 on demand from the tablet.
+### Install
 
-#### `/home/pi/goat-capture/server.py`
+```bash
+mkdir -p /home/pi/goat-capture
+cd /home/pi/goat-capture
 
-```python
+# Create server.py
+cat > server.py << 'EOF'
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import cv2
-import base64
 import boto3
-from datetime import datetime
 import os
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
@@ -122,34 +138,22 @@ CAMERAS = {
     'front': '/dev/camera_front'
 }
 
+S3_BUCKET = os.environ.get('S3_BUCKET', 'goat-captures-ACCOUNTID')
+s3 = boto3.client('s3')
+
+# Initialize cameras
 cams = {}
 for name, path in CAMERAS.items():
-    cap = cv2.VideoCapture(path)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
-    cams[name] = cap
-
-S3_BUCKET = os.environ.get('S3_BUCKET', 'your-goat-bucket')
-s3 = boto3.client('s3')
+    if os.path.exists(path):
+        cap = cv2.VideoCapture(path)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+        cams[name] = cap
 
 
 @app.route('/health')
 def health():
-    return jsonify({'status': 'ok'})
-
-
-@app.route('/preview')
-def preview():
-    previews = {}
-    for name, cam in cams.items():
-        ret, frame = cam.read()
-        if not ret:
-            previews[name] = None
-            continue
-        small = cv2.resize(frame, (320, 240))
-        _, buf = cv2.imencode('.jpg', small, [cv2.IMWRITE_JPEG_QUALITY, 50])
-        previews[name] = base64.b64encode(buf).decode('utf-8')
-    return jsonify(previews)
+    return jsonify({'status': 'ok', 'cameras': list(cams.keys())})
 
 
 @app.route('/capture', methods=['POST'])
@@ -180,43 +184,26 @@ def capture():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-```
+EOF
 
-#### `/home/pi/goat-capture/requirements.txt`
-
-```txt
+# Create requirements
+cat > requirements.txt << 'EOF'
 flask
 flask-cors
 opencv-python-headless
 boto3
+EOF
+
+# Install dependencies
+pip3 install -r requirements.txt
 ```
 
----
+### Systemd Service
 
-### 6. AWS Credentials
-
-**Goal:** Allow Pi to upload images to S3 without hardcoding secrets in code.
-
-Create `/home/pi/.aws/credentials`:
-
-```ini
-[default]
-aws_access_key_id = YOUR_KEY
-aws_secret_access_key = YOUR_SECRET
-region = us-east-1
-```
-
----
-
-### 7. Systemd Service
-
-**Goal:** Capture server starts automatically on boot and restarts if it crashes. No manual intervention needed after power outage.
-
-Create `/etc/systemd/system/goat-capture.service`:
-
-```ini
+```bash
+sudo tee /etc/systemd/system/goat-capture.service << 'EOF'
 [Unit]
-Description=Goat Capture Server
+Description=Goat Capture Server (Production)
 After=network.target
 
 [Service]
@@ -225,27 +212,216 @@ WorkingDirectory=/home/pi/goat-capture
 User=pi
 Restart=always
 RestartSec=5
-Environment=S3_BUCKET=goat-bucket-name
+Environment=S3_BUCKET=goat-captures-ACCOUNTID
 
 [Install]
 WantedBy=multi-user.target
-```
+EOF
 
-**Enable and start the service:**
-
-```bash
 sudo systemctl daemon-reload
 sudo systemctl enable goat-capture
 sudo systemctl start goat-capture
 ```
 
+### Verify
+
+```bash
+curl http://localhost:5000/health
+```
+
 ---
 
-### 8. GitHub Actions Deploy
+## Training Service (goat-training) - TEMPORARY
 
-**Goal:** Push code to GitHub → automatically deploys to Pi. No manual SSH needed for updates.
+### Install
 
-Create `.github/workflows/deploy-pi.yml`:
+```bash
+mkdir -p /home/pi/training-capture
+cd /home/pi/training-capture
+
+# Create server.py
+cat > server.py << 'EOF'
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+import subprocess
+import threading
+import os
+
+app = Flask(__name__)
+CORS(app)
+
+CAMERAS = {
+    'side': '/dev/camera_side',
+    'top': '/dev/camera_top',
+    'front': '/dev/camera_front'
+}
+
+S3_TRAINING_BUCKET = os.environ.get('S3_TRAINING_BUCKET', 'goat-training-ACCOUNTID')
+s3 = None
+
+def get_s3():
+    global s3
+    if s3 is None:
+        import boto3
+        s3 = boto3.client('s3')
+    return s3
+
+recording_state = {'active': False, 'progress': None}
+
+
+@app.route('/health')
+def health():
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/record', methods=['POST'])
+def record():
+    global recording_state
+
+    if recording_state['active']:
+        return jsonify({'status': 'error', 'message': 'Recording in progress'}), 400
+
+    data = request.json or {}
+    goat_id = data.get('goat_id', 1)
+    duration = min(int(data.get('duration', 5)), 10)
+
+    recording_state['active'] = True
+    recording_state['progress'] = 'starting'
+
+    def do_record():
+        global recording_state
+        try:
+            recording_state['progress'] = 'recording'
+
+            threads = []
+            results = {}
+
+            def record_camera(name, path):
+                filename = f'{goat_id}_{name}.mp4'
+                filepath = f'/tmp/{filename}'
+
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-f', 'v4l2',
+                    '-framerate', '30',
+                    '-video_size', '1920x1080',
+                    '-i', path,
+                    '-t', str(duration),
+                    '-c:v', 'libx264',
+                    '-preset', 'ultrafast',
+                    '-crf', '23',
+                    filepath
+                ]
+
+                subprocess.run(cmd, capture_output=True)
+
+                if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+                    results[name] = filepath
+
+            for name, path in CAMERAS.items():
+                if os.path.exists(path):
+                    t = threading.Thread(target=record_camera, args=(name, path))
+                    threads.append(t)
+                    t.start()
+
+            for t in threads:
+                t.join()
+
+            recording_state['progress'] = 'uploading'
+
+            for name, filepath in results.items():
+                filename = os.path.basename(filepath)
+                s3_key = f'{goat_id}/{filename}'
+                try:
+                    get_s3().upload_file(filepath, S3_TRAINING_BUCKET, s3_key)
+                finally:
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
+        finally:
+            recording_state['active'] = False
+            recording_state['progress'] = None
+
+    threading.Thread(target=do_record).start()
+
+    return jsonify({'status': 'recording_started', 'goat_id': goat_id})
+
+
+@app.route('/status')
+def status():
+    return jsonify(recording_state)
+
+
+if __name__ == '__main__':
+    print(f"Training server starting on port 5001")
+    app.run(host='0.0.0.0', port=5001)
+EOF
+
+# Create requirements
+cat > requirements.txt << 'EOF'
+flask
+flask-cors
+boto3
+EOF
+
+# Install dependencies
+pip3 install -r requirements.txt
+```
+
+### Systemd Service
+
+```bash
+sudo tee /etc/systemd/system/goat-training.service << 'EOF'
+[Unit]
+Description=Goat Training Capture Server (TEMPORARY)
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/pi/training-capture/server.py
+WorkingDirectory=/home/pi/training-capture
+User=pi
+Restart=always
+RestartSec=5
+Environment=S3_TRAINING_BUCKET=goat-training-ACCOUNTID
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable goat-training
+sudo systemctl start goat-training
+```
+
+### Verify
+
+```bash
+curl http://localhost:5001/health
+```
+
+---
+
+## Remove Training Service (When Done)
+
+```bash
+sudo systemctl stop goat-training
+sudo systemctl disable goat-training
+sudo rm /etc/systemd/system/goat-training.service
+sudo systemctl daemon-reload
+rm -rf /home/pi/training-capture
+```
+
+---
+
+## GitHub Actions Deployment
+
+### Secrets Required
+
+| Secret          | Value           |
+| --------------- | --------------- |
+| PI_TAILSCALE_IP | 100.x.x.x       |
+| PI_SSH_KEY      | SSH private key |
+
+### Production Deploy (.github/workflows/deploy-pi.yml)
 
 ```yaml
 name: Deploy to Pi
@@ -254,55 +430,78 @@ on:
   push:
     branches: [main]
     paths: ["pi/**"]
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Deploy
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.PI_TAILSCALE_IP }}
           username: pi
           key: ${{ secrets.PI_SSH_KEY }}
           script: |
             cd /home/pi/goat-capture
-            git pull origin main
+            git pull origin main 2>/dev/null || git clone https://github.com/OWNER/REPO.git .
+            cp -r pi/* /home/pi/goat-capture/
             pip3 install -r requirements.txt
             sudo systemctl restart goat-capture
 ```
 
-**GitHub Secrets to add:**
+### Training Deploy (.github/workflows/deploy-training.yml)
 
-- `PI_TAILSCALE_IP`: 100.x.x.x
-- `PI_SSH_KEY`: Pi's private SSH key
+```yaml
+name: Deploy Training to Pi
 
----
+on:
+  push:
+    branches: [main]
+    paths: ["training/pi-server/**"]
+  workflow_dispatch:
 
-### 9. Monitoring
-
-**Goal:** Get alerted if the Pi goes offline or the capture service crashes.
-
-Add Pi heartbeat to **UptimeRobot** or **Healthchecks.io**:
-
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PI_TAILSCALE_IP }}
+          username: pi
+          key: ${{ secrets.PI_SSH_KEY }}
+          script: |
+            mkdir -p /home/pi/training-capture
+            cd /home/pi/training-capture
+            git pull origin main 2>/dev/null || git clone https://github.com/OWNER/REPO.git .
+            cp -r training/pi-server/* /home/pi/training-capture/
+            pip3 install -r requirements.txt
+            sudo systemctl restart goat-training
 ```
-http://100.x.x.x:5000/health
-```
-
-- Pings every x minutes
-- Emails you if it fails
 
 ---
 
 ## Quick Reference
 
-| Task            | Command                                                                |
-| --------------- | ---------------------------------------------------------------------- |
-| SSH in          | `ssh pi@100.x.x.x`                                                     |
-| View logs       | `journalctl -u goat-capture -f`                                        |
-| Restart service | `sudo systemctl restart goat-capture`                                  |
-| Check cameras   | `ls -la /dev/video*`                                                   |
-| Manual update   | `cd ~/goat-capture && git pull && sudo systemctl restart goat-capture` |
-| Reboot          | `sudo reboot`                                                          |
+| Task               | Command                                |
+| ------------------ | -------------------------------------- |
+| SSH                | `ssh pi@100.x.x.x`                     |
+| Production logs    | `journalctl -u goat-capture -f`        |
+| Training logs      | `journalctl -u goat-training -f`       |
+| Restart production | `sudo systemctl restart goat-capture`  |
+| Restart training   | `sudo systemctl restart goat-training` |
+| Check cameras      | `ls -la /dev/camera_*`                 |
+| Test production    | `curl http://localhost:5000/health`    |
+| Test training      | `curl http://localhost:5001/health`    |
 
 ---
+
+## S3 Buckets
+
+| Bucket                  | Purpose           | Service       |
+| ----------------------- | ----------------- | ------------- |
+| goat-captures-ACCOUNTID | Production photos | goat-capture  |
+| goat-training-ACCOUNTID | Training videos   | goat-training |

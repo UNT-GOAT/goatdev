@@ -2,7 +2,7 @@
 Processing Service
 
 Handles the actual YOLO model inference and measurement extraction.
-Adapts your existing model code to work as a service.
+Adapts existing model/ code to work as a service.
 """
 
 import os

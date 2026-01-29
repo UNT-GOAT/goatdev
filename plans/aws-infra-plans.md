@@ -1,4 +1,4 @@
-# Goatdev - AWS Architecture
+# Goatdev - AWS Architecture - Plans Outline
 
 ## Table of Contents
 

@@ -1,0 +1,56 @@
+# TEMPORARY - Delete this workflow when training is complete
+
+name: Deploy Training Capture to Pi
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'training/pi-server/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Pi
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PI_TAILSCALE_IP }}
+          username: pi
+          key: ${{ secrets.PI_SSH_KEY }}
+          script: |
+            set -e
+            echo "=== Deploying Training Capture Server ==="
+            
+            mkdir -p /home/pi/training-capture
+            cd /home/pi/training-capture
+            
+            # Pull latest code (or clone if first time)
+            if [ -d .git ]; then
+              git pull origin main
+            else
+              git clone https://github.com/${{ github.repository }}.git .
+            fi
+            
+            # Copy training files
+            cp -r training/pi-server/* /home/pi/training-capture/
+            
+            # Install dependencies
+            pip3 install -r requirements.txt
+            
+            # Restart service
+            sudo systemctl restart goat-training || sudo systemctl start goat-training
+            
+            sleep 3
+            sudo systemctl status goat-training --no-pager
+            
+            echo "=== Deployment complete ==="
+
+      - name: Health check
+        run: |
+          sleep 5
+          curl -f http://${{ secrets.PI_TAILSCALE_IP }}:5001/health || echo "Health check failed - Pi may not be accessible from GitHub runners"
