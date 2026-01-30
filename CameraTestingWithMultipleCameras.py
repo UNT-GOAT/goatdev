@@ -1,6 +1,7 @@
 import cv2
 import os
 import threading
+import time
 
 class camThread(threading.Thread):
     def __init__(self, previewName, camID):
@@ -10,6 +11,25 @@ class camThread(threading.Thread):
     def run(self):
         camRun(self.camID)
 
+class camCalibration(threading.Thread):
+    def __init__(self, camID):
+        threading.Thread.__init__(self)
+        self.camID = camID
+    def run(self):
+        camCalibrate(self.camID)
+
+
+def camCalibrate(camID):
+    cam = cv2.VideoCapture(camID)
+    
+    while True: 
+        ret, frame = cam.read()
+        cv2.imshow("window", frame)
+        if cv2.waitKey(1) == ord('q'):
+            break
+    cam.release()
+    cv2.destroyAllWindows
+    
 
 def camRun(camID):             
     cam = cv2.VideoCapture(camID)
@@ -41,6 +61,7 @@ def camRun(camID):
     cv2.destroyAllWindows()
     
     
+
 
 while True:
     command = input("press 'c' to capture an image, 'q' to quit: ")
