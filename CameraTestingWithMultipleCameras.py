@@ -22,7 +22,6 @@ def camRun(camID):
     numImages = 0
     directory = 'Photos'
 
-    print(os.getcwd())
     onlyfiles = [f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory,f))]
     for n in range(0, len(onlyfiles)):
         numImages += 1
@@ -37,7 +36,6 @@ def camRun(camID):
     
     #change directory back to root
     os.chdir("..") 
-    print(os.getcwd())
     # Release the capture and writer objects
     cam.release()
     cv2.destroyAllWindows()
@@ -53,6 +51,8 @@ while True:
         ]
         for t in threads:
             t.start()
-    elif command.lower == 'q':
-        sys.exit
-        print("trying to exit")
+        #wait for threads to finish
+        for t in threads:
+            t.join()
+    elif command.lower() == 'q':
+        break
