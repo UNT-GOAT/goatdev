@@ -71,11 +71,22 @@
         color: #4caf50;
         margin: 20px 0;
       }
+      .counter.loading {
+        color: #666;
+        font-size: 60px;
+      }
 
       .label {
         font-size: 18px;
         color: #888;
         margin-bottom: 40px;
+      }
+
+      .buttons {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
       }
 
       .record-btn {
@@ -106,6 +117,34 @@
         animation: pulse 1s infinite;
       }
 
+      .mock-btn {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        border: 3px dashed #4caf50;
+        background: transparent;
+        color: #4caf50;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .mock-btn:hover {
+        background: rgba(76, 175, 80, 0.1);
+        transform: scale(1.05);
+      }
+      .mock-btn:disabled {
+        border-color: #666;
+        color: #666;
+        cursor: not-allowed;
+        transform: none;
+      }
+      .mock-btn.recording {
+        border-color: #ff9800;
+        color: #ff9800;
+        animation: pulse 1s infinite;
+      }
+
       @keyframes pulse {
         0%,
         100% {
@@ -114,6 +153,15 @@
         50% {
           transform: scale(1.05);
         }
+      }
+
+      .warning {
+        background: #ff9800;
+        color: #000;
+        padding: 10px 15px;
+        border-radius: 8px;
+        font-size: 14px;
+        margin-bottom: 20px;
       }
 
       .status {
@@ -127,6 +175,46 @@
       }
       .status.success {
         color: #4caf50;
+      }
+
+      .log-container {
+        margin-top: 30px;
+        text-align: left;
+        background: #0d0d1a;
+        border-radius: 10px;
+        padding: 15px;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+      .log-title {
+        font-size: 12px;
+        color: #666;
+        margin-bottom: 10px;
+        text-transform: uppercase;
+      }
+      .log {
+        font-family: monospace;
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      .log-entry {
+        margin-bottom: 4px;
+      }
+      .log-entry.info {
+        color: #888;
+      }
+      .log-entry.success {
+        color: #4caf50;
+      }
+      .log-entry.error {
+        color: #e53935;
+      }
+      .log-entry.warn {
+        color: #ff9800;
+      }
+      .log-time {
+        color: #555;
+        margin-right: 8px;
       }
 
       .logout {
@@ -150,7 +238,7 @@
   <body>
     <!-- Login Screen -->
     <div id="login">
-      <h1>Goat Training Capture</h1>
+      <h1>🐐 Goat Training Capture</h1>
       <input
         type="password"
         id="pw"
@@ -166,21 +254,56 @@
       <button class="logout" onclick="logout()">Logout</button>
 
       <div class="label">GOAT NUMBER</div>
-      <div class="counter" id="counter">1</div>
+      <div class="counter" id="counter">...</div>
 
-      <button class="record-btn" id="recordBtn" onclick="startRecording()">
-        RECORD
-      </button>
+      <div class="buttons">
+        <div class="warning">⚠️ Only use RECORD when capturing real data</div>
+
+        <button
+          class="record-btn"
+          id="recordBtn"
+          onclick="startRecording(false)"
+        >
+          RECORD
+        </button>
+
+        <button class="mock-btn" id="mockBtn" onclick="startRecording(true)">
+          TEST<br />(no save)
+        </button>
+      </div>
 
       <div class="status" id="status"></div>
+
+      <div class="log-container">
+        <div class="log-title">Activity Log</div>
+        <div class="log" id="log"></div>
+      </div>
     </div>
 
     <script>
       const PASS_HASH = "3af55a6ff02e8fa254bc70865d816394";
       const API_BASE = "http://100.110.194.126:5001";
+      const S3_BUCKET = "temp-training-937249941844";
+      const S3_REGION = "us-east-2";
 
-      let goatId = parseInt(localStorage.getItem("goatId") || "1");
+      let goatId = 1;
       let isRecording = false;
+
+      // Logging
+      function log(message, type = "info") {
+        const logEl = document.getElementById("log");
+        const time = new Date().toLocaleTimeString();
+        const entry = document.createElement("div");
+        entry.className = "log-entry " + type;
+        entry.innerHTML =
+          '<span class="log-time">' + time + "</span>" + message;
+        logEl.appendChild(entry);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      function clearLog() {
+        document.getElementById("log").innerHTML = "";
+      }
 
       // Auth functions
       function checkPw() {
@@ -198,59 +321,163 @@
         location.reload();
       }
 
-      function showApp() {
+      async function showApp() {
         document.getElementById("login").style.display = "none";
         document.getElementById("app").style.display = "block";
-        updateCounter();
+
+        log("Initializing...", "info");
+
+        // Fetch current count from S3
+        await fetchCurrentCount();
       }
 
-      // Recording functions
+      async function fetchCurrentCount() {
+        const counter = document.getElementById("counter");
+        counter.textContent = "...";
+        counter.classList.add("loading");
+
+        log("Fetching goat count from S3...", "info");
+
+        try {
+          // List objects in the S3 bucket to find highest goat number
+          const response = await fetch(
+            `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/?list-type=2&delimiter=/`,
+          );
+          const text = await response.text();
+
+          // Parse XML response for folder prefixes
+          const parser = new DOMParser();
+          const xml = parser.parseFromString(text, "text/xml");
+          const prefixes = xml.querySelectorAll("CommonPrefixes > Prefix");
+
+          let maxId = 0;
+          prefixes.forEach((prefix) => {
+            const folder = prefix.textContent.replace("/", "");
+            const num = parseInt(folder);
+            if (!isNaN(num) && num > maxId) {
+              maxId = num;
+            }
+          });
+
+          goatId = maxId + 1;
+          log(
+            "Found " + maxId + " existing recordings. Next: #" + goatId,
+            "success",
+          );
+        } catch (err) {
+          console.error("Failed to fetch count from S3:", err);
+          log("Could not fetch from S3: " + err.message, "warn");
+          // Fall back to localStorage
+          goatId = parseInt(localStorage.getItem("goatId") || "1");
+          log("Using local counter: #" + goatId, "info");
+        }
+
+        updateCounter();
+        counter.classList.remove("loading");
+      }
+
       function updateCounter() {
         document.getElementById("counter").textContent = goatId;
         localStorage.setItem("goatId", goatId.toString());
       }
 
-      async function startRecording() {
+      async function startRecording(isMock) {
         if (isRecording) return;
 
-        const btn = document.getElementById("recordBtn");
+        const btn = isMock
+          ? document.getElementById("mockBtn")
+          : document.getElementById("recordBtn");
+        const otherBtn = isMock
+          ? document.getElementById("recordBtn")
+          : document.getElementById("mockBtn");
         const status = document.getElementById("status");
 
         isRecording = true;
         btn.disabled = true;
+        otherBtn.disabled = true;
         btn.classList.add("recording");
-        btn.textContent = "RECORDING...";
-        status.textContent = "Recording goat #" + goatId + "...";
+
+        clearLog();
+
+        if (isMock) {
+          btn.innerHTML = "TESTING...";
+          status.textContent = "Mock recording (not saving)...";
+          log("Starting TEST recording (will not save)", "warn");
+        } else {
+          btn.textContent = "RECORDING...";
+          status.textContent = "Recording goat #" + goatId + "...";
+          log("Starting REAL recording for goat #" + goatId, "info");
+        }
         status.className = "status";
 
         try {
+          log("Connecting to Pi server...", "info");
+
           // Start recording
+          const recordId = isMock ? "test_" + Date.now() : goatId;
           const response = await fetch(API_BASE + "/record", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ goat_id: goatId, duration: 5 }),
+            body: JSON.stringify({
+              goat_id: recordId,
+              duration: 5,
+              mock: isMock,
+            }),
           });
 
           if (!response.ok) {
             throw new Error("Failed to start recording");
           }
 
+          const startData = await response.json();
+          log("Recording started on Pi", "success");
+          log(
+            "Cameras: " +
+              (startData.cameras_available?.join(", ") || "unknown"),
+            "info",
+          );
+          if (startData.cameras_missing?.length > 0) {
+            log(
+              "Missing cameras: " + startData.cameras_missing.join(", "),
+              "warn",
+            );
+          }
+
+          log("Recording for 5 seconds...", "info");
+
           // Poll for completion
           await pollStatus();
 
-          // Success - increment counter
-          status.textContent = "✓ Goat #" + goatId + " recorded!";
-          status.className = "status success";
-          goatId++;
-          updateCounter();
+          if (isMock) {
+            log("Test recording complete (not saved to S3)", "success");
+            status.textContent = "✓ Test complete (not saved)";
+            status.className = "status success";
+          } else {
+            log("Recording saved to S3!", "success");
+            log(
+              "Goat #" + goatId + " complete. Next: #" + (goatId + 1),
+              "success",
+            );
+            status.textContent = "✓ Goat #" + goatId + " recorded!";
+            status.className = "status success";
+            goatId++;
+            updateCounter();
+          }
         } catch (err) {
+          log("ERROR: " + err.message, "error");
           status.textContent = "✗ Error: " + err.message;
           status.className = "status error";
         } finally {
           isRecording = false;
           btn.disabled = false;
+          otherBtn.disabled = false;
           btn.classList.remove("recording");
-          btn.textContent = "RECORD";
+
+          if (isMock) {
+            btn.innerHTML = "TEST<br>(no save)";
+          } else {
+            btn.textContent = "RECORD";
+          }
         }
       }
 
@@ -262,14 +489,31 @@
           const response = await fetch(API_BASE + "/status");
           const data = await response.json();
 
+          if (data.progress) {
+            log("Status: " + data.progress, "info");
+          }
+
           if (!data.active) {
             if (data.last_error) {
               throw new Error(data.last_error);
             }
-            if (data.last_result && !data.last_result.success) {
-              throw new Error(
-                data.last_result.errors?.join(", ") || "Recording failed",
-              );
+            if (data.last_result) {
+              if (data.last_result.uploaded?.length > 0) {
+                log(
+                  "Uploaded: " + data.last_result.uploaded.join(", "),
+                  "success",
+                );
+              }
+              if (data.last_result.errors?.length > 0) {
+                data.last_result.errors.forEach((e) =>
+                  log("Warning: " + e, "warn"),
+                );
+              }
+              if (!data.last_result.success) {
+                throw new Error(
+                  data.last_result.errors?.join(", ") || "Recording failed",
+                );
+              }
             }
             return; // Success
           }
@@ -288,5 +532,3 @@
     </script>
   </body>
 </html>
-
-<!-- Test 2 -->
