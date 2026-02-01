@@ -21,12 +21,7 @@ jobs:
           oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
           tags: tag:ci
 
-      - name: Wait for Tailscale
-        run: |
-          sleep 5
-          tailscale status
-
-      - name: Test Direct SSH
+      - name: Deploy to Pi
         env:
           SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
           TAILSCALE_IP: ${{ secrets.TAILSCALE_IP }}
@@ -34,4 +29,5 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh -v -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no pi@${TAILSCALE_IP} "echo 'SSH connection successful!'"
+
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no pi@${TAILSCALE_IP} "cd /home/pi/goat-capture && git pull origin main && echo '✅ Deployed at \$(date)' && git log -1 --oneline"
