@@ -25,8 +25,8 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.TAILSCALE_IP }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          username: pi
+          key: ${{ secrets.PI_SSH_PRIVATE_KEY }}
           script: |
             set -e
             echo "=== Deploying to Raspberry Pi ==="
