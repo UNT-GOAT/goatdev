@@ -6,13 +6,12 @@ on:
     paths:
       - "pi/**"
       - "TEMP-training/**"
-      - ".github/workflows/deploy.yml"
+      - ".github/workflows/deploy-pi.yml"
   workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Setup Tailscale
         uses: tailscale/github-action@v2
@@ -29,5 +28,23 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no pi@${TAILSCALE_IP} "cd /home/pi/goat-capture && git pull origin main && echo '✅ Deployed at \$(date)' && git log -1 --oneline"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no pi@${TAILSCALE_IP} << 'EOF'
+            set -e
+            cd /home/pi/goat-capture
+            git pull origin main
+            
+            # Create venv if doesn't exist
+            if [ ! -d "/home/pi/venv" ]; then
+              python3 -m venv /home/pi/venv
+            fi
+            
+            source /home/pi/venv/bin/activate
+            pip install -r pi/requirements.txt --quiet
+            
+            # Restart services if they exist
+            sudo systemctl restart goat-capture 2>/dev/null || echo "goat-capture service not yet configured"
+            sudo systemctl restart goat-training 2>/dev/null || echo "goat-training service not yet configured"
+            
+            echo "Deployed at $(date)"
+            git log -1 --oneline
+          EOF
