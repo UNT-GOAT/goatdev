@@ -1,212 +1,223 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Goat Training Capture</title>
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #1a1a2e;
+        color: #eee;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+
+      .counter {
+        font-size: 120px;
+        font-weight: bold;
+        color: #00d4aa;
+        margin-bottom: 20px;
+      }
+
+      .label {
+        font-size: 24px;
+        color: #888;
+        margin-bottom: 60px;
+      }
+
+      .record-btn {
+        width: 280px;
+        height: 280px;
+        border: none;
+        border-radius: 50%;
+        background: #00d4aa;
+        color: #1a1a2e;
+        font-size: 32px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .record-btn:hover {
+        background: #00b894;
+        transform: scale(1.05);
+      }
+
+      .record-btn:disabled {
+        background: #ff4757;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .record-btn.recording {
+        animation: pulse-btn 1s infinite;
+      }
+
+      @keyframes pulse-btn {
+        0%,
+        100% {
+          background: #ff4757;
         }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #1a1a2e;
-            color: #eee;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
+        50% {
+          background: #ff6b7a;
         }
-        
-        .counter {
-            font-size: 120px;
-            font-weight: bold;
-            color: #00d4aa;
-            margin-bottom: 20px;
-        }
-        
-        .label {
-            font-size: 24px;
-            color: #888;
-            margin-bottom: 60px;
-        }
-        
-        .record-btn {
-            width: 280px;
-            height: 280px;
-            border: none;
-            border-radius: 50%;
-            background: #00d4aa;
-            color: #1a1a2e;
-            font-size: 32px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .record-btn:hover {
-            background: #00b894;
-            transform: scale(1.05);
-        }
-        
-        .record-btn:disabled {
-            background: #ff4757;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        .record-btn.recording {
-            animation: pulse-btn 1s infinite;
-        }
-        
-        @keyframes pulse-btn {
-            0%, 100% { background: #ff4757; }
-            50% { background: #ff6b7a; }
-        }
-        
-        .status {
-            margin-top: 40px;
-            font-size: 18px;
-            color: #888;
-        }
-        
-        .status.error {
-            color: #ff4757;
-        }
-        
-        .config {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            padding: 15px;
-            background: #252542;
-            border-radius: 10px;
-            font-size: 14px;
-        }
-        
-        .config input {
-            width: 200px;
-            padding: 8px;
-            margin-top: 8px;
-            border: none;
-            border-radius: 5px;
-            background: #1a1a2e;
-            color: #fff;
-            font-family: monospace;
-        }
+      }
+
+      .status {
+        margin-top: 40px;
+        font-size: 18px;
+        color: #888;
+      }
+
+      .status.error {
+        color: #ff4757;
+      }
+
+      .config {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        padding: 15px;
+        background: #252542;
+        border-radius: 10px;
+        font-size: 14px;
+      }
+
+      .config input {
+        width: 200px;
+        padding: 8px;
+        margin-top: 8px;
+        border: none;
+        border-radius: 5px;
+        background: #1a1a2e;
+        color: #fff;
+        font-family: monospace;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="counter" id="counter">0</div>
     <div class="label">goats recorded</div>
-    
+
     <button class="record-btn" id="recordBtn" onclick="startRecording()">
-        RECORD
+      RECORD
     </button>
-    
+
     <div class="status" id="status">Ready</div>
-    
+
     <div class="config">
-        <div>Pi Address</div>
-        <input type="text" id="piUrl" value="http://100.x.x.x:5001" placeholder="Pi URL">
+      <div>Pi Address</div>
+      <input
+        type="text"
+        id="piUrl"
+        value="http://100.x.x.x:5001"
+        placeholder="Pi URL"
+      />
     </div>
 
     <script>
-        let isRecording = false;
-        let recordCount = parseInt(localStorage.getItem('recordCount') || '0');
-        
-        // Load saved config
-        const savedUrl = localStorage.getItem('piUrl');
-        if (savedUrl) document.getElementById('piUrl').value = savedUrl;
-        
-        document.getElementById('counter').textContent = recordCount;
-        
-        function getPiUrl() {
-            const url = document.getElementById('piUrl').value.trim();
-            localStorage.setItem('piUrl', url);
-            return url;
-        }
-        
-        function setStatus(text, isError = false) {
-            const el = document.getElementById('status');
-            el.textContent = text;
-            el.className = isError ? 'status error' : 'status';
-        }
-        
-        async function startRecording() {
-            if (isRecording) return;
-            
-            const btn = document.getElementById('recordBtn');
-            const nextNum = recordCount + 1;
-            
-            isRecording = true;
-            btn.disabled = true;
-            btn.textContent = 'REC';
-            btn.classList.add('recording');
-            setStatus('Recording...');
-            
-            try {
-                const response = await fetch(`${getPiUrl()}/record`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ goat_id: nextNum, duration: 5 })
-                });
-                
-                const result = await response.json();
-                
-                if (result.status === 'recording_started') {
-                    // Poll for completion
-                    const poll = setInterval(async () => {
-                        try {
-                            const statusRes = await fetch(`${getPiUrl()}/status`);
-                            const status = await statusRes.json();
-                            
-                            if (!status.active) {
-                                clearInterval(poll);
-                                isRecording = false;
-                                
-                                // Success - increment counter
-                                recordCount = nextNum;
-                                localStorage.setItem('recordCount', recordCount);
-                                document.getElementById('counter').textContent = recordCount;
-                                
-                                btn.disabled = false;
-                                btn.textContent = 'RECORD';
-                                btn.classList.remove('recording');
-                                setStatus('Ready');
-                            }
-                        } catch (e) {
-                            clearInterval(poll);
-                            reset('Connection lost');
-                        }
-                    }, 1000);
-                } else {
-                    reset(result.message || 'Failed to start');
+      let isRecording = false;
+      let recordCount = parseInt(localStorage.getItem("recordCount") || "0");
+
+      // Load saved config
+      const savedUrl = localStorage.getItem("piUrl");
+      if (savedUrl) document.getElementById("piUrl").value = savedUrl;
+
+      document.getElementById("counter").textContent = recordCount;
+
+      function getPiUrl() {
+        const url = document.getElementById("piUrl").value.trim();
+        localStorage.setItem("piUrl", url);
+        return url;
+      }
+
+      function setStatus(text, isError = false) {
+        const el = document.getElementById("status");
+        el.textContent = text;
+        el.className = isError ? "status error" : "status";
+      }
+
+      async function startRecording() {
+        if (isRecording) return;
+
+        const btn = document.getElementById("recordBtn");
+        const nextNum = recordCount + 1;
+
+        isRecording = true;
+        btn.disabled = true;
+        btn.textContent = "REC";
+        btn.classList.add("recording");
+        setStatus("Recording...");
+
+        try {
+          const response = await fetch(`${getPiUrl()}/record`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ goat_id: nextNum, duration: 5 }),
+          });
+
+          const result = await response.json();
+
+          if (result.status === "recording_started") {
+            // Poll for completion
+            const poll = setInterval(async () => {
+              try {
+                const statusRes = await fetch(`${getPiUrl()}/status`);
+                const status = await statusRes.json();
+
+                if (!status.active) {
+                  clearInterval(poll);
+                  isRecording = false;
+
+                  // Success - increment counter
+                  recordCount = nextNum;
+                  localStorage.setItem("recordCount", recordCount);
+                  document.getElementById("counter").textContent = recordCount;
+
+                  btn.disabled = false;
+                  btn.textContent = "RECORD";
+                  btn.classList.remove("recording");
+                  setStatus("Ready");
                 }
-            } catch (e) {
-                reset('Connection error');
-            }
+              } catch (e) {
+                clearInterval(poll);
+                reset("Connection lost");
+              }
+            }, 1000);
+          } else {
+            reset(result.message || "Failed to start");
+          }
+        } catch (e) {
+          reset("Connection error");
         }
-        
-        function reset(errorMsg) {
-            isRecording = false;
-            const btn = document.getElementById('recordBtn');
-            btn.disabled = false;
-            btn.textContent = 'RECORD';
-            btn.classList.remove('recording');
-            setStatus(errorMsg, true);
-        }
-        
-        // Save Pi URL on change
-        document.getElementById('piUrl').addEventListener('change', getPiUrl);
+      }
+
+      function reset(errorMsg) {
+        isRecording = false;
+        const btn = document.getElementById("recordBtn");
+        btn.disabled = false;
+        btn.textContent = "RECORD";
+        btn.classList.remove("recording");
+        setStatus(errorMsg, true);
+      }
+
+      // Save Pi URL on change
+      document.getElementById("piUrl").addEventListener("change", getPiUrl);
     </script>
-</body>
+  </body>
 </html>
