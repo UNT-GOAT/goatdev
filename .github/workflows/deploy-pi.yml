@@ -27,6 +27,7 @@ jobs:
           host: ${{ secrets.TAILSCALE_IP }}
           username: pi
           key: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+          debug: true
           script: |
             set -e
             echo "=== Deploying to Raspberry Pi ==="
