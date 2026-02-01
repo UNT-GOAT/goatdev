@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - "pi/**"
-      - "TEMP-training/**"
+      - "TEMP-training/pi-server**"
       - ".github/workflows/deploy-pi.yml"
   workflow_dispatch:
 

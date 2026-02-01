@@ -2,222 +2,289 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
     <title>Goat Training Capture</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.19.0/js/md5.min.js"></script>
     <style>
       * {
         box-sizing: border-box;
         margin: 0;
         padding: 0;
       }
-
       body {
         font-family:
           -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         background: #1a1a2e;
-        color: #eee;
+        color: white;
         min-height: 100vh;
         display: flex;
-        flex-direction: column;
-        align-items: center;
         justify-content: center;
+        align-items: center;
+      }
+
+      /* Login Screen */
+      #login {
+        text-align: center;
         padding: 20px;
+      }
+      #login h1 {
+        font-size: 24px;
+        margin-bottom: 30px;
+        color: #eee;
+      }
+      #login input {
+        padding: 15px 20px;
+        font-size: 18px;
+        border: none;
+        border-radius: 10px;
+        width: 250px;
+        margin-bottom: 15px;
+      }
+      #login button {
+        padding: 15px 40px;
+        font-size: 18px;
+        background: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+      #login button:hover {
+        background: #45a049;
+      }
+
+      /* Main App */
+      #app {
+        display: none;
+        text-align: center;
+        padding: 20px;
+        width: 100%;
+        max-width: 400px;
       }
 
       .counter {
         font-size: 120px;
         font-weight: bold;
-        color: #00d4aa;
-        margin-bottom: 20px;
+        color: #4caf50;
+        margin: 20px 0;
       }
 
       .label {
-        font-size: 24px;
+        font-size: 18px;
         color: #888;
-        margin-bottom: 60px;
+        margin-bottom: 40px;
       }
 
       .record-btn {
-        width: 280px;
-        height: 280px;
-        border: none;
+        width: 200px;
+        height: 200px;
         border-radius: 50%;
-        background: #00d4aa;
-        color: #1a1a2e;
-        font-size: 32px;
+        border: none;
+        background: #e53935;
+        color: white;
+        font-size: 24px;
         font-weight: bold;
         cursor: pointer;
+        box-shadow: 0 8px 30px rgba(229, 57, 53, 0.4);
         transition: all 0.2s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
       }
-
       .record-btn:hover {
-        background: #00b894;
         transform: scale(1.05);
+        box-shadow: 0 12px 40px rgba(229, 57, 53, 0.5);
       }
-
       .record-btn:disabled {
-        background: #ff4757;
+        background: #666;
         cursor: not-allowed;
+        box-shadow: none;
         transform: none;
       }
-
       .record-btn.recording {
-        animation: pulse-btn 1s infinite;
+        background: #ff9800;
+        animation: pulse 1s infinite;
       }
 
-      @keyframes pulse-btn {
+      @keyframes pulse {
         0%,
         100% {
-          background: #ff4757;
+          transform: scale(1);
         }
         50% {
-          background: #ff6b7a;
+          transform: scale(1.05);
         }
       }
 
       .status {
-        margin-top: 40px;
-        font-size: 18px;
+        margin-top: 30px;
+        font-size: 16px;
         color: #888;
+        min-height: 24px;
       }
-
       .status.error {
-        color: #ff4757;
+        color: #e53935;
+      }
+      .status.success {
+        color: #4caf50;
       }
 
-      .config {
+      .logout {
         position: fixed;
-        bottom: 20px;
+        top: 20px;
         right: 20px;
-        padding: 15px;
-        background: #252542;
-        border-radius: 10px;
+        background: none;
+        border: 1px solid #444;
+        color: #666;
+        padding: 8px 16px;
+        border-radius: 5px;
+        cursor: pointer;
         font-size: 14px;
       }
-
-      .config input {
-        width: 200px;
-        padding: 8px;
-        margin-top: 8px;
-        border: none;
-        border-radius: 5px;
-        background: #1a1a2e;
-        color: #fff;
-        font-family: monospace;
+      .logout:hover {
+        border-color: #666;
+        color: #888;
       }
     </style>
   </head>
   <body>
-    <div class="counter" id="counter">0</div>
-    <div class="label">goats recorded</div>
-
-    <button class="record-btn" id="recordBtn" onclick="startRecording()">
-      RECORD
-    </button>
-
-    <div class="status" id="status">Ready</div>
-
-    <div class="config">
-      <div>Pi Address</div>
+    <!-- Login Screen -->
+    <div id="login">
+      <h1>Goat Training Capture</h1>
       <input
-        type="text"
-        id="piUrl"
-        value="http://100.x.x.x:5001"
-        placeholder="Pi URL"
+        type="password"
+        id="pw"
+        placeholder="Password"
+        onkeypress="if (event.key === 'Enter') checkPw();"
       />
+      <br />
+      <button onclick="checkPw()">Enter</button>
+    </div>
+
+    <!-- Main App -->
+    <div id="app">
+      <button class="logout" onclick="logout()">Logout</button>
+
+      <div class="label">GOAT NUMBER</div>
+      <div class="counter" id="counter">1</div>
+
+      <button class="record-btn" id="recordBtn" onclick="startRecording()">
+        RECORD
+      </button>
+
+      <div class="status" id="status"></div>
     </div>
 
     <script>
+      const PASS_HASH = "3af55a6ff02e8fa254bc70865d816394";
+      const API_BASE = "http://100.110.194.126:5001";
+
+      let goatId = parseInt(localStorage.getItem("goatId") || "1");
       let isRecording = false;
-      let recordCount = parseInt(localStorage.getItem("recordCount") || "0");
 
-      // Load saved config
-      const savedUrl = localStorage.getItem("piUrl");
-      if (savedUrl) document.getElementById("piUrl").value = savedUrl;
-
-      document.getElementById("counter").textContent = recordCount;
-
-      function getPiUrl() {
-        const url = document.getElementById("piUrl").value.trim();
-        localStorage.setItem("piUrl", url);
-        return url;
+      // Auth functions
+      function checkPw() {
+        const input = document.getElementById("pw").value;
+        if (md5(input) === PASS_HASH) {
+          localStorage.setItem("auth", "true");
+          showApp();
+        } else {
+          alert("Wrong password");
+        }
       }
 
-      function setStatus(text, isError = false) {
-        const el = document.getElementById("status");
-        el.textContent = text;
-        el.className = isError ? "status error" : "status";
+      function logout() {
+        localStorage.removeItem("auth");
+        location.reload();
+      }
+
+      function showApp() {
+        document.getElementById("login").style.display = "none";
+        document.getElementById("app").style.display = "block";
+        updateCounter();
+      }
+
+      // Recording functions
+      function updateCounter() {
+        document.getElementById("counter").textContent = goatId;
+        localStorage.setItem("goatId", goatId.toString());
       }
 
       async function startRecording() {
         if (isRecording) return;
 
         const btn = document.getElementById("recordBtn");
-        const nextNum = recordCount + 1;
+        const status = document.getElementById("status");
 
         isRecording = true;
         btn.disabled = true;
-        btn.textContent = "REC";
         btn.classList.add("recording");
-        setStatus("Recording...");
+        btn.textContent = "RECORDING...";
+        status.textContent = "Recording goat #" + goatId + "...";
+        status.className = "status";
 
         try {
-          const response = await fetch(`${getPiUrl()}/record`, {
+          // Start recording
+          const response = await fetch(API_BASE + "/record", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ goat_id: nextNum, duration: 5 }),
+            body: JSON.stringify({ goat_id: goatId, duration: 5 }),
           });
 
-          const result = await response.json();
-
-          if (result.status === "recording_started") {
-            // Poll for completion
-            const poll = setInterval(async () => {
-              try {
-                const statusRes = await fetch(`${getPiUrl()}/status`);
-                const status = await statusRes.json();
-
-                if (!status.active) {
-                  clearInterval(poll);
-                  isRecording = false;
-
-                  // Success - increment counter
-                  recordCount = nextNum;
-                  localStorage.setItem("recordCount", recordCount);
-                  document.getElementById("counter").textContent = recordCount;
-
-                  btn.disabled = false;
-                  btn.textContent = "RECORD";
-                  btn.classList.remove("recording");
-                  setStatus("Ready");
-                }
-              } catch (e) {
-                clearInterval(poll);
-                reset("Connection lost");
-              }
-            }, 1000);
-          } else {
-            reset(result.message || "Failed to start");
+          if (!response.ok) {
+            throw new Error("Failed to start recording");
           }
-        } catch (e) {
-          reset("Connection error");
+
+          // Poll for completion
+          await pollStatus();
+
+          // Success - increment counter
+          status.textContent = "✓ Goat #" + goatId + " recorded!";
+          status.className = "status success";
+          goatId++;
+          updateCounter();
+        } catch (err) {
+          status.textContent = "✗ Error: " + err.message;
+          status.className = "status error";
+        } finally {
+          isRecording = false;
+          btn.disabled = false;
+          btn.classList.remove("recording");
+          btn.textContent = "RECORD";
         }
       }
 
-      function reset(errorMsg) {
-        isRecording = false;
-        const btn = document.getElementById("recordBtn");
-        btn.disabled = false;
-        btn.textContent = "RECORD";
-        btn.classList.remove("recording");
-        setStatus(errorMsg, true);
+      async function pollStatus() {
+        const maxAttempts = 30;
+        for (let i = 0; i < maxAttempts; i++) {
+          await sleep(500);
+
+          const response = await fetch(API_BASE + "/status");
+          const data = await response.json();
+
+          if (!data.active) {
+            if (data.last_error) {
+              throw new Error(data.last_error);
+            }
+            if (data.last_result && !data.last_result.success) {
+              throw new Error(
+                data.last_result.errors?.join(", ") || "Recording failed",
+              );
+            }
+            return; // Success
+          }
+        }
+        throw new Error("Recording timed out");
       }
 
-      // Save Pi URL on change
-      document.getElementById("piUrl").addEventListener("change", getPiUrl);
+      function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      // Init
+      if (localStorage.getItem("auth") === "true") {
+        showApp();
+      }
     </script>
   </body>
 </html>

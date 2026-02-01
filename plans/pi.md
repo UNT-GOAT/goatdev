@@ -42,7 +42,7 @@ In imager settings:
 
 - Hostname: `goat-pi`
 - Enable SSH
-- Username/password: `pi` / `<password>`
+- Username/password: `pi` / `<password>` - Capstone123
 - Configure WiFi
 
 ### 2. First Boot
@@ -59,6 +59,9 @@ sudo apt install -y python3-pip python3-venv ffmpeg git
 ```bash
 curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up
+
+
+ssh pi@100.110.194.126
 ```
 
 Note the Tailscale IP (100.x.x.x) - this is how you'll access the Pi remotely.
@@ -95,6 +98,16 @@ Verify:
 ```bash
 ls -la /dev/camera_*
 ```
+
+Final Cam USB Layout:
+
+    2.0     3.0
+
+|--------|--------|
+| 1.3 - empty | 1.1 - top |
+|--------|--------|
+| 1.4 - front | 1.2 - side |
+|--------|--------|
 
 ### 5. AWS Credentials
 
