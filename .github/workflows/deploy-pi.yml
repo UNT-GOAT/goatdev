@@ -21,12 +21,20 @@ jobs:
           oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
           tags: tag:ci
 
+      - name: Test Tailscale Connection
+        run: |
+          echo "Testing connection to Pi..."
+          echo "Tailscale IP: ${{ secrets.TAILSCALE_IP }}"
+          tailscale status
+          ping -c 3 ${{ secrets.TAILSCALE_IP }} || echo "Ping failed"
+          nc -zv ${{ secrets.TAILSCALE_IP }} 22 || echo "Port 22 not reachable"
+
       - name: Deploy to Pi
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.TAILSCALE_IP }}
           username: pi
-          key: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           debug: true
           script: |
             set -e
