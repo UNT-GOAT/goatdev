@@ -21,26 +21,17 @@ jobs:
           oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
           tags: tag:ci
 
-      - name: Test Tailscale Connection
+      - name: Wait for Tailscale
         run: |
-          echo "Testing connection to Pi..."
-          echo "Tailscale IP: ${{ secrets.TAILSCALE_IP }}"
+          sleep 5
           tailscale status
-          ping -c 3 ${{ secrets.TAILSCALE_IP }} || echo "Ping failed"
-          nc -zv ${{ secrets.TAILSCALE_IP }} 22 || echo "Port 22 not reachable"
 
-      - name: Deploy to Pi
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.TAILSCALE_IP }}
-          username: pi
-          key: ${{ secrets.PI_SSH_PRIVATE_KEY }}
-          debug: true
-          script: |
-            set -e
-            echo "=== Deploying to Raspberry Pi ==="
-            cd /home/pi/goat-capture
-            git pull origin main
-            echo "✅ Deployed at $(date)"
-            git log -1 --oneline
-            echo "=== Deployment complete ==="
+      - name: Test Direct SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+          TAILSCALE_IP: ${{ secrets.TAILSCALE_IP }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -v -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no pi@${TAILSCALE_IP} "echo 'SSH connection successful!'"
