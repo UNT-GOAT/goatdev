@@ -1,0 +1,44 @@
+name: Deploy to Raspberry Pi
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pi/**"
+      - "TEMP-training/**"
+      - ".github/workflows/deploy-pi.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Deploy to Pi
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          TAILSCALE_IP: ${{ secrets.TAILSCALE_IP }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no $SSH_USER@$TAILSCALE_IP << 'ENDSSH'
+            cd /home/pi/goat-capture
+            git pull origin main
+            
+            # Add your post-deployment commands
+            # pip3 install -r requirements.txt
+            # sudo systemctl restart goat-capture
+            
+            echo "✅ Deployed at $(date)"
+            git log -1 --oneline
+          ENDSSH
