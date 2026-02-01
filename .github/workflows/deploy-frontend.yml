@@ -8,26 +8,27 @@ on:
       - "TEMP-training/web/**"
       - ".github/workflows/deploy-frontend.yml"
   workflow_dispatch:
-    inputs:
-      deploy_all:
-        description: "Deploy all frontends"
-        type: boolean
-        default: false
 
 jobs:
-  # Temp training UI - just static HTML
   deploy-training:
     runs-on: ubuntu-latest
-    if: |
-      contains(github.event.head_commit.modified, 'TEMP-training/web/') ||
-      contains(github.event.head_commit.added, 'TEMP-training/web/') ||
-      github.event.inputs.deploy_all == 'true' ||
-      github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check for training changes
+        id: check
+        run: |
+          if git diff --name-only HEAD~1 | grep -q "TEMP-training/web/"; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Deploy training UI to S3
+        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -36,26 +37,28 @@ jobs:
           aws s3 sync TEMP-training/web/ s3://goat-web-937249941844/training/
           echo "Training UI deployed"
 
-  # Production app - skip for now until React is set up TODO
   deploy-prod:
     runs-on: ubuntu-latest
-    if: |
-      contains(github.event.head_commit.modified, 'goat-app/') ||
-      contains(github.event.head_commit.added, 'goat-app/') ||
-      github.event.inputs.deploy_all == 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check for prod changes
+        id: check
+        run: |
+          if git diff --name-only HEAD~1 | grep -q "goat-app/"; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Build and deploy prod
+        if: steps.check.outputs.changed == 'true'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: us-east-2
         run: |
           echo "Prod build skipped - React not configured yet"
-          # Uncomment when React is ready:
-          # cd goat-app
-          # npm ci
-          # npm run build
-          # aws s3 sync build/ s3://goat-web-937249941844/ --exclude "training/*"
