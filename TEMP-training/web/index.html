@@ -59,27 +59,42 @@
       /* Main App */
       #app {
         display: none;
-        text-align: center;
         padding: 20px;
         width: 100%;
-        max-width: 400px;
+        max-width: 800px;
+      }
+
+      .app-layout {
+        display: flex;
+        gap: 30px;
+        align-items: flex-start;
+      }
+
+      .control-panel {
+        flex: 0 0 auto;
+        text-align: center;
+      }
+
+      .log-panel {
+        flex: 1;
+        min-width: 0;
       }
 
       .counter {
-        font-size: 120px;
+        font-size: 100px;
         font-weight: bold;
         color: #4caf50;
-        margin: 20px 0;
+        margin: 10px 0;
       }
       .counter.loading {
         color: #666;
-        font-size: 60px;
+        font-size: 50px;
       }
 
       .label {
-        font-size: 18px;
+        font-size: 16px;
         color: #888;
-        margin-bottom: 40px;
+        margin-bottom: 20px;
       }
 
       .buttons {
@@ -178,27 +193,32 @@
       }
 
       .log-container {
-        margin-top: 30px;
-        text-align: left;
         background: #0d0d1a;
         border-radius: 10px;
         padding: 15px;
-        max-height: 200px;
-        overflow-y: auto;
+        height: 350px;
+        display: flex;
+        flex-direction: column;
       }
       .log-title {
         font-size: 12px;
         color: #666;
         margin-bottom: 10px;
         text-transform: uppercase;
+        flex-shrink: 0;
       }
       .log {
         font-family: monospace;
         font-size: 12px;
         line-height: 1.6;
+        flex: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
       }
       .log-entry {
         margin-bottom: 4px;
+        flex-shrink: 0;
       }
       .log-entry.info {
         color: #888;
@@ -215,6 +235,18 @@
       .log-time {
         color: #555;
         margin-right: 8px;
+      }
+
+      @media (max-width: 600px) {
+        .app-layout {
+          flex-direction: column;
+        }
+        .control-panel {
+          width: 100%;
+        }
+        .log-container {
+          height: 200px;
+        }
       }
 
       .logout {
@@ -253,30 +285,40 @@
     <div id="app">
       <button class="logout" onclick="logout()">Logout</button>
 
-      <div class="label">GOAT NUMBER</div>
-      <div class="counter" id="counter">...</div>
+      <div class="app-layout">
+        <div class="control-panel">
+          <div class="label">GOAT NUMBER</div>
+          <div class="counter" id="counter">...</div>
 
-      <div class="buttons">
-        <div class="warning">⚠️ Only use RECORD when capturing real data</div>
+          <div class="buttons">
+            <div class="warning">⚠️ Only use RECORD for real data</div>
 
-        <button
-          class="record-btn"
-          id="recordBtn"
-          onclick="startRecording(false)"
-        >
-          RECORD
-        </button>
+            <button
+              class="record-btn"
+              id="recordBtn"
+              onclick="startRecording(false)"
+            >
+              RECORD
+            </button>
 
-        <button class="mock-btn" id="mockBtn" onclick="startRecording(true)">
-          TEST<br />(no save)
-        </button>
-      </div>
+            <button
+              class="mock-btn"
+              id="mockBtn"
+              onclick="startRecording(true)"
+            >
+              TEST<br />(no save)
+            </button>
+          </div>
 
-      <div class="status" id="status"></div>
+          <div class="status" id="status"></div>
+        </div>
 
-      <div class="log-container">
-        <div class="log-title">Activity Log</div>
-        <div class="log" id="log"></div>
+        <div class="log-panel">
+          <div class="log-container">
+            <div class="log-title">Activity Log</div>
+            <div class="log" id="log"></div>
+          </div>
+        </div>
       </div>
     </div>
 
