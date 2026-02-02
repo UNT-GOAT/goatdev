@@ -302,8 +302,8 @@ def record():
             
             log(f"Recording complete. Success: {list(results.keys())}, Failed: {list(thread_errors.keys())}")
             
-            # Upload to S3
-            if results:
+            # Upload to S3 (skip for test requests)
+            if results and not str(goat_id).startswith('test_'):
                 recording_state['progress'] = 'uploading'
                 log(f"Uploading {len(results)} files to S3...")
                 
@@ -325,16 +325,20 @@ def record():
                             os.remove(filepath)
                             log(f"  [{name}] Cleaned up temp file")
             else:
-                log("No files to upload")
+                if not str(goat_id).startswith('test_'):
+                    log("No files to upload.")
+                else:
+                    log("Test detected; skipping upload.")
             
             # Compile final result
             errors.extend([f"{k}: {v}" for k, v in thread_errors.items()])
             
+            is_test = str(goat_id).startswith('test_')
             recording_state['last_result'] = {
                 'goat_id': goat_id,
                 'uploaded': uploaded,
                 'errors': errors,
-                'success': len(uploaded) > 0
+                'success': len(uploaded) > 0 or (is_test and len(errors) == 0)
             }
             
             log(f"=== Recording finished: {len(uploaded)} uploaded, {len(errors)} errors ===")

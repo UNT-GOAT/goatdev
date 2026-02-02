@@ -118,6 +118,9 @@ sudo systemctl stop goat-training
 sudo systemctl disable goat-training
 sudo rm /etc/systemd/system/goat-training.service
 
+# Stop 5001 funneling for open internet access
+tailscale funnel --https=443 off
+
 # Remove from repo
 rm -rf TEMP-training/
 git add -A && git commit -m "Remove training system" && git push
