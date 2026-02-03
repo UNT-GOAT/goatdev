@@ -9,6 +9,7 @@ import subprocess
 import threading
 import os
 import shutil
+import json
 from datetime import datetime
 
 app = Flask(__name__)
@@ -209,8 +210,11 @@ def record():
     data = request.json or {}
     goat_id = data.get('goat_id', 1)
     duration = min(int(data.get('duration', 5)), 10)
+    goat_data = data.get('goat_data', {})
     
     log(f"=== Starting recording: goat_id={goat_id}, duration={duration}s ===")
+    if goat_data:
+        log(f"  Goat data: {goat_data}")
     
     # Check cameras before starting
     available = []
@@ -302,11 +306,15 @@ def record():
             
             log(f"Recording complete. Success: {list(results.keys())}, Failed: {list(thread_errors.keys())}")
             
+            # Check if this is a test recording
+            is_test = str(goat_id).startswith('test_')
+            
             # Upload to S3 (skip for test requests)
-            if results and not str(goat_id).startswith('test_'):
+            if results and not is_test:
                 recording_state['progress'] = 'uploading'
                 log(f"Uploading {len(results)} files to S3...")
                 
+                # Upload videos
                 for name, filepath in results.items():
                     filename = os.path.basename(filepath)
                     s3_key = f'{goat_id}/{filename}'
@@ -324,21 +332,59 @@ def record():
                         if os.path.exists(filepath):
                             os.remove(filepath)
                             log(f"  [{name}] Cleaned up temp file")
+                
+                # Upload goat_data.json
+                if goat_data:
+                    try:
+                        json_data = {
+                            'goat_id': goat_id,
+                            'timestamp': datetime.now().isoformat(),
+                        }
+                        # Only include non-empty fields
+                        if goat_data.get('description'):
+                            json_data['description'] = goat_data['description']
+                        if goat_data.get('live_weight'):
+                            json_data['live_weight'] = goat_data['live_weight']
+                        if goat_data.get('grade'):
+                            json_data['grade'] = goat_data['grade']
+                        
+                        json_key = f'{goat_id}/goat_data.json'
+                        json_filepath = f'/tmp/{goat_id}_goat_data.json'
+                        
+                        with open(json_filepath, 'w') as f:
+                            json.dump(json_data, f, indent=2)
+                        
+                        log(f"  [goat_data] Uploading to s3://{S3_TRAINING_BUCKET}/{json_key}")
+                        get_s3().upload_file(json_filepath, S3_TRAINING_BUCKET, json_key)
+                        uploaded.append(json_key)
+                        log(f"  [goat_data] Upload complete")
+                        
+                        if os.path.exists(json_filepath):
+                            os.remove(json_filepath)
+                    except Exception as e:
+                        error_msg = f"goat_data.json upload failed: {str(e)}"
+                        errors.append(error_msg)
+                        log(f"  [goat_data] ERROR: {error_msg}")
             else:
-                if not str(goat_id).startswith('test_'):
-                    log("No files to upload.")
-                else:
+                # Clean up temp files for test recordings
+                for name, filepath in results.items():
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
+                        log(f"  [{name}] Cleaned up temp file (test)")
+                
+                if is_test:
                     log("Test detected; skipping upload.")
+                else:
+                    log("No files to upload.")
             
             # Compile final result
             errors.extend([f"{k}: {v}" for k, v in thread_errors.items()])
             
-            is_test = str(goat_id).startswith('test_')
             recording_state['last_result'] = {
                 'goat_id': goat_id,
                 'uploaded': uploaded,
                 'errors': errors,
-                'success': len(uploaded) > 0 or (is_test and len(errors) == 0)
+                'success': len(uploaded) > 0 or (is_test and len(thread_errors) == 0)
             }
             
             log(f"=== Recording finished: {len(uploaded)} uploaded, {len(errors)} errors ===")
