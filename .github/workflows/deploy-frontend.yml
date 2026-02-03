@@ -37,6 +37,14 @@ jobs:
           aws s3 sync TEMP-training/web/ s3://goat-web-937249941844/training/
           echo "Training UI deployed"
 
+      - name: Invalidate CloudFront
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-2
+        run: |
+          aws cloudfront create-invalidation --distribution-id EB8KCE4E7TGI4 --paths "/*"
+
   deploy-prod:
     runs-on: ubuntu-latest
     steps:
@@ -62,3 +70,11 @@ jobs:
           AWS_REGION: us-east-2
         run: |
           echo "Prod build skipped - React not configured yet"
+
+      - name: Invalidate CloudFront
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-2
+        run: |
+          aws cloudfront create-invalidation --distribution-id EB8KCE4E7TGI4 --paths "/*"
