@@ -32,7 +32,8 @@ jobs:
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no pi@${TAILSCALE_IP} << 'EOF'
             set -e
             cd /home/pi/goat-capture
-            git pull origin main
+            git fetch origin
+            git reset --hard origin/main
             
             if [ ! -d "/home/pi/venv" ]; then
               python3 -m venv /home/pi/venv
@@ -41,7 +42,7 @@ jobs:
             source /home/pi/venv/bin/activate
             pip install -r pi/requirements.txt --quiet
             
-            sudo systemctl restart goat-capture
+            sudo systemctl restart goat-prod
             sudo systemctl restart goat-training
             
             echo "Deployed and restarted at $(date)"
