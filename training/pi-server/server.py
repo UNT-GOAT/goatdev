@@ -721,29 +721,6 @@ def cancel():
     return jsonify({'status': 'cancelled'})
 
 
-@app.route('/list-goats')
-def list_goats():
-    import boto3
-    s3 = boto3.client('s3')
-    
-    response = s3.list_objects_v2(
-        Bucket='training-937249941844',
-        Delimiter='/'
-    )
-    
-    max_id = 0
-    if 'CommonPrefixes' in response:
-        for prefix in response['CommonPrefixes']:
-            folder = prefix['Prefix'].replace('/', '')
-            try:
-                num = int(folder)
-                if num > max_id:
-                    max_id = num
-            except:
-                pass
-    
-    return jsonify({'maxId': max_id, 'total': len(response.get('CommonPrefixes', []))})
-
 
 # ============================================================
 # STARTUP
