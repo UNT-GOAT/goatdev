@@ -29,7 +29,7 @@ import sys
 sys.path.insert(0, '/home/pi/goat-capture')
 from logger.pi_cloudwatch import Logger
 
-log = Logger('pi/capture')
+log = Logger('pi/prod')
 
 # ============================================================
 # HELPERS
