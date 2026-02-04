@@ -229,7 +229,7 @@ def test_connectivity():
 def run_startup_checks():
     """Run all startup checks and log results."""
     log.info('startup', '=' * 50)
-    log.info('startup', 'PI CAPTURE SERVER STARTING')
+    log.info('startup', 'PROD PI SERVER STARTING')
     log.info('startup', 'Configuration', ec2_ip=EC2_IP, ec2_api=EC2_API)
     
     # System info
