@@ -1,0 +1,744 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <title>Goat Training Capture</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.19.0/js/md5.min.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #1a1a2e;
+        color: white;
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      /* Login Screen */
+      #login {
+        text-align: center;
+        padding: 20px;
+      }
+      #login h1 {
+        font-size: 24px;
+        margin-bottom: 30px;
+        color: #eee;
+      }
+      #login input {
+        padding: 15px 20px;
+        font-size: 18px;
+        border: none;
+        border-radius: 10px;
+        width: 250px;
+        margin-bottom: 15px;
+      }
+      #login button {
+        padding: 15px 40px;
+        font-size: 18px;
+        background: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+      #login button:hover {
+        background: #45a049;
+      }
+
+      /* Main App */
+      #app {
+        display: none;
+        padding: 20px;
+        width: 100%;
+        max-width: 800px;
+      }
+
+      .app-layout {
+        display: flex;
+        gap: 30px;
+        align-items: flex-start;
+      }
+
+      .control-panel {
+        flex: 0 0 auto;
+        text-align: center;
+      }
+
+      .right-panel {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .form-panel {
+        background: #0d0d1a;
+        border-radius: 10px;
+        padding: 15px;
+      }
+
+      .form-title {
+        font-size: 12px;
+        color: #666;
+        margin-bottom: 15px;
+        text-transform: uppercase;
+      }
+
+      .form-row {
+        display: flex;
+        gap: 15px;
+        flex-wrap: wrap;
+      }
+
+      .form-group {
+        flex: 1;
+        min-width: 120px;
+      }
+
+      .form-group label {
+        display: block;
+        font-size: 11px;
+        color: #888;
+        margin-bottom: 5px;
+        text-transform: uppercase;
+      }
+
+      .form-group input,
+      .form-group select {
+        width: 100%;
+        padding: 10px;
+        font-size: 14px;
+        border: 1px solid #333;
+        border-radius: 6px;
+        background: #1a1a2e;
+        color: white;
+      }
+
+      .form-group input:focus,
+      .form-group select:focus {
+        outline: none;
+        border-color: #4caf50;
+      }
+
+      .form-group select {
+        cursor: pointer;
+      }
+
+      .log-panel {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .counter {
+        font-size: 100px;
+        font-weight: bold;
+        color: #4caf50;
+        margin: 10px 0;
+      }
+      .counter.loading {
+        color: #666;
+        font-size: 50px;
+      }
+
+      .label {
+        font-size: 16px;
+        color: #888;
+        margin-bottom: 20px;
+      }
+
+      .buttons {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+      }
+
+      .record-btn {
+        width: 200px;
+        height: 200px;
+        border-radius: 50%;
+        border: none;
+        background: #e53935;
+        color: white;
+        font-size: 24px;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 8px 30px rgba(229, 57, 53, 0.4);
+        transition: all 0.2s;
+      }
+      .record-btn:hover {
+        transform: scale(1.05);
+        box-shadow: 0 12px 40px rgba(229, 57, 53, 0.5);
+      }
+      .record-btn:disabled {
+        background: #666;
+        cursor: not-allowed;
+        box-shadow: none;
+        transform: none;
+      }
+      .record-btn.recording {
+        background: #ff9800;
+        animation: pulse 1s infinite;
+      }
+
+      .mock-btn {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        border: 3px dashed #4caf50;
+        background: transparent;
+        color: #4caf50;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .mock-btn:hover {
+        background: rgba(76, 175, 80, 0.1);
+        transform: scale(1.05);
+      }
+      .mock-btn:disabled {
+        border-color: #666;
+        color: #666;
+        cursor: not-allowed;
+        transform: none;
+      }
+      .mock-btn.recording {
+        border-color: #ff9800;
+        color: #ff9800;
+        animation: pulse 1s infinite;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.05);
+        }
+      }
+
+      .warning {
+        background: #ff9800;
+        color: #000;
+        padding: 10px 15px;
+        border-radius: 8px;
+        font-size: 14px;
+        margin-bottom: 20px;
+      }
+
+      .status {
+        margin-top: 30px;
+        font-size: 16px;
+        color: #888;
+        min-height: 24px;
+      }
+      .status.error {
+        color: #e53935;
+      }
+      .status.success {
+        color: #4caf50;
+      }
+
+      .log-container {
+        background: #0d0d1a;
+        border-radius: 10px;
+        padding: 15px;
+        height: 350px;
+        display: flex;
+        flex-direction: column;
+      }
+      .log-title {
+        font-size: 12px;
+        color: #666;
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        flex-shrink: 0;
+      }
+      .log {
+        font-family: monospace;
+        font-size: 12px;
+        line-height: 1.6;
+        flex: 1;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+      }
+      .log-entry {
+        margin-bottom: 4px;
+        flex-shrink: 0;
+      }
+      .log-entry.info {
+        color: #888;
+      }
+      .log-entry.success {
+        color: #4caf50;
+      }
+      .log-entry.error {
+        color: #e53935;
+      }
+      .log-entry.warn {
+        color: #ff9800;
+      }
+      .log-time {
+        color: #555;
+        margin-right: 8px;
+      }
+
+      @media (max-width: 600px) {
+        .app-layout {
+          flex-direction: column;
+        }
+        .control-panel {
+          width: 100%;
+        }
+        .log-container {
+          height: 200px;
+        }
+      }
+
+      .logout {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: none;
+        border: 1px solid #444;
+        color: #666;
+        padding: 8px 16px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      .logout:hover {
+        border-color: #666;
+        color: #888;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Login Screen -->
+    <div id="login">
+      <h1>Goat Training Capture</h1>
+      <input
+        type="password"
+        id="pw"
+        placeholder="Password"
+        onkeypress="if (event.key === 'Enter') checkPw();"
+      />
+      <br />
+      <button onclick="checkPw()">Enter</button>
+    </div>
+
+    <!-- Main App -->
+    <div id="app">
+      <button class="logout" onclick="logout()">Logout</button>
+
+      <div class="app-layout">
+        <div class="control-panel">
+          <div class="label">GOAT NUMBER</div>
+          <div class="counter" id="counter">...</div>
+
+          <div class="buttons">
+            <div class="warning">⚠️ Only use RECORD for real data</div>
+
+            <button
+              class="record-btn"
+              id="recordBtn"
+              onclick="startRecording(false)"
+            >
+              RECORD
+            </button>
+
+            <button
+              class="mock-btn"
+              id="mockBtn"
+              onclick="startRecording(true)"
+            >
+              TEST<br />(no save)
+            </button>
+          </div>
+
+          <div class="status" id="status"></div>
+        </div>
+
+        <div class="right-panel">
+          <div class="form-panel">
+            <div class="form-title">Goat Data</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Description</label>
+                <select id="description">
+                  <option value="">-- Select --</option>
+                  <option value="dairy">Dairy</option>
+                  <option value="meat">Meat</option>
+                  <option value="cross">Cross</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Live Weight</label>
+                <input type="text" id="liveWeight" placeholder="e.g. 150 lbs" />
+              </div>
+              <div class="form-group">
+                <label>Grade</label>
+                <select id="grade">
+                  <option value="">-- Select --</option>
+                  <option value="reserve">Reserve</option>
+                  <option value="cab prime">CAB Prime</option>
+                  <option value="prime">Prime</option>
+                  <option value="cab choice">CAB Choice</option>
+                  <option value="choice">Choice</option>
+                  <option value="select">Select</option>
+                  <option value="no roll">No Roll</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="log-panel">
+            <div class="log-container">
+              <div class="log-title">Activity Log</div>
+              <div class="log" id="log"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const PASS_HASH = "3af55a6ff02e8fa254bc70865d816394";
+      const API_BASE = "https://goat-pi.tail184479.ts.net/";
+      const S3_BUCKET = "temp-training-937249941844";
+      const S3_REGION = "us-east-2";
+
+      let goatId = 1;
+      let isRecording = false;
+
+      // Form functions
+      function getFormData() {
+        return {
+          description: document.getElementById("description").value || null,
+          live_weight: document.getElementById("liveWeight").value || null,
+          grade: document.getElementById("grade").value || null,
+        };
+      }
+
+      function clearForm() {
+        document.getElementById("description").value = "";
+        document.getElementById("liveWeight").value = "";
+        document.getElementById("grade").value = "";
+      }
+
+      // Logging
+      function log(message, type = "info") {
+        const logEl = document.getElementById("log");
+        const time = new Date().toLocaleTimeString();
+        const entry = document.createElement("div");
+        entry.className = "log-entry " + type;
+        entry.innerHTML =
+          '<span class="log-time">' + time + "</span>" + message;
+        logEl.appendChild(entry);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      function clearLog() {
+        document.getElementById("log").innerHTML = "";
+      }
+
+      // Auth functions
+      function checkPw() {
+        const input = document.getElementById("pw").value;
+        if (md5(input) === PASS_HASH) {
+          localStorage.setItem("auth", "true");
+          showApp();
+        } else {
+          alert("Wrong password");
+        }
+      }
+
+      function logout() {
+        localStorage.removeItem("auth");
+        location.reload();
+      }
+
+      async function showApp() {
+        document.getElementById("login").style.display = "none";
+        document.getElementById("app").style.display = "block";
+
+        log("Initializing...", "info");
+
+        // Fetch current count from S3
+        await fetchCurrentCount();
+      }
+
+      async function fetchCurrentCount() {
+        const counter = document.getElementById("counter");
+        counter.textContent = "...";
+        counter.classList.add("loading");
+
+        log("Fetching goat count from S3...", "info");
+
+        try {
+          // List objects in the S3 bucket to find highest goat number
+          const response = await fetch(
+            `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/?list-type=2&delimiter=/`,
+          );
+
+          if (!response.ok) {
+            throw new Error("S3 returned " + response.status);
+          }
+
+          const text = await response.text();
+
+          // Parse XML response for folder prefixes
+          const parser = new DOMParser();
+          const xml = parser.parseFromString(text, "text/xml");
+          const prefixes = xml.querySelectorAll("CommonPrefixes > Prefix");
+
+          let maxId = 0;
+          prefixes.forEach((prefix) => {
+            const folder = prefix.textContent.replace("/", "");
+            const num = parseInt(folder);
+            if (!isNaN(num) && num > maxId) {
+              maxId = num;
+            }
+          });
+
+          goatId = maxId + 1;
+          log(
+            "Found " + maxId + " existing recordings. Next goat: #" + goatId,
+            "success",
+          );
+        } catch (err) {
+          console.error("Failed to fetch count from S3:", err);
+          log("Could not sync with cloud. Using local counter.", "warn");
+          // Fall back to localStorage
+          goatId = parseInt(localStorage.getItem("goatId") || "1");
+          log("Starting at goat #" + goatId, "info");
+        }
+
+        updateCounter();
+        counter.classList.remove("loading");
+      }
+
+      function updateCounter() {
+        document.getElementById("counter").textContent = goatId;
+        localStorage.setItem("goatId", goatId.toString());
+      }
+
+      async function startRecording(isMock) {
+        if (isRecording) return;
+
+        const btn = isMock
+          ? document.getElementById("mockBtn")
+          : document.getElementById("recordBtn");
+        const otherBtn = isMock
+          ? document.getElementById("recordBtn")
+          : document.getElementById("mockBtn");
+        const status = document.getElementById("status");
+
+        isRecording = true;
+        btn.disabled = true;
+        otherBtn.disabled = true;
+        btn.classList.add("recording");
+
+        clearLog();
+
+        if (isMock) {
+          btn.innerHTML = "TESTING...";
+          status.textContent = "Mock recording (not saving)...";
+          log("Starting TEST recording (will not save)", "warn");
+        } else {
+          btn.textContent = "RECORDING...";
+          status.textContent = "Recording goat #" + goatId + "...";
+          log("Starting REAL recording for goat #" + goatId, "info");
+        }
+        status.className = "status";
+
+        try {
+          log("Connecting to Pi server...", "info");
+
+          // Get form data for real recordings
+          const formData = isMock ? {} : getFormData();
+
+          // Start recording
+          const recordId = isMock ? "test_" + Date.now() : goatId;
+          let response;
+          try {
+            response = await fetch(API_BASE + "/record", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                goat_id: recordId,
+                duration: 5,
+                goat_data: formData,
+              }),
+            });
+          } catch (networkErr) {
+            throw new Error(
+              "Cannot reach Pi server. Check that it is powered on and connected.",
+            );
+          }
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const errorMessages = {
+              NO_CAMERAS:
+                "No cameras connected! Please plug in the cameras and try again.",
+              RECORDING_IN_PROGRESS:
+                "Recording already in progress on another connection. Please wait.",
+              CAMERA_PERMISSION_DENIED:
+                "Camera permission denied. Check creds and connections.",
+              LOW_DISK_SPACE: "Pi is low on disk space.",
+            };
+            const friendlyMessage =
+              errorMessages[errorData.error_code] ||
+              errorData.message ||
+              "Failed to start recording";
+            throw new Error(friendlyMessage);
+          }
+
+          const startData = await response.json();
+          log("Recording started on Pi", "success");
+
+          // Show camera status clearly
+          if (startData.cameras_available?.length > 0) {
+            log(
+              "✓ Cameras ready: " + startData.cameras_available.join(", "),
+              "success",
+            );
+          }
+          if (startData.cameras_missing?.length > 0) {
+            log(
+              "⚠️ Cameras NOT connected: " +
+                startData.cameras_missing.join(", "),
+              "warn",
+            );
+          }
+          if (startData.warning) {
+            log(startData.warning, "warn");
+          }
+
+          log("Recording for 5 seconds...", "info");
+
+          // Poll for completion
+          await pollStatus();
+
+          if (isMock) {
+            log("Test recording complete (not saved to S3)", "success");
+            status.textContent = "✓ Test complete (not saved)";
+            status.className = "status success";
+          } else {
+            log("Recording saved to S3!", "success");
+            log(
+              "Goat #" + goatId + " complete. Next: #" + (goatId + 1),
+              "success",
+            );
+            status.textContent = "✓ Goat #" + goatId + " recorded!";
+            status.className = "status success";
+            goatId++;
+            updateCounter();
+            clearForm();
+          }
+        } catch (err) {
+          log("ERROR: " + err.message, "error");
+        } finally {
+          isRecording = false;
+          btn.disabled = false;
+          otherBtn.disabled = false;
+          btn.classList.remove("recording");
+
+          if (isMock) {
+            btn.innerHTML = "TEST<br>(no save)";
+          } else {
+            btn.textContent = "RECORD";
+          }
+        }
+      }
+
+      async function pollStatus() {
+        const maxAttempts = 30;
+        for (let i = 0; i < maxAttempts; i++) {
+          await sleep(500);
+
+          let response;
+          try {
+            response = await fetch(API_BASE + "/status");
+          } catch (networkErr) {
+            log("Lost connection to Pi...", "warn");
+            continue; // Retry
+          }
+
+          const data = await response.json();
+
+          if (data.progress) {
+            const progressMessages = {
+              starting: "Initializing cameras...",
+              recording: "Recording video...",
+              uploading: "Uploading to cloud...",
+            };
+            log(progressMessages[data.progress] || data.progress, "info");
+          }
+
+          if (!data.active) {
+            if (data.last_error) {
+              throw new Error(data.last_error);
+            }
+            if (data.last_result) {
+              // Show per-camera status
+              if (data.last_result.camera_status) {
+                const cs = data.last_result.camera_status;
+                for (const [cam, status] of Object.entries(cs)) {
+                  if (status === "uploaded") {
+                    log(`✓ ${cam}: uploaded`, "success");
+                  } else if (status === "failed") {
+                    log(`✗ ${cam}: recording failed`, "error");
+                  }
+                }
+              }
+
+              if (data.last_result.errors?.length > 0) {
+                data.last_result.errors.forEach((e) => {
+                  // Make ffmpeg errors more readable
+                  if (e.includes("ffmpeg")) {
+                    // Already shown above
+                  } else if (e.includes("S3")) {
+                    log("Upload failed - check internet connection", "warn");
+                  } else {
+                    log("Warning: " + e, "warn");
+                  }
+                });
+              }
+              if (!data.last_result.success) {
+                throw new Error("Recording failed. Check camera connections.");
+              }
+            }
+            return; // Success
+          }
+        }
+        throw new Error("Recording timed out. The Pi may be unresponsive.");
+      }
+
+      function sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+      }
+
+      // Init
+      if (localStorage.getItem("auth") === "true") {
+        showApp();
+      }
+    </script>
+  </body>
+</html>
