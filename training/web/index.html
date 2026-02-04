@@ -584,6 +584,8 @@
                 goat_id: recordId,
                 duration: 5,
                 goat_data: formData,
+                is_test: isMock,
+                require_all_cameras: !isMock,
               }),
             });
           } catch (networkErr) {
@@ -602,6 +604,8 @@
               CAMERA_PERMISSION_DENIED:
                 "Camera permission denied. Check creds and connections.",
               LOW_DISK_SPACE: "Pi is low on disk space.",
+              MISSING_CAMERAS:
+                "Not all cameras are connected. Plug in all cameras to record REAL data.",
             };
             const friendlyMessage =
               errorMessages[errorData.error_code] ||
@@ -637,8 +641,11 @@
           await pollStatus();
 
           if (isMock) {
-            log("Test recording complete (not saved to S3)", "success");
-            status.textContent = "✓ Test complete (not saved)";
+            log(
+              "Test recording complete (upload CHECK passed, nothing uploaded)",
+              "success",
+            );
+            status.textContent = "✓ Test complete (upload check passed)";
             status.className = "status success";
           } else {
             log("Recording saved to S3!", "success");
@@ -705,7 +712,28 @@
                     log(`✓ ${cam}: uploaded`, "success");
                   } else if (status === "failed") {
                     log(`✗ ${cam}: recording failed`, "error");
+                  } else if (status === "missing") {
+                    log(`⚠️ ${cam}: missing/not ready`, "warn");
                   }
+                }
+              }
+
+              if (data.last_result.s3_check) {
+                if (data.last_result.s3_check.ok) {
+                  log("✓ S3 upload check OK (no files uploaded)", "success");
+                } else {
+                  log(
+                    "✗ S3 upload check FAILED: " +
+                      (data.last_result.s3_check.error || "unknown"),
+                    "error",
+                  );
+                }
+
+                if (data.last_result.s3_check.would_upload?.length > 0) {
+                  log("Would upload:", "info");
+                  data.last_result.s3_check.would_upload.forEach((k) =>
+                    log("  - " + k, "info"),
+                  );
                 }
               }
 
