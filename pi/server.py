@@ -85,6 +85,6 @@ def test_connectivity():
 
 
 if __name__ == '__main__':
-    log("Pi Test Server starting on port 5000")
+    log("Pi Prod Server starting on port 5000")
     log(f"EC2 target: {EC2_API}")
     app.run(host='0.0.0.0', port=5000)
