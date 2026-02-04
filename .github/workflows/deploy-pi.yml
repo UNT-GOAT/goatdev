@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - "pi/**" # Prod pi server
-      - "TEMP-training/pi-server**" # Temp training pi server
+      - "training/pi-server**" # Temp training pi server
       - "logger/pi_cloudwatch**" # Pi CloudWatch logging for both servers
       - ".github/workflows/deploy-pi.yml"
   workflow_dispatch:
