@@ -27,7 +27,7 @@ S3_TRAINING_BUCKET = os.environ.get('S3_TRAINING_BUCKET', 'goat-training-ACCOUNT
 s3 = None
 
 import sys
-sys.path.insert(0, '/home/pi/goat-capture/logger')
+sys.path.insert(0, '/home/pi/goat-capture')
 from logger.pi_cloudwatch import SimpleLogger
 
 log = SimpleLogger('pi/training')
