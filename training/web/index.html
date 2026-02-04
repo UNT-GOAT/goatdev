@@ -389,7 +389,7 @@
               </div>
               <div class="form-group">
                 <label>Live Weight</label>
-                <input type="text" id="liveWeight" placeholder="e.g. 150 lbs" />
+                <input type="text" id="liveWeight" placeholder="e.g. 85 lbs" />
               </div>
               <div class="form-group">
                 <label>Grade</label>
@@ -624,13 +624,6 @@
               "success",
             );
           }
-          if (startData.cameras_missing?.length > 0) {
-            log(
-              "⚠️ Cameras NOT connected: " +
-                startData.cameras_missing.join(", "),
-              "warn",
-            );
-          }
           if (startData.warning) {
             log(startData.warning, "warn");
           }
@@ -641,10 +634,7 @@
           await pollStatus();
 
           if (isMock) {
-            log(
-              "Test recording complete (upload CHECK passed, nothing uploaded)",
-              "success",
-            );
+            log("Test recording complete.", "success");
             status.textContent = "✓ Test complete (upload check passed)";
             status.className = "status success";
           } else {
@@ -712,8 +702,6 @@
                     log(`✓ ${cam}: uploaded`, "success");
                   } else if (status === "failed") {
                     log(`✗ ${cam}: recording failed`, "error");
-                  } else if (status === "missing") {
-                    log(`⚠️ ${cam}: missing/not ready`, "warn");
                   }
                 }
               }
@@ -726,13 +714,6 @@
                     "✗ S3 upload check FAILED: " +
                       (data.last_result.s3_check.error || "unknown"),
                     "error",
-                  );
-                }
-
-                if (data.last_result.s3_check.would_upload?.length > 0) {
-                  log("Would upload:", "info");
-                  data.last_result.s3_check.would_upload.forEach((k) =>
-                    log("  - " + k, "info"),
                   );
                 }
               }
