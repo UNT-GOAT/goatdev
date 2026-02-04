@@ -23,7 +23,7 @@ def get_cloudwatch_logger(stream_name: str, level=logging.INFO):
     
     # CloudWatch handler
     try:
-        client = boto3.client(region_name='us-east-2')
+        client = boto3.client('logs', region_name='us-east-2')
         cloudwatch_handler = watchtower.CloudWatchLogHandler(
             log_group='/goatdev',
             stream_name=stream_name,
