@@ -587,12 +587,12 @@
             const errorData = await response.json().catch(() => ({}));
             const errorMessages = {
               NO_CAMERAS:
-                "📷 No cameras connected! Please plug in the cameras and try again.",
+                "No cameras connected! Please plug in the cameras and try again.",
               RECORDING_IN_PROGRESS:
-                "⏳ Recording already in progress. Please wait.",
+                "Recording already in progress on another connection. Please wait.",
               CAMERA_PERMISSION_DENIED:
-                "🔒 Camera permission denied. Contact support.",
-              LOW_DISK_SPACE: "💾 Pi is low on disk space. Contact support.",
+                "Camera permission denied. Check creds and connections.",
+              LOW_DISK_SPACE: "Pi is low on disk space.",
             };
             const friendlyMessage =
               errorMessages[errorData.error_code] ||
@@ -645,8 +645,6 @@
           }
         } catch (err) {
           log("ERROR: " + err.message, "error");
-          status.textContent = "✗ Error: " + err.message;
-          status.className = "status error";
         } finally {
           isRecording = false;
           btn.disabled = false;
