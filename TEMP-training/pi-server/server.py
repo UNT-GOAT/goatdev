@@ -203,8 +203,9 @@ def record():
     if recording_state['active']:
         log("ERROR: Recording already in progress")
         return jsonify({
-            'status': 'error', 
-            'message': 'Recording already in progress'
+            'status': 'error',
+            'error_code': 'RECORDING_IN_PROGRESS',
+            'message': 'A recording is already in progress. Please wait for it to finish.'
         }), 400
     
     data = request.json or {}
@@ -216,22 +217,60 @@ def record():
     if goat_data:
         log(f"  Goat data: {goat_data}")
     
+    # Check disk space (need at least 500MB for temp files)
+    try:
+        _, _, free = shutil.disk_usage('/tmp')
+        free_mb = free // (1024 * 1024)
+        if free_mb < 500:
+            log(f"ERROR: Low disk space - only {free_mb}MB free")
+            return jsonify({
+                'status': 'error',
+                'error_code': 'LOW_DISK_SPACE',
+                'message': f'Not enough disk space. Only {free_mb}MB available, need at least 500MB.',
+                'details': {'free_mb': free_mb}
+            }), 400
+    except Exception as e:
+        log(f"Warning: Could not check disk space: {e}")
+    
     # Check cameras before starting
     available = []
     missing = []
+    not_readable = []
     for name, path in CAMERAS.items():
         if os.path.exists(path):
-            available.append(name)
-            log(f"  Camera '{name}' found at {path}")
+            if os.access(path, os.R_OK):
+                available.append(name)
+                log(f"  Camera '{name}' found at {path}")
+            else:
+                not_readable.append(name)
+                log(f"  Camera '{name}' EXISTS but NOT READABLE at {path}")
         else:
             missing.append(name)
             log(f"  Camera '{name}' NOT FOUND at {path}")
+    
+    if not_readable:
+        log(f"ERROR: Camera permission issue!")
+        return jsonify({
+            'status': 'error',
+            'error_code': 'CAMERA_PERMISSION_DENIED',
+            'message': f'Camera(s) found but not readable: {", ".join(not_readable)}. Check permissions.',
+            'details': {
+                'not_readable': not_readable,
+                'available': available,
+                'missing': missing
+            }
+        }), 400
     
     if not available:
         log("ERROR: No cameras available!")
         return jsonify({
             'status': 'error',
-            'message': f'No cameras found. Expected: {list(CAMERAS.values())}'
+            'error_code': 'NO_CAMERAS',
+            'message': 'No cameras connected. Please check that cameras are plugged in and try again.',
+            'details': {
+                'expected': list(CAMERAS.keys()),
+                'missing': missing
+            }
         }), 400
     
     recording_state['active'] = True
@@ -380,10 +419,23 @@ def record():
             # Compile final result
             errors.extend([f"{k}: {v}" for k, v in thread_errors.items()])
             
+            # Build camera-by-camera status
+            camera_status = {}
+            for name in CAMERAS.keys():
+                if name in [os.path.basename(u).split('_')[1].replace('.mp4', '') for u in uploaded]:
+                    camera_status[name] = 'uploaded'
+                elif name in thread_errors:
+                    camera_status[name] = 'failed'
+                elif name in missing:
+                    camera_status[name] = 'not_connected'
+                else:
+                    camera_status[name] = 'unknown'
+            
             recording_state['last_result'] = {
                 'goat_id': goat_id,
                 'uploaded': uploaded,
                 'errors': errors,
+                'camera_status': camera_status,
                 'success': len(uploaded) > 0 or (is_test and len(thread_errors) == 0)
             }
             
@@ -407,7 +459,8 @@ def record():
         'goat_id': goat_id,
         'duration': duration,
         'cameras_available': available,
-        'cameras_missing': missing
+        'cameras_missing': missing,
+        'warning': f'Only {len(available)}/3 cameras connected: {", ".join(available)}' if missing else None
     })
 
 
