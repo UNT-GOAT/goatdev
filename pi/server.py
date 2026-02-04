@@ -16,7 +16,7 @@ EC2_API = f'http://{EC2_IP}:8000'
 import sys
 sys.path.insert(0, '/home/pi/goat-capture')
 from logger.pi_cloudwatch import SimpleLogger
-log = SimpleLogger('pi/capture')
+log = SimpleLogger('pi/prod')
 
 
 @app.route('/health')
