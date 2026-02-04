@@ -6,7 +6,7 @@ on:
     paths:
       - "pi/**" # Prod pi server
       - "TEMP-training/pi-server**" # Temp training pi server
-      - "logger/pi-cloudwatch.py" # Pi CloudWatch logging for both servers
+      - "logger/pi_cloudwatch.py" # Pi CloudWatch logging for both servers
       - ".github/workflows/deploy-pi.yml"
   workflow_dispatch:
 
