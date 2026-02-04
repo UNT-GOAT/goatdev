@@ -26,8 +26,11 @@ CAMERAS = {
 S3_TRAINING_BUCKET = os.environ.get('S3_TRAINING_BUCKET', 'goat-training-ACCOUNTID')
 s3 = None
 
-def log(msg):
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+import sys
+sys.path.insert(0, '/home/pi/goat-capture/logger')
+from logger.pi_cloudwatch import SimpleLogger
+
+log = SimpleLogger('pi/training')
 
 def get_s3():
     global s3

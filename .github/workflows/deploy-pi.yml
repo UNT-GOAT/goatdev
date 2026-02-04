@@ -4,8 +4,9 @@ on:
   push:
     branches: [main]
     paths:
-      - "pi/**"
-      - "TEMP-training/pi-server**"
+      - "pi/**" # Prod pi server
+      - "TEMP-training/pi-server**" # Temp training pi server
+      - "logging/pi-cloudwatch.py" # Pi CloudWatch logging for both servers
       - ".github/workflows/deploy-pi.yml"
   workflow_dispatch:
 
