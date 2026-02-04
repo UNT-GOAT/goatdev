@@ -13,8 +13,10 @@ EC2_IP = '3.16.96.182'
 EC2_API = f'http://{EC2_IP}:8000'
 
 
-def log(msg):
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+import sys
+sys.path.insert(0, '/home/pi/goat-capture/logger')
+from logger.pi_cloudwatch import SimpleLogger
+log = SimpleLogger('pi/capture')
 
 
 @app.route('/health')
