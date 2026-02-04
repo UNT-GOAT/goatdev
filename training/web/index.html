@@ -488,43 +488,37 @@
         counter.textContent = "...";
         counter.classList.add("loading");
 
-        log("Fetching goat count from S3...", "info");
+        log("Fetching goat count from S3 via Pi...", "info");
 
         try {
-          // List objects in the S3 bucket to find highest goat number
-          const response = await fetch(
-            `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/?list-type=2&delimiter=/`,
-          );
+          // Use your Pi server as a proxy instead of direct S3 access
+          const response = await fetch(API_BASE + "/list-goats");
 
           if (!response.ok) {
-            throw new Error("S3 returned " + response.status);
+            throw new Error("Server returned " + response.status);
           }
 
-          const text = await response.text();
+          const data = await response.json();
 
-          // Parse XML response for folder prefixes
-          const parser = new DOMParser();
-          const xml = parser.parseFromString(text, "text/xml");
-          const prefixes = xml.querySelectorAll("CommonPrefixes > Prefix");
-
-          let maxId = 0;
-          prefixes.forEach((prefix) => {
-            const folder = prefix.textContent.replace("/", "");
-            const num = parseInt(folder);
-            if (!isNaN(num) && num > maxId) {
-              maxId = num;
-            }
-          });
-
-          goatId = maxId + 1;
-          log(
-            "Found " + maxId + " existing recordings. Next goat: #" + goatId,
-            "success",
-          );
+          // Assuming your Pi endpoint returns JSON like:
+          // { "maxId": 5, "total": 5 }
+          if (data.maxId !== undefined) {
+            goatId = data.maxId + 1;
+            log(
+              "Found " +
+                data.maxId +
+                " existing recordings. Next goat: #" +
+                goatId,
+              "success",
+            );
+          } else {
+            // Fallback
+            goatId = parseInt(localStorage.getItem("goatId") || "1");
+            log("Starting at goat #" + goatId, "info");
+          }
         } catch (err) {
-          console.error("Failed to fetch count from S3:", err);
+          console.error("Failed to fetch count:", err);
           log("Could not sync with cloud. Using local counter.", "warn");
-          // Fall back to localStorage
           goatId = parseInt(localStorage.getItem("goatId") || "1");
           log("Starting at goat #" + goatId, "info");
         }
