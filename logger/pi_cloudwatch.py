@@ -50,7 +50,7 @@ def get_cloudwatch_logger(stream_name: str, level=logging.INFO):
     return logger
 
 
-# Convenience wrapper that mimics your existing log() function
+# Convenience wrapper that mimics your existing log() function.
 class SimpleLogger:
     """Drop-in replacement for existing log() function pattern."""
     
