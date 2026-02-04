@@ -25,7 +25,7 @@ Becky's Phone → herd-sync.com/training → Pi Server → Records 5s video → 
 Flask server running on port 5001:
 
 - Records 5-second videos from connected cameras
-- Uploads to S3 bucket `temp-training-937249941844`
+- Uploads to S3 bucket `training-937249941844`
 - Endpoints:
   - `GET /health` - Quick health check
   - `GET /diagnostics` - Detailed system info
@@ -53,14 +53,14 @@ Run locally after Becky has collected videos:
 
 Deployed via GitHub Actions (`.github/workflows/deploy-pi.yml`):
 
-- Triggers on changes to `pi/**` or `TEMP-training/pi-server/**`
+- Triggers on changes to `pi/**` or `training/pi-server/**`
 - Restarts `goat-training.service` automatically on the pi
 
 ### Web UI
 
 Deployed via GitHub Actions (`.github/workflows/deploy-frontend.yml`):
 
-- Triggers on changes to `TEMP-training/web/**`
+- Triggers on changes to `training/web/**`
 - Syncs to `s3://goat-web-937249941844/training/`
 
 ## Usage
@@ -78,7 +78,7 @@ Deployed via GitHub Actions (`.github/workflows/deploy-frontend.yml`):
 ### Processing (after collection)
 
 ```bash
-cd TEMP-training/scripts
+cd training/scripts
 pip install -r requirements.txt
 python extract_frames.py --fps 5
 ```
@@ -93,35 +93,11 @@ Per goat: 3 cameras × 5 seconds × 5fps = 75 frames
 ## S3 Structure
 
 ```
-temp-training-937249941844/
+training-937249941844/
 ├── 1/
 │   ├── 1_side.mp4
 │   ├── 1_top.mp4
 │   └── 1_front.mp4
 ├── 2/
 │   └── ...
-```
-
-## Cleanup
-
-When training is complete, delete everything:
-
-```bash
-# Remove S3 training data
-aws s3 rb s3://temp-training-937249941844 --force
-
-# Remove web UI
-aws s3 rm s3://goat-web-937249941844/training --recursive
-
-# On Pi
-sudo systemctl stop goat-training
-sudo systemctl disable goat-training
-sudo rm /etc/systemd/system/goat-training.service
-
-# Stop 5001 funneling for open internet access
-tailscale funnel --https=443 off
-
-# Remove from repo
-rm -rf TEMP-training/
-git add -A && git commit -m "Remove training system" && git push
 ```

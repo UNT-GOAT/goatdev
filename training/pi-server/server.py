@@ -27,7 +27,7 @@ CAMERAS = {
     'front': '/dev/camera_front'
 }
 
-S3_TRAINING_BUCKET = os.environ.get('S3_TRAINING_BUCKET', 'temp-training-937249941844')
+S3_TRAINING_BUCKET = os.environ.get('S3_TRAINING_BUCKET', 'training-937249941844')
 
 # Thresholds
 MIN_DISK_MB = 1000          # Require 1GB free
@@ -636,18 +636,22 @@ def record():
     camera_checks = {}
     for name, path in CAMERAS.items():
         camera_checks[name] = check_camera(name, path)
-    
+
     failed_cameras = {name: check for name, check in camera_checks.items() if check.get('error')}
-    
+    working_cameras = {name: check for name, check in camera_checks.items() if not check.get('error')}
+
+    is_test = str(goat_id).startswith('test_')
+
     if failed_cameras:
-        errors = []
-        fixes = []
-        for name, check in failed_cameras.items():
-            errors.append(f"{name}: {check['error']}")
-            if check.get('fix'):
-                fixes.append(f"{name}: {check['fix']}")
-            log.error(f'camera:{name}', 'Pre-flight check failed',
-                     error=check['error'], fix=check.get('fix'))
+        log.warn('record', 'Some cameras not ready',
+                goat_id=goat_id,
+                missing=','.join(failed_cameras.keys()),
+                available=','.join(working_cameras.keys()))
+
+    # Block real recordings if cameras missing, allow tests to proceed
+    if failed_cameras and not is_test:
+        errors = [f"{name}: {check['error']}" for name, check in failed_cameras.items()]
+        fixes = [f"{name}: {check['fix']}" for name, check in failed_cameras.items() if check.get('fix')]
         
         return jsonify({
             'status': 'error',
@@ -656,7 +660,15 @@ def record():
             'cameras': camera_checks,
             'errors': errors,
             'fixes': fixes
-        }), 503  # Service Unavailable
+        }), 503
+
+    if not working_cameras:
+        log.error('record', 'No cameras available at all', goat_id=goat_id)
+        return jsonify({
+            'status': 'error',
+            'error_code': 'NO_CAMERAS',
+            'message': 'No cameras connected'
+        }), 503
     
     # Kill any stale ffmpeg processes
     kill_stale_ffmpeg()
