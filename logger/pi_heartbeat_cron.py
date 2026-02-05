@@ -50,7 +50,7 @@ def main():
     
     if issues:
         # Something is wrong - log error
-        log.error('heartbeat', 'Services unhealthy',
+        log.error('heartbeat', 'Goat Prod unhealthy',
                   issues='; '.join(issues),
                   fix='SSH to Pi and run: sudo systemctl restart goat-prod')
     else:
