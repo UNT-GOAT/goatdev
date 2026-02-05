@@ -34,8 +34,7 @@ def check_port(port: int) -> bool:
 
 def main():
     services = {
-        'goat-training': {'service': 'goat-training', 'port': 5001},
-        'goat-prod': {'service': 'goat-prod', 'port': 5000},
+        'goat-prod': {'service': 'goat-prod', 'port': 5000}
     }
     
     issues = []
