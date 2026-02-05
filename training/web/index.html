@@ -635,7 +635,7 @@
 
           if (isMock) {
             log("Test recording complete.", "success");
-            status.textContent = "Test complete (upload check passed)";
+            status.textContent = "Test complete";
             status.className = "status success";
           } else {
             log("Recording saved to S3.", "success");
@@ -651,6 +651,8 @@
           }
         } catch (err) {
           log("ERROR: " + err.message, "error");
+          status.textContent = isMock ? "Test failed" : "Failed";
+          status.className = "status error";
         } finally {
           isRecording = false;
           btn.disabled = false;
