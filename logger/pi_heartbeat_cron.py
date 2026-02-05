@@ -52,10 +52,10 @@ def main():
         # Something is wrong - log error
         log.error('heartbeat', 'Services unhealthy',
                   issues='; '.join(issues),
-                  fix='SSH to Pi and run: sudo systemctl restart goat-training goat-prod')
+                  fix='SSH to Pi and run: sudo systemctl restart goat-prod')
     else:
         # All good - log quietly (for CloudWatch alarm to track)
-        log.info('heartbeat', 'All services healthy')
+        log.info('heartbeat', 'Prod service healthy')
 
 if __name__ == '__main__':
     main()
