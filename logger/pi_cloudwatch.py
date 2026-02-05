@@ -1,5 +1,3 @@
-# logger/pi_cloudwatch.py
-
 import logging
 import boto3
 import time

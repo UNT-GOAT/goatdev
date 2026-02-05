@@ -389,7 +389,7 @@
               </div>
               <div class="form-group">
                 <label>Live Weight</label>
-                <input type="text" id="liveWeight" placeholder="e.g. 150 lbs" />
+                <input type="text" id="liveWeight" placeholder="e.g. 85 lbs" />
               </div>
               <div class="form-group">
                 <label>Grade</label>
@@ -563,7 +563,7 @@
         } else {
           btn.textContent = "RECORDING...";
           status.textContent = "Recording goat #" + goatId + "...";
-          log("Starting REAL recording for goat #" + goatId, "info");
+          log("Starting recording for goat #" + goatId, "info");
         }
         status.className = "status";
 
@@ -582,7 +582,7 @@
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 goat_id: recordId,
-                duration: 5,
+                duration: 10,
                 goat_data: formData,
                 is_test: isMock,
                 require_all_cameras: !isMock,
@@ -598,14 +598,14 @@
             const errorData = await response.json().catch(() => ({}));
             const errorMessages = {
               NO_CAMERAS:
-                "No cameras connected! Please plug in the cameras and try again.",
+                "No cameras connected. Please plug in the cameras and try again.",
               RECORDING_IN_PROGRESS:
                 "Recording already in progress on another connection. Please wait.",
               CAMERA_PERMISSION_DENIED:
                 "Camera permission denied. Check creds and connections.",
               LOW_DISK_SPACE: "Pi is low on disk space.",
               MISSING_CAMERAS:
-                "Not all cameras are connected. Plug in all cameras to record REAL data.",
+                "Not all cameras are connected. Plug in all cameras to record data.",
             };
             const friendlyMessage =
               errorMessages[errorData.error_code] ||
@@ -620,40 +620,30 @@
           // Show camera status clearly
           if (startData.cameras_available?.length > 0) {
             log(
-              "✓ Cameras ready: " + startData.cameras_available.join(", "),
+              "Cameras ready: " + startData.cameras_available.join(", "),
               "success",
-            );
-          }
-          if (startData.cameras_missing?.length > 0) {
-            log(
-              "⚠️ Cameras NOT connected: " +
-                startData.cameras_missing.join(", "),
-              "warn",
             );
           }
           if (startData.warning) {
             log(startData.warning, "warn");
           }
 
-          log("Recording for 5 seconds...", "info");
+          log("Recording for 10 seconds...", "info");
 
           // Poll for completion
           await pollStatus();
 
           if (isMock) {
-            log(
-              "Test recording complete (upload CHECK passed, nothing uploaded)",
-              "success",
-            );
-            status.textContent = "✓ Test complete (upload check passed)";
+            log("Test recording complete.", "success");
+            status.textContent = "Test complete";
             status.className = "status success";
           } else {
-            log("Recording saved to S3!", "success");
+            log("Recording saved to S3.", "success");
             log(
               "Goat #" + goatId + " complete. Next: #" + (goatId + 1),
               "success",
             );
-            status.textContent = "✓ Goat #" + goatId + " recorded!";
+            status.textContent = "Goat #" + goatId + " recorded.";
             status.className = "status success";
             goatId++;
             updateCounter();
@@ -661,6 +651,8 @@
           }
         } catch (err) {
           log("ERROR: " + err.message, "error");
+          status.textContent = isMock ? "Test failed" : "Failed";
+          status.className = "status error";
         } finally {
           isRecording = false;
           btn.disabled = false;
@@ -712,27 +704,18 @@
                     log(`✓ ${cam}: uploaded`, "success");
                   } else if (status === "failed") {
                     log(`✗ ${cam}: recording failed`, "error");
-                  } else if (status === "missing") {
-                    log(`⚠️ ${cam}: missing/not ready`, "warn");
                   }
                 }
               }
 
               if (data.last_result.s3_check) {
                 if (data.last_result.s3_check.ok) {
-                  log("✓ S3 upload check OK (no files uploaded)", "success");
+                  log("S3 upload check OK (no files uploaded)", "success");
                 } else {
                   log(
-                    "✗ S3 upload check FAILED: " +
+                    "S3 upload check FAILED: " +
                       (data.last_result.s3_check.error || "unknown"),
                     "error",
-                  );
-                }
-
-                if (data.last_result.s3_check.would_upload?.length > 0) {
-                  log("Would upload:", "info");
-                  data.last_result.s3_check.would_upload.forEach((k) =>
-                    log("  - " + k, "info"),
                   );
                 }
               }

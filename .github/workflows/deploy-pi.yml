@@ -7,6 +7,7 @@ on:
       - "pi/**" # Prod pi server
       - "training/pi-server**" # Temp training pi server
       - "logger/pi_cloudwatch**" # Pi CloudWatch logging for both servers
+      - "logger/pi_heartbeat_cron**" # Pi heartbeat cron job for both servers
       - ".github/workflows/deploy-pi.yml"
   workflow_dispatch:
 
