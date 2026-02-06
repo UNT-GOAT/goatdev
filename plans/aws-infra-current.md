@@ -10,7 +10,6 @@
 - Function: Captures images from 3 USB cameras (side, top, front views)
 - Connectivity: Uploads directly to S3 via AWS SDK
 - Authentication: IAM user `goat-pi-capture` with minimal permissions (S3 PutObject only)
-- Naming Convention: Images uploaded as `captures/{timestamp}/{timestamp}_{view}.jpg`
 
 ### 2. Storage Layer (Amazon S3)
 
@@ -124,11 +123,6 @@ _goat-ec2-sg (sg-xxxxxxxxxdae0)_
 | 80 | TCP | 0.0.0.0/0 | HTTP |
 | 443 | TCP | 0.0.0.0/0 | HTTPS |
 | 8000 | TCP | 0.0.0.0/0 | FastAPI |
-
-_goat-rds-sg (sg-xxxxxxxxxdaeo)_
-| Port | Protocol | Source | Purpose |
-|------|----------|--------|---------|
-| 5432 | TCP | goat-ec2-sg | PostgreSQL from EC2 only |
 
 ### 8. Monitoring (Amazon CloudWatch)
 
