@@ -1,17 +1,20 @@
+#!/usr/bin/env python3
 """
 Heartbeat script - runs via cron every 2 minutes
-Only logs if Pi is up but services are down
+Logs errors when unhealthy, logs OK once when recovered
 """
 
 import subprocess
 import sys
+import os
+
 sys.path.insert(0, '/home/pi/goat-capture')
 from logger.pi_cloudwatch import Logger
 
 log = Logger('pi/heartbeat')
+STATE_FILE = '/tmp/heartbeat_unhealthy'
 
 def check_service(name: str) -> bool:
-    """Check if a systemd service is active."""
     try:
         result = subprocess.run(
             ['systemctl', 'is-active', name],
@@ -22,7 +25,6 @@ def check_service(name: str) -> bool:
         return False
 
 def check_port(port: int) -> bool:
-    """Check if something is listening on a port."""
     try:
         result = subprocess.run(
             ['ss', '-tln', f'sport = :{port}'],
@@ -34,7 +36,7 @@ def check_port(port: int) -> bool:
 
 def main():
     services = {
-        'goat-prod': {'service': 'goat-prod', 'port': 5000}
+        'goat-prod': {'service': 'goat-prod', 'port': 5000},
     }
     
     issues = []
@@ -48,14 +50,18 @@ def main():
         elif not port_up:
             issues.append(f"{name}: service active but port {config['port']} not listening")
     
+    was_unhealthy = os.path.exists(STATE_FILE)
+    
     if issues:
-        # Something is wrong - log error
+        # Create state file to track we're unhealthy
+        open(STATE_FILE, 'w').close()
         log.error('heartbeat', 'Services unhealthy',
                   issues='; '.join(issues),
-                  fix='SSH to Pi and run: sudo systemctl restart goat-training goat-prod')
-    else:
-        # All good - log quietly (for CloudWatch alarm to track)
-        log.info('heartbeat', 'All services healthy')
+                  fix='SSH to Pi and run: sudo systemctl restart goat-prod')
+    elif was_unhealthy:
+        # Just recovered - log once and clear state
+        os.remove(STATE_FILE)
+        log.info('heartbeat', 'Services recovered')
 
 if __name__ == '__main__':
     main()
