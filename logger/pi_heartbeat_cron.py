@@ -1,6 +1,7 @@
+#!/usr/bin/env python3
 """
 Heartbeat script - runs via cron every 2 minutes
-Only logs if Pi is up but services are down
+Only logs when something is wrong
 """
 
 import subprocess
@@ -34,7 +35,7 @@ def check_port(port: int) -> bool:
 
 def main():
     services = {
-        'goat-prod': {'service': 'goat-prod', 'port': 5000}
+        'goat-prod': {'service': 'goat-prod', 'port': 5000},
     }
     
     issues = []
@@ -49,13 +50,11 @@ def main():
             issues.append(f"{name}: service active but port {config['port']} not listening")
     
     if issues:
-        # Something is wrong - log error
-        log.error('heartbeat', 'Goat Prod unhealthy',
+        log.error('heartbeat', 'Prod unhealthy',
                   issues='; '.join(issues),
                   fix='SSH to Pi and run: sudo systemctl restart goat-prod')
-    else:
-        # All good - log quietly (for CloudWatch alarm to track)
-        log.info('heartbeat', 'Prod service healthy')
+        
+    # No else - stay silent when everything is OK
 
 if __name__ == '__main__':
     main()
