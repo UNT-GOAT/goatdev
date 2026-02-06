@@ -17,18 +17,21 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy requirements first for layer caching
-COPY requirements.txt .
+COPY goat-api/requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY api/ ./api/
-COPY data/ ./data/
+COPY goat-api/api/ ./api/
 
-# Copy model directory (models and calibrations)
-# Note: This assumes model/ is copied during build or mounted at runtime
-# COPY model/ ./model/
+# Copy only the model files needed for inference
+COPY model/side/best.pt ./model/side/
+COPY model/side/side_calibration.json ./model/side/
+COPY model/top/best.pt ./model/top/
+COPY model/top/top_calibration.json ./model/top/
+COPY model/front/best.pt ./model/front/
+COPY model/front/front_calibration.json ./model/front/
 
 # Create data directory
 RUN mkdir -p /app/data
