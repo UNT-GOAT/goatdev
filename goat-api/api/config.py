@@ -7,7 +7,7 @@ import os
 
 # Base paths
 BASE_DIR = Path(__file__).parent.parent
-MODEL_DIR = BASE_DIR.parent / "model"  # ../model relative to goat-api/
+MODEL_DIR = BASE_DIR / "model"  # ../model relative to goat-api/
 DATA_DIR = BASE_DIR / "data"
 
 # Model paths
