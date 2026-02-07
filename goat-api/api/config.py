@@ -5,6 +5,26 @@ Configuration for Goat Grading API
 from pathlib import Path
 import os
 
+# =============================================================
+# GOAT ORIENTATION CONFIGURATION
+#
+# Configure which direction the goat faces in each view
+# This helps with cross-view measurement alignment
+#
+# Options: 'left', 'right'
+# - 'left' means head is on the left side of the image
+# - 'right' means head is on the right side of the image
+#
+# NOTE: If goat faces LEFT in side view, it typically faces RIGHT in top view
+# (because top camera is above looking down)
+#
+# This will be adjusted once we have cameras set up and can confirm orientations
+
+SIDE_VIEW_DIRECTION = 'left'   # Goat faces left in side view
+TOP_VIEW_DIRECTION = 'right'   # Goat faces right in top view (opposite of side)
+FRONT_VIEW_DIRECTION = None    # Not applicable for front view
+#=============================================================
+
 # Base paths
 BASE_DIR = Path(__file__).parent.parent
 MODEL_DIR = BASE_DIR / "model"  # ../model relative to goat-api/
