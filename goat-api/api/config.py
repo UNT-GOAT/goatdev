@@ -5,9 +5,29 @@ Configuration for Goat Grading API
 from pathlib import Path
 import os
 
+# =============================================================
+# GOAT ORIENTATION CONFIGURATION
+#
+# Configure which direction the goat faces in each view
+# This helps with cross-view measurement alignment
+#
+# Options: 'left', 'right'
+# - 'left' means head is on the left side of the image
+# - 'right' means head is on the right side of the image
+#
+# NOTE: If goat faces LEFT in side view, it typically faces RIGHT in top view
+# (because top camera is above looking down)
+#
+# This will be adjusted once we have cameras set up and can confirm orientations
+
+SIDE_VIEW_DIRECTION = 'left'   # Goat faces left in side view
+TOP_VIEW_DIRECTION = 'right'   # Goat faces right in top view (opposite of side)
+FRONT_VIEW_DIRECTION = None    # Not applicable for front view
+#=============================================================
+
 # Base paths
 BASE_DIR = Path(__file__).parent.parent
-MODEL_DIR = BASE_DIR.parent / "model"  # ../model relative to goat-api/
+MODEL_DIR = BASE_DIR / "model"  # ../model relative to goat-api/
 DATA_DIR = BASE_DIR / "data"
 
 # Model paths
@@ -23,14 +43,14 @@ FRONT_CALIBRATION_PATH = MODEL_DIR / "front" / "front_calibration.json"
 # Results storage
 RESULTS_FILE = DATA_DIR / "results.json"
 
-# S3 buckets (for future use)
+# S3 buckets
 S3_CAPTURES_BUCKET = os.environ.get("S3_CAPTURES_BUCKET", "goat-captures-937249941844")
 S3_PROCESSED_BUCKET = os.environ.get("S3_PROCESSED_BUCKET", "goat-processed-937249941844")
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
 
 # Validation thresholds
 MIN_IMAGE_DIMENSION = 100  # pixels
-MAX_IMAGE_SIZE_MB = 20
+MAX_IMAGE_SIZE_MB = 20          # TODO: adjust once working with new cameras
 MAX_FILE_SIZE_BYTES = MAX_IMAGE_SIZE_MB * 1024 * 1024
 
 MIN_CONFIDENCE_THRESHOLD = 0.1  # YOLO detection threshold
@@ -41,8 +61,8 @@ MIN_MEASUREMENT_CM = 5
 MAX_MEASUREMENT_CM = 200
 
 # Weight bounds (lbs)
-MIN_WEIGHT_LBS = 10
-MAX_WEIGHT_LBS = 500
+MIN_WEIGHT_LBS = 20
+MAX_WEIGHT_LBS = 300
 
 # Timeouts
 MODEL_INFERENCE_TIMEOUT_SEC = 30

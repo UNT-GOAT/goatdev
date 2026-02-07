@@ -33,6 +33,10 @@ class LegPositions:
     shoulder_pct: float = None  # Front legs midpoint as % of body length
     rump_pct: float = None      # Back legs midpoint as % of body length
     detected: bool = False
+    # Debug info
+    leg_regions: list = None    # Raw detected leg regions
+    body_baseline: int = None   # Y-coordinate of body baseline
+    bbox: tuple = None          # Bounding box (x, y, w, h)
     
 
 @dataclass
@@ -539,6 +543,8 @@ class GoatGrader:
         Finds the 4 legs as extensions below the body, calculates midlines,
         and returns shoulder/rump positions as percentages of body length.
         """
+        from .config import SIDE_VIEW_DIRECTION
+        
         leg_positions = LegPositions()
         
         try:
@@ -550,88 +556,121 @@ class GoatGrader:
             contour = max(contours, key=cv2.contourArea)
             x, y, w, h = cv2.boundingRect(contour)
             
-            # Find the body baseline (where legs attach)
-            # Scan columns to find where mask pixels exist
-            # Body baseline is approximately where the bulk of the body ends
-            
             # Get the bottom edge profile of the mask
             bottom_profile = []
             for col in range(x, x + w):
                 column_pixels = np.where(mask[:, col] > 0)[0]
                 if len(column_pixels) > 0:
                     bottom_profile.append((col, np.max(column_pixels)))
-                else:
-                    bottom_profile.append((col, y))  # No pixels, use top of bbox
             
             if len(bottom_profile) < 10:
                 log.warn('grader:legs', 'Not enough profile points', serial_id=serial_id)
                 return leg_positions
             
-            # Find the body baseline - the mode of bottom values (most common depth)
-            # This helps distinguish body from legs
+            # Find body baseline using percentile (legs extend below this)
             bottom_values = [p[1] for p in bottom_profile]
-            
-            # Use histogram to find the main body bottom (legs go lower)
-            hist, bin_edges = np.histogram(bottom_values, bins=20)
-            body_baseline_idx = np.argmax(hist)
-            body_baseline = int((bin_edges[body_baseline_idx] + bin_edges[body_baseline_idx + 1]) / 2)
+            # Use 25th percentile as body baseline (most of body is above this)
+            body_baseline = int(np.percentile(bottom_values, 25))
             
             # Find regions that extend significantly below the baseline (legs)
-            leg_threshold = body_baseline + (h * 0.1)  # Must extend 10% of height below baseline
+            # Require at least 5% of height below baseline to count as a leg
+            min_leg_extension = h * 0.05
+            leg_threshold = body_baseline + min_leg_extension
             
+            # Scan for leg regions (contiguous sections below threshold)
             leg_regions = []
             in_leg = False
             leg_start = None
+            leg_bottom_points = []
             
             for col, bottom in bottom_profile:
                 if bottom > leg_threshold:
                     if not in_leg:
                         in_leg = True
                         leg_start = col
+                        leg_bottom_points = [(col, bottom)]
+                    else:
+                        leg_bottom_points.append((col, bottom))
                 else:
                     if in_leg:
                         in_leg = False
                         leg_end = col
+                        # Calculate leg midline as center of the leg region
                         leg_midline = (leg_start + leg_end) / 2
-                        leg_regions.append(leg_midline)
+                        leg_width = leg_end - leg_start
+                        # Only count as leg if it has reasonable width (not noise)
+                        if leg_width > 5:  # minimum 5 pixels wide
+                            leg_regions.append({
+                                'midline': leg_midline,
+                                'start': leg_start,
+                                'end': leg_end,
+                                'width': leg_width,
+                                'max_depth': max(p[1] for p in leg_bottom_points)
+                            })
             
             # Handle case where last leg extends to edge
-            if in_leg:
+            if in_leg and len(leg_bottom_points) > 0:
                 leg_end = bottom_profile[-1][0]
                 leg_midline = (leg_start + leg_end) / 2
-                leg_regions.append(leg_midline)
+                leg_width = leg_end - leg_start
+                if leg_width > 5:
+                    leg_regions.append({
+                        'midline': leg_midline,
+                        'start': leg_start,
+                        'end': leg_end,
+                        'width': leg_width,
+                        'max_depth': max(p[1] for p in leg_bottom_points)
+                    })
             
             log.info('grader:legs', 'Detected leg regions',
-                    serial_id=serial_id, count=len(leg_regions))
+                    serial_id=serial_id, count=len(leg_regions),
+                    regions=[f"x={r['midline']:.0f},w={r['width']:.0f}" for r in leg_regions])
             
             if len(leg_regions) < 2:
                 log.warn('grader:legs', 'Not enough legs detected',
                         serial_id=serial_id, count=len(leg_regions))
                 return leg_positions
             
-            # Sort by x position
-            leg_regions.sort()
+            # Sort by x position (left to right in image)
+            leg_regions.sort(key=lambda r: r['midline'])
             
+            # Determine front and back legs based on configured direction
             if len(leg_regions) == 2:
-                # Only 2 legs visible - assume front and back
-                front_leg_x = leg_regions[0]
-                back_leg_x = leg_regions[1]
+                # Only 2 legs visible
+                if SIDE_VIEW_DIRECTION == 'left':
+                    # Head on left, so left legs = front, right legs = back
+                    front_leg_x = leg_regions[0]['midline']
+                    back_leg_x = leg_regions[1]['midline']
+                else:
+                    # Head on right, so right legs = front, left legs = back
+                    front_leg_x = leg_regions[1]['midline']
+                    back_leg_x = leg_regions[0]['midline']
             elif len(leg_regions) == 3:
-                # 3 legs - assume 2 front or 2 back
-                # Take first and last as shoulder and rump
-                front_leg_x = leg_regions[0]
-                back_leg_x = leg_regions[-1]
-            elif len(leg_regions) >= 4:
-                # 4+ legs - average first two (front) and last two (back)
-                front_leg_x = (leg_regions[0] + leg_regions[1]) / 2
-                back_leg_x = (leg_regions[-2] + leg_regions[-1]) / 2
+                # 3 legs visible - use outermost as shoulder/rump
+                if SIDE_VIEW_DIRECTION == 'left':
+                    front_leg_x = leg_regions[0]['midline']
+                    back_leg_x = leg_regions[-1]['midline']
+                else:
+                    front_leg_x = leg_regions[-1]['midline']
+                    back_leg_x = leg_regions[0]['midline']
             else:
-                return leg_positions
+                # 4+ legs - average first two and last two
+                if SIDE_VIEW_DIRECTION == 'left':
+                    front_leg_x = (leg_regions[0]['midline'] + leg_regions[1]['midline']) / 2
+                    back_leg_x = (leg_regions[-2]['midline'] + leg_regions[-1]['midline']) / 2
+                else:
+                    front_leg_x = (leg_regions[-2]['midline'] + leg_regions[-1]['midline']) / 2
+                    back_leg_x = (leg_regions[0]['midline'] + leg_regions[1]['midline']) / 2
             
             # Convert to percentages of body length
             body_length = w
             shoulder_pct = (front_leg_x - x) / body_length
             rump_pct = (back_leg_x - x) / body_length
+            
+            # Store raw leg data for debug drawing
+            leg_positions.leg_regions = leg_regions
+            leg_positions.body_baseline = body_baseline
+            leg_positions.bbox = (x, y, w, h)
             
             # Sanity check
             if shoulder_pct < 0 or shoulder_pct > 1 or rump_pct < 0 or rump_pct > 1:
@@ -639,10 +678,9 @@ class GoatGrader:
                         serial_id=serial_id, shoulder=shoulder_pct, rump=rump_pct)
                 return leg_positions
             
-            if shoulder_pct >= rump_pct:
-                log.warn('grader:legs', 'Shoulder behind rump - goat may be facing opposite direction',
-                        serial_id=serial_id)
-                # Swap if goat is facing the other direction
+            # Ensure shoulder is before rump (in body direction)
+            if shoulder_pct > rump_pct:
+                log.warn('grader:legs', 'Swapping shoulder/rump order', serial_id=serial_id)
                 shoulder_pct, rump_pct = rump_pct, shoulder_pct
             
             leg_positions.shoulder_pct = shoulder_pct
@@ -652,13 +690,15 @@ class GoatGrader:
             log.info('grader:legs', 'Leg positions calculated',
                     serial_id=serial_id,
                     shoulder_pct=round(shoulder_pct, 3),
-                    rump_pct=round(rump_pct, 3))
+                    rump_pct=round(rump_pct, 3),
+                    front_leg_x=round(front_leg_x, 1),
+                    back_leg_x=round(back_leg_x, 1))
             
             return leg_positions
             
         except Exception as e:
             log.exception('grader:legs', 'Leg detection failed',
-                         serial_id=serial_id, error=str(e))
+                        serial_id=serial_id, error=str(e))
             return leg_positions
     
     def _extract_side_measurements(self, mask: np.ndarray) -> Dict:
@@ -1061,8 +1101,30 @@ class GoatGrader:
                     
                     ground_level = y + h
                     
-                    # Draw leg position lines if detected
+                    # Draw leg detection info if available
                     if leg_positions and leg_positions.detected:
+                        # Draw body baseline
+                        if leg_positions.body_baseline:
+                            cv2.line(side_debug, (x, leg_positions.body_baseline), 
+                                    (x + w, leg_positions.body_baseline), (128, 128, 128), 1)
+                            draw_text_with_bg(side_debug, 'Body baseline', 
+                                            (x + w + 5, leg_positions.body_baseline), (128, 128, 128), 0.4)
+                        
+                        # Draw individual leg midlines (cyan)
+                        if leg_positions.leg_regions:
+                            for i, leg in enumerate(leg_positions.leg_regions):
+                                leg_x = int(leg['midline'])
+                                leg_bottom = int(leg['max_depth'])
+                                # Draw leg midline
+                                cv2.line(side_debug, (leg_x, ground_level - 50), (leg_x, leg_bottom), 
+                                        (255, 255, 0), 2)  # Cyan
+                                # Draw leg region bounds
+                                cv2.line(side_debug, (int(leg['start']), leg_bottom - 10), 
+                                        (int(leg['end']), leg_bottom - 10), (255, 255, 0), 1)
+                                draw_text_with_bg(side_debug, f'L{i+1}', 
+                                                (leg_x - 10, leg_bottom + 15), (255, 255, 0), 0.4)
+                        
+                        # Draw shoulder/rump measurement lines
                         shoulder_x = int(x + leg_positions.shoulder_pct * w)
                         rump_x = int(x + leg_positions.rump_pct * w)
                         waist_x = int((shoulder_x + rump_x) / 2)
@@ -1070,7 +1132,7 @@ class GoatGrader:
                         # Shoulder line (blue)
                         cv2.line(side_debug, (shoulder_x, y), (shoulder_x, ground_level), SHOULDER_COLOR, 3)
                         draw_text_with_bg(side_debug, f'Shoulder {leg_positions.shoulder_pct:.0%}', 
-                                         (shoulder_x + 5, y + 25), SHOULDER_COLOR)
+                                        (shoulder_x + 5, y + 25), SHOULDER_COLOR)
                         
                         # Waist line (yellow)
                         cv2.line(side_debug, (waist_x, y), (waist_x, ground_level), WAIST_COLOR, 3)
@@ -1079,35 +1141,7 @@ class GoatGrader:
                         # Rump line (red)
                         cv2.line(side_debug, (rump_x, y), (rump_x, ground_level), RUMP_COLOR, 3)
                         draw_text_with_bg(side_debug, f'Rump {leg_positions.rump_pct:.0%}', 
-                                         (rump_x + 5, y + 75), RUMP_COLOR)
-                    
-                    # Draw height measurements
-                    third = w // 3
-                    
-                    # Head height
-                    if measurements.get('head_height_cm'):
-                        head_x = x + third // 2
-                        cv2.line(side_debug, (head_x, y), (head_x, ground_level), HEIGHT_COLOR, 2)
-                        draw_text_with_bg(side_debug, f"Head: {measurements['head_height_cm']}cm",
-                                         (10, 30), HEIGHT_COLOR)
-                    
-                    # Withers height
-                    if measurements.get('withers_height_cm'):
-                        withers_x = x + third + third // 2
-                        cv2.line(side_debug, (withers_x, y), (withers_x, ground_level), HEIGHT_COLOR, 2)
-                        draw_text_with_bg(side_debug, f"Withers: {measurements['withers_height_cm']}cm",
-                                         (10, 60), HEIGHT_COLOR)
-                    
-                    # Rump height
-                    if measurements.get('rump_height_cm'):
-                        rump_h_x = x + 2 * third + third // 2
-                        cv2.line(side_debug, (rump_h_x, y), (rump_h_x, ground_level), HEIGHT_COLOR, 2)
-                        draw_text_with_bg(side_debug, f"Rump H: {measurements['rump_height_cm']}cm",
-                                         (10, 90), HEIGHT_COLOR)
-                    
-                    # Ground line
-                    cv2.line(side_debug, (x - 20, ground_level), (x + w + 20, ground_level), (255, 255, 255), 2)
-                    draw_text_with_bg(side_debug, 'Ground', (x + w + 25, ground_level + 5), (255, 255, 255))
+                                        (rump_x + 5, y + 75), RUMP_COLOR)
             
             # Add title
             draw_text_with_bg(side_debug, f'SIDE VIEW - {serial_id}', (10, side_debug.shape[0] - 20), (255, 255, 255), 0.7)
