@@ -5,17 +5,17 @@ python-multipart>=0.0.6
 
 # ML/CV - CPU only PyTorch (MUST be before ultralytics)
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.2.0+cpu
-torchvision==0.17.0+cpu
+torch==2.5.0+cpu
+torchvision==0.20.0+cpu
 
-# Now so ultralytics won't override torch
+# Now ultralytics won't override torch
 ultralytics>=8.1.0
 opencv-python-headless>=4.9.0
 
 # Utilities
 pydantic>=2.5.0
 psutil>=5.9.0
-numpy>=1.24.0
+numpy>=1.24.0,<2.0.0
 
 # AWS
 boto3>=1.34.0
