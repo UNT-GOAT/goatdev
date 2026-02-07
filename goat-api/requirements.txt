@@ -1,18 +1,21 @@
-# Goat Grading API Dependencies
-
 # Web framework
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
 python-multipart>=0.0.6
 
-# ML/CV
+# ML/CV - CPU only PyTorch (MUST be before ultralytics)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.0+cpu
+torchvision==0.17.0+cpu
+
+# Now so ultralytics won't override torch
 ultralytics>=8.1.0
-opencv-python>=4.9.0
-numpy>=1.24.0
+opencv-python-headless>=4.9.0
 
 # Utilities
 pydantic>=2.5.0
 psutil>=5.9.0
+numpy>=1.24.0
 
-# AWS (for future S3 integration)
+# AWS
 boto3>=1.34.0
