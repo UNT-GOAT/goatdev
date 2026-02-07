@@ -2,6 +2,10 @@
 Goat Grader - Wraps YOLO models for measurement extraction
 
 Handles model loading, inference, and measurement extraction for all three views.
+
+Cross-view measurements:
+- Side view detects leg positions (shoulder_x, rump_x)
+- Top view uses those positions to measure widths (shoulder, waist, rump)
 """
 
 import cv2
@@ -11,7 +15,7 @@ import time
 import threading
 from pathlib import Path
 from typing import Dict, Optional, Tuple, List
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .logger import log
 from .config import (
@@ -24,6 +28,14 @@ from .config import (
 
 
 @dataclass
+class LegPositions:
+    """Leg positions detected from side view as percentages of body length"""
+    shoulder_pct: float = None  # Front legs midpoint as % of body length
+    rump_pct: float = None      # Back legs midpoint as % of body length
+    detected: bool = False
+    
+
+@dataclass
 class ViewResult:
     """Result from processing a single view"""
     success: bool
@@ -32,6 +44,8 @@ class ViewResult:
     error: Optional[str] = None
     fix: Optional[str] = None
     warnings: List[str] = None
+    leg_positions: Optional[LegPositions] = None  # Only for side view
+    mask: Optional[np.ndarray] = None  # Store mask for cross-view use
     
     def __post_init__(self):
         if self.warnings is None:
@@ -43,6 +57,10 @@ class GoatGrader:
     Manages all three YOLO models and performs goat measurement extraction.
     
     Thread-safe: Uses locks for model inference.
+    
+    Cross-view processing:
+    - Side view is processed first to detect leg positions
+    - Leg positions are passed to top view for accurate width measurements
     """
     
     def __init__(self):
@@ -251,19 +269,26 @@ class GoatGrader:
         side_image: np.ndarray,
         top_image: np.ndarray,
         front_image: np.ndarray,
-        serial_id: str
+        serial_id: str,
+        generate_debug_images: bool = True
     ) -> Dict:
         """
         Process all three images and return combined measurements.
+        
+        Processing order:
+        1. Side view first - extracts heights AND leg positions
+        2. Top view second - uses leg positions for width measurements
+        3. Front view last - independent chest width
         
         Args:
             side_image: BGR image from side camera
             top_image: BGR image from top camera
             front_image: BGR image from front camera
             serial_id: Goat identifier for logging
+            generate_debug_images: If True, generate annotated debug images
             
         Returns:
-            Dictionary with measurements, confidence scores, errors, warnings
+            Dictionary with measurements, confidence scores, errors, warnings, debug_images
         """
         if not self._initialized:
             log.error('grader:process', 'Grader not initialized', serial_id=serial_id)
@@ -282,17 +307,32 @@ class GoatGrader:
             'view_errors': [],
             'warnings': [],
             'all_views_successful': True,
-            'success': True
+            'success': True,
+            'debug_images': None
         }
         
-        # Process each view
+        leg_positions = None
+        side_result = None
+        top_result = None
+        front_result = None
+        
         with self._inference_lock:
-            # Side view
+            # 1. Side view FIRST - need leg positions for top view
             side_result = self._process_side(side_image, serial_id)
             if side_result.success:
                 results['measurements'].update(side_result.measurements)
                 results['confidence_scores']['side'] = side_result.confidence
                 results['warnings'].extend(side_result.warnings)
+                leg_positions = side_result.leg_positions
+                
+                if leg_positions and leg_positions.detected:
+                    log.info('grader:process', 'Leg positions detected',
+                            serial_id=serial_id,
+                            shoulder_pct=round(leg_positions.shoulder_pct, 2),
+                            rump_pct=round(leg_positions.rump_pct, 2))
+                else:
+                    results['warnings'].append('Could not detect leg positions from side view')
+                    log.warn('grader:process', 'Leg positions not detected', serial_id=serial_id)
             else:
                 results['all_views_successful'] = False
                 results['view_errors'].append({
@@ -301,8 +341,8 @@ class GoatGrader:
                     'fix': side_result.fix
                 })
             
-            # Top view
-            top_result = self._process_top(top_image, serial_id)
+            # 2. Top view - uses leg positions for measurements
+            top_result = self._process_top(top_image, serial_id, leg_positions)
             if top_result.success:
                 results['measurements'].update(top_result.measurements)
                 results['confidence_scores']['top'] = top_result.confidence
@@ -315,7 +355,7 @@ class GoatGrader:
                     'fix': top_result.fix
                 })
             
-            # Front view
+            # 3. Front view - independent
             front_result = self._process_front(front_image, serial_id)
             if front_result.success:
                 results['measurements'].update(front_result.measurements)
@@ -329,20 +369,39 @@ class GoatGrader:
                     'fix': front_result.fix
                 })
         
-        # Calculate average body width if we have both
-        top_width = results['measurements'].get('top_body_width_cm')
+        # Calculate average body width if we have measurements
+        # Prefer shoulder width from top view as primary body width
+        shoulder_width = results['measurements'].get('shoulder_width_cm')
         front_width = results['measurements'].get('front_body_width_cm')
         
-        if top_width and front_width:
+        if shoulder_width and front_width:
             results['measurements']['avg_body_width_cm'] = round(
-                (top_width + front_width) / 2, 2
+                (shoulder_width + front_width) / 2, 2
             )
-        elif top_width:
-            results['measurements']['avg_body_width_cm'] = top_width
+        elif shoulder_width:
+            results['measurements']['avg_body_width_cm'] = shoulder_width
             results['warnings'].append('avg_body_width based on top view only')
         elif front_width:
             results['measurements']['avg_body_width_cm'] = front_width
             results['warnings'].append('avg_body_width based on front view only')
+        
+        # Generate debug images with measurement overlays
+        if generate_debug_images:
+            try:
+                debug_images = self.draw_debug_overlay(
+                    side_image, top_image, front_image,
+                    side_result.mask if side_result else None,
+                    top_result.mask if top_result else None,
+                    front_result.mask if front_result else None,
+                    leg_positions,
+                    results['measurements'],
+                    serial_id
+                )
+                results['debug_images'] = debug_images
+            except Exception as e:
+                log.exception('grader:debug', 'Failed to generate debug images',
+                             serial_id=serial_id, error=str(e))
+                results['debug_images'] = None
         
         # Clean up empty lists
         if not results['view_errors']:
@@ -360,7 +419,13 @@ class GoatGrader:
         return results
     
     def _process_side(self, image: np.ndarray, serial_id: str) -> ViewResult:
-        """Process side view image"""
+        """
+        Process side view image.
+        
+        Extracts:
+        - Height measurements (head, withers, rump)
+        - Leg positions for cross-view reference
+        """
         log.info('grader:model:side', 'Processing side view', serial_id=serial_id)
         
         try:
@@ -423,8 +488,11 @@ class GoatGrader:
                     fix='Move goat closer to camera or check camera alignment'
                 )
             
-            # Extract measurements
+            # Extract height measurements
             measurements = self._extract_side_measurements(mask_binary)
+            
+            # Extract leg positions for cross-view reference
+            leg_positions = self._detect_leg_positions(mask_binary, serial_id)
             
             if not measurements:
                 return ViewResult(
@@ -449,7 +517,9 @@ class GoatGrader:
                 success=True,
                 measurements=measurements,
                 confidence=confidence,
-                warnings=warnings
+                warnings=warnings,
+                leg_positions=leg_positions,
+                mask=mask_binary
             )
             
         except Exception as e:
@@ -461,6 +531,135 @@ class GoatGrader:
                 error=f'Side processing error: {str(e)}',
                 fix='Check logs for details, may be a model or memory issue'
             )
+    
+    def _detect_leg_positions(self, mask: np.ndarray, serial_id: str) -> LegPositions:
+        """
+        Detect leg positions from side view mask.
+        
+        Finds the 4 legs as extensions below the body, calculates midlines,
+        and returns shoulder/rump positions as percentages of body length.
+        """
+        leg_positions = LegPositions()
+        
+        try:
+            # Find main body contour
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                return leg_positions
+            
+            contour = max(contours, key=cv2.contourArea)
+            x, y, w, h = cv2.boundingRect(contour)
+            
+            # Find the body baseline (where legs attach)
+            # Scan columns to find where mask pixels exist
+            # Body baseline is approximately where the bulk of the body ends
+            
+            # Get the bottom edge profile of the mask
+            bottom_profile = []
+            for col in range(x, x + w):
+                column_pixels = np.where(mask[:, col] > 0)[0]
+                if len(column_pixels) > 0:
+                    bottom_profile.append((col, np.max(column_pixels)))
+                else:
+                    bottom_profile.append((col, y))  # No pixels, use top of bbox
+            
+            if len(bottom_profile) < 10:
+                log.warn('grader:legs', 'Not enough profile points', serial_id=serial_id)
+                return leg_positions
+            
+            # Find the body baseline - the mode of bottom values (most common depth)
+            # This helps distinguish body from legs
+            bottom_values = [p[1] for p in bottom_profile]
+            
+            # Use histogram to find the main body bottom (legs go lower)
+            hist, bin_edges = np.histogram(bottom_values, bins=20)
+            body_baseline_idx = np.argmax(hist)
+            body_baseline = int((bin_edges[body_baseline_idx] + bin_edges[body_baseline_idx + 1]) / 2)
+            
+            # Find regions that extend significantly below the baseline (legs)
+            leg_threshold = body_baseline + (h * 0.1)  # Must extend 10% of height below baseline
+            
+            leg_regions = []
+            in_leg = False
+            leg_start = None
+            
+            for col, bottom in bottom_profile:
+                if bottom > leg_threshold:
+                    if not in_leg:
+                        in_leg = True
+                        leg_start = col
+                else:
+                    if in_leg:
+                        in_leg = False
+                        leg_end = col
+                        leg_midline = (leg_start + leg_end) / 2
+                        leg_regions.append(leg_midline)
+            
+            # Handle case where last leg extends to edge
+            if in_leg:
+                leg_end = bottom_profile[-1][0]
+                leg_midline = (leg_start + leg_end) / 2
+                leg_regions.append(leg_midline)
+            
+            log.info('grader:legs', 'Detected leg regions',
+                    serial_id=serial_id, count=len(leg_regions))
+            
+            if len(leg_regions) < 2:
+                log.warn('grader:legs', 'Not enough legs detected',
+                        serial_id=serial_id, count=len(leg_regions))
+                return leg_positions
+            
+            # Sort by x position
+            leg_regions.sort()
+            
+            if len(leg_regions) == 2:
+                # Only 2 legs visible - assume front and back
+                front_leg_x = leg_regions[0]
+                back_leg_x = leg_regions[1]
+            elif len(leg_regions) == 3:
+                # 3 legs - assume 2 front or 2 back
+                # Take first and last as shoulder and rump
+                front_leg_x = leg_regions[0]
+                back_leg_x = leg_regions[-1]
+            elif len(leg_regions) >= 4:
+                # 4+ legs - average first two (front) and last two (back)
+                front_leg_x = (leg_regions[0] + leg_regions[1]) / 2
+                back_leg_x = (leg_regions[-2] + leg_regions[-1]) / 2
+            else:
+                return leg_positions
+            
+            # Convert to percentages of body length
+            body_length = w
+            shoulder_pct = (front_leg_x - x) / body_length
+            rump_pct = (back_leg_x - x) / body_length
+            
+            # Sanity check
+            if shoulder_pct < 0 or shoulder_pct > 1 or rump_pct < 0 or rump_pct > 1:
+                log.warn('grader:legs', 'Invalid leg percentages',
+                        serial_id=serial_id, shoulder=shoulder_pct, rump=rump_pct)
+                return leg_positions
+            
+            if shoulder_pct >= rump_pct:
+                log.warn('grader:legs', 'Shoulder behind rump - goat may be facing opposite direction',
+                        serial_id=serial_id)
+                # Swap if goat is facing the other direction
+                shoulder_pct, rump_pct = rump_pct, shoulder_pct
+            
+            leg_positions.shoulder_pct = shoulder_pct
+            leg_positions.rump_pct = rump_pct
+            leg_positions.detected = True
+            
+            log.info('grader:legs', 'Leg positions calculated',
+                    serial_id=serial_id,
+                    shoulder_pct=round(shoulder_pct, 3),
+                    rump_pct=round(rump_pct, 3))
+            
+            return leg_positions
+            
+        except Exception as e:
+            log.exception('grader:legs', 'Leg detection failed',
+                         serial_id=serial_id, error=str(e))
+            return leg_positions
     
     def _extract_side_measurements(self, mask: np.ndarray) -> Dict:
         """Extract height measurements from side view mask"""
@@ -516,8 +715,16 @@ class GoatGrader:
         
         return measurements
     
-    def _process_top(self, image: np.ndarray, serial_id: str) -> ViewResult:
-        """Process top view image"""
+    def _process_top(self, image: np.ndarray, serial_id: str, 
+                     leg_positions: Optional[LegPositions] = None) -> ViewResult:
+        """
+        Process top view image.
+        
+        Uses leg positions from side view to measure widths at:
+        - Shoulder (at front legs)
+        - Waist (midpoint between front and back legs)
+        - Rump (at back legs)
+        """
         log.info('grader:model:top', 'Processing top view', serial_id=serial_id)
         
         try:
@@ -545,15 +752,13 @@ class GoatGrader:
                     fix='Ensure goat is fully visible in top camera view'
                 )
             
-            # Get highest confidence detection (should be body)
             confidence = float(detection.boxes[0].conf)
             warnings = []
             
             if confidence < WARN_CONFIDENCE_THRESHOLD:
                 warnings.append(f'Low confidence on top view: {confidence:.2f}')
             
-            # Get body mask (class 0 = body, class 1 = head in two-class model)
-            # Use the mask with highest confidence
+            # Get body mask
             mask = detection.masks[0].data[0].cpu().numpy()
             mask_resized = cv2.resize(
                 mask,
@@ -562,8 +767,8 @@ class GoatGrader:
             )
             mask_binary = (mask_resized > 0.5).astype(np.uint8) * 255
             
-            # Extract width measurement
-            measurements = self._extract_top_measurements(mask_binary)
+            # Extract width measurements using leg positions
+            measurements = self._extract_top_measurements(mask_binary, leg_positions, serial_id)
             
             if not measurements:
                 return ViewResult(
@@ -574,6 +779,9 @@ class GoatGrader:
                     fix='Check camera angle and goat positioning'
                 )
             
+            if leg_positions is None or not leg_positions.detected:
+                warnings.append('Width measurements using fallback (no leg positions from side view)')
+            
             log.info('grader:model:top', 'Top view complete',
                     serial_id=serial_id, confidence=round(confidence, 3))
             
@@ -581,7 +789,8 @@ class GoatGrader:
                 success=True,
                 measurements=measurements,
                 confidence=confidence,
-                warnings=warnings
+                warnings=warnings,
+                mask=mask_binary
             )
             
         except Exception as e:
@@ -594,8 +803,15 @@ class GoatGrader:
                 fix='Check logs for details'
             )
     
-    def _extract_top_measurements(self, mask: np.ndarray) -> Dict:
-        """Extract width measurement from top view mask"""
+    def _extract_top_measurements(self, mask: np.ndarray, 
+                                   leg_positions: Optional[LegPositions],
+                                   serial_id: str) -> Dict:
+        """
+        Extract width measurements from top view mask.
+        
+        If leg_positions available: measure at shoulder, waist, rump positions
+        Otherwise: fall back to bounding box width
+        """
         measurements = {}
         
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -606,15 +822,94 @@ class GoatGrader:
         contour = max(contours, key=cv2.contourArea)
         x, y, w, h = cv2.boundingRect(contour)
         
-        # Body width is the width of the bounding box
-        # (In the full implementation, this would exclude the head)
-        body_width = w / self.top_pixels_per_cm
-        measurements['top_body_width_cm'] = round(body_width, 2)
+        # Create a width profile - measure width at each row
+        def get_width_at_x(target_x: int) -> float:
+            """Get the width of the mask at a specific x position (vertical slice)"""
+            if target_x < 0 or target_x >= mask.shape[1]:
+                return 0
+            
+            # Get all y coordinates where mask is present at this x
+            column = mask[:, target_x]
+            y_coords = np.where(column > 0)[0]
+            
+            if len(y_coords) < 2:
+                return 0
+            
+            width_pixels = np.max(y_coords) - np.min(y_coords)
+            return width_pixels
+        
+        if leg_positions and leg_positions.detected:
+            # Use leg positions for precise measurements
+            body_length = w
+            
+            # Calculate x positions from percentages
+            shoulder_x = int(x + leg_positions.shoulder_pct * body_length)
+            rump_x = int(x + leg_positions.rump_pct * body_length)
+            waist_x = int((shoulder_x + rump_x) / 2)
+            
+            # Get widths at each position (average over small window for stability)
+            window = 5  # pixels on each side
+            
+            # Shoulder width
+            shoulder_widths = [get_width_at_x(shoulder_x + i) for i in range(-window, window+1)]
+            shoulder_widths = [sw for sw in shoulder_widths if sw > 0]
+            if shoulder_widths:
+                shoulder_width = np.mean(shoulder_widths) / self.top_pixels_per_cm
+                measurements['shoulder_width_cm'] = round(shoulder_width, 2)
+            
+            # Waist width
+            waist_widths = [get_width_at_x(waist_x + i) for i in range(-window, window+1)]
+            waist_widths = [ww for ww in waist_widths if ww > 0]
+            if waist_widths:
+                waist_width = np.mean(waist_widths) / self.top_pixels_per_cm
+                measurements['waist_width_cm'] = round(waist_width, 2)
+            
+            # Rump width  
+            rump_widths = [get_width_at_x(rump_x + i) for i in range(-window, window+1)]
+            rump_widths = [rw for rw in rump_widths if rw > 0]
+            if rump_widths:
+                rump_width = np.mean(rump_widths) / self.top_pixels_per_cm
+                measurements['rump_width_cm'] = round(rump_width, 2)
+            
+            log.info('grader:top:widths', 'Width measurements extracted',
+                    serial_id=serial_id,
+                    shoulder=measurements.get('shoulder_width_cm'),
+                    waist=measurements.get('waist_width_cm'),
+                    rump=measurements.get('rump_width_cm'))
+        else:
+            # Fallback: use bounding box width and estimate positions
+            log.warn('grader:top:widths', 'Using fallback width measurement', serial_id=serial_id)
+            
+            # Estimate positions (typical goat proportions)
+            # Shoulder ~25% from front, Rump ~80% from front
+            shoulder_x = int(x + 0.25 * w)
+            rump_x = int(x + 0.80 * w)
+            waist_x = int((shoulder_x + rump_x) / 2)
+            
+            window = 5
+            
+            shoulder_widths = [get_width_at_x(shoulder_x + i) for i in range(-window, window+1)]
+            shoulder_widths = [sw for sw in shoulder_widths if sw > 0]
+            if shoulder_widths:
+                measurements['shoulder_width_cm'] = round(np.mean(shoulder_widths) / self.top_pixels_per_cm, 2)
+            
+            waist_widths = [get_width_at_x(waist_x + i) for i in range(-window, window+1)]
+            waist_widths = [ww for ww in waist_widths if ww > 0]
+            if waist_widths:
+                measurements['waist_width_cm'] = round(np.mean(waist_widths) / self.top_pixels_per_cm, 2)
+            
+            rump_widths = [get_width_at_x(rump_x + i) for i in range(-window, window+1)]
+            rump_widths = [rw for rw in rump_widths if rw > 0]
+            if rump_widths:
+                measurements['rump_width_cm'] = round(np.mean(rump_widths) / self.top_pixels_per_cm, 2)
+            
+            # Also include max width as fallback
+            measurements['top_body_width_cm'] = round(h / self.top_pixels_per_cm, 2)
         
         return measurements
     
     def _process_front(self, image: np.ndarray, serial_id: str) -> ViewResult:
-        """Process front view image"""
+        """Process front view image - chest/body width"""
         log.info('grader:model:front', 'Processing front view', serial_id=serial_id)
         
         try:
@@ -674,7 +969,8 @@ class GoatGrader:
                 success=True,
                 measurements=measurements,
                 confidence=confidence,
-                warnings=warnings
+                warnings=warnings,
+                mask=mask_binary
             )
             
         except Exception as e:
@@ -688,7 +984,7 @@ class GoatGrader:
             )
     
     def _extract_front_measurements(self, mask: np.ndarray) -> Dict:
-        """Extract width measurement from front view mask"""
+        """Extract width measurement from front view mask (chest width)"""
         measurements = {}
         
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -705,6 +1001,229 @@ class GoatGrader:
         
         return measurements
     
+    def draw_debug_overlay(
+        self,
+        side_image: np.ndarray,
+        top_image: np.ndarray,
+        front_image: np.ndarray,
+        side_mask: Optional[np.ndarray],
+        top_mask: Optional[np.ndarray],
+        front_mask: Optional[np.ndarray],
+        leg_positions: Optional[LegPositions],
+        measurements: Dict,
+        serial_id: str
+    ) -> Dict[str, np.ndarray]:
+        """
+        Draw debug visualization on images showing:
+        - Side: mask outline, leg detection lines, height measurements
+        - Top: mask outline, measurement slice positions (shoulder, waist, rump)
+        - Front: mask outline, width measurement
+        
+        Returns:
+            Dictionary with 'side', 'top', 'front' debug images
+        """
+        debug_images = {}
+        
+        # Colors
+        MASK_COLOR = (0, 255, 0)      # Green - mask outline
+        SHOULDER_COLOR = (255, 0, 0)   # Blue - shoulder
+        WAIST_COLOR = (0, 255, 255)    # Yellow - waist
+        RUMP_COLOR = (0, 0, 255)       # Red - rump
+        HEIGHT_COLOR = (255, 165, 0)   # Orange - heights
+        TEXT_BG = (0, 0, 0)            # Black background for text
+        
+        def draw_text_with_bg(img, text, pos, color, scale=0.6):
+            """Draw text with black background for readability"""
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            thickness = 2
+            (tw, th), _ = cv2.getTextSize(text, font, scale, thickness)
+            x, y = pos
+            cv2.rectangle(img, (x - 2, y - th - 4), (x + tw + 2, y + 4), TEXT_BG, -1)
+            cv2.putText(img, text, (x, y), font, scale, color, thickness)
+        
+        # =====================================================================
+        # SIDE VIEW DEBUG
+        # =====================================================================
+        if side_image is not None:
+            side_debug = side_image.copy()
+            
+            if side_mask is not None:
+                # Draw mask outline
+                contours, _ = cv2.findContours(side_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if contours:
+                    cv2.drawContours(side_debug, contours, -1, MASK_COLOR, 2)
+                    
+                    contour = max(contours, key=cv2.contourArea)
+                    x, y, w, h = cv2.boundingRect(contour)
+                    
+                    # Draw bounding box
+                    cv2.rectangle(side_debug, (x, y), (x + w, y + h), (128, 128, 128), 1)
+                    
+                    ground_level = y + h
+                    
+                    # Draw leg position lines if detected
+                    if leg_positions and leg_positions.detected:
+                        shoulder_x = int(x + leg_positions.shoulder_pct * w)
+                        rump_x = int(x + leg_positions.rump_pct * w)
+                        waist_x = int((shoulder_x + rump_x) / 2)
+                        
+                        # Shoulder line (blue)
+                        cv2.line(side_debug, (shoulder_x, y), (shoulder_x, ground_level), SHOULDER_COLOR, 3)
+                        draw_text_with_bg(side_debug, f'Shoulder {leg_positions.shoulder_pct:.0%}', 
+                                         (shoulder_x + 5, y + 25), SHOULDER_COLOR)
+                        
+                        # Waist line (yellow)
+                        cv2.line(side_debug, (waist_x, y), (waist_x, ground_level), WAIST_COLOR, 3)
+                        draw_text_with_bg(side_debug, 'Waist', (waist_x + 5, y + 50), WAIST_COLOR)
+                        
+                        # Rump line (red)
+                        cv2.line(side_debug, (rump_x, y), (rump_x, ground_level), RUMP_COLOR, 3)
+                        draw_text_with_bg(side_debug, f'Rump {leg_positions.rump_pct:.0%}', 
+                                         (rump_x + 5, y + 75), RUMP_COLOR)
+                    
+                    # Draw height measurements
+                    third = w // 3
+                    
+                    # Head height
+                    if measurements.get('head_height_cm'):
+                        head_x = x + third // 2
+                        cv2.line(side_debug, (head_x, y), (head_x, ground_level), HEIGHT_COLOR, 2)
+                        draw_text_with_bg(side_debug, f"Head: {measurements['head_height_cm']}cm",
+                                         (10, 30), HEIGHT_COLOR)
+                    
+                    # Withers height
+                    if measurements.get('withers_height_cm'):
+                        withers_x = x + third + third // 2
+                        cv2.line(side_debug, (withers_x, y), (withers_x, ground_level), HEIGHT_COLOR, 2)
+                        draw_text_with_bg(side_debug, f"Withers: {measurements['withers_height_cm']}cm",
+                                         (10, 60), HEIGHT_COLOR)
+                    
+                    # Rump height
+                    if measurements.get('rump_height_cm'):
+                        rump_h_x = x + 2 * third + third // 2
+                        cv2.line(side_debug, (rump_h_x, y), (rump_h_x, ground_level), HEIGHT_COLOR, 2)
+                        draw_text_with_bg(side_debug, f"Rump H: {measurements['rump_height_cm']}cm",
+                                         (10, 90), HEIGHT_COLOR)
+                    
+                    # Ground line
+                    cv2.line(side_debug, (x - 20, ground_level), (x + w + 20, ground_level), (255, 255, 255), 2)
+                    draw_text_with_bg(side_debug, 'Ground', (x + w + 25, ground_level + 5), (255, 255, 255))
+            
+            # Add title
+            draw_text_with_bg(side_debug, f'SIDE VIEW - {serial_id}', (10, side_debug.shape[0] - 20), (255, 255, 255), 0.7)
+            
+            debug_images['side'] = side_debug
+        
+        # =====================================================================
+        # TOP VIEW DEBUG
+        # =====================================================================
+        if top_image is not None:
+            top_debug = top_image.copy()
+            
+            if top_mask is not None:
+                contours, _ = cv2.findContours(top_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if contours:
+                    cv2.drawContours(top_debug, contours, -1, MASK_COLOR, 2)
+                    
+                    contour = max(contours, key=cv2.contourArea)
+                    x, y, w, h = cv2.boundingRect(contour)
+                    
+                    # Draw bounding box
+                    cv2.rectangle(top_debug, (x, y), (x + w, y + h), (128, 128, 128), 1)
+                    
+                    # Calculate measurement positions
+                    if leg_positions and leg_positions.detected:
+                        shoulder_x = int(x + leg_positions.shoulder_pct * w)
+                        rump_x = int(x + leg_positions.rump_pct * w)
+                    else:
+                        # Fallback positions
+                        shoulder_x = int(x + 0.25 * w)
+                        rump_x = int(x + 0.80 * w)
+                    
+                    waist_x = int((shoulder_x + rump_x) / 2)
+                    
+                    # Draw measurement lines (vertical slices through body)
+                    line_extend = 30  # Extend lines beyond body
+                    
+                    # Shoulder line and measurement
+                    cv2.line(top_debug, (shoulder_x, y - line_extend), (shoulder_x, y + h + line_extend), SHOULDER_COLOR, 3)
+                    if measurements.get('shoulder_width_cm'):
+                        # Draw width indicator
+                        shoulder_width_px = measurements['shoulder_width_cm'] * self.top_pixels_per_cm
+                        sw_y = y + h // 2
+                        sw_half = int(shoulder_width_px / 2)
+                        cv2.line(top_debug, (shoulder_x, sw_y - sw_half), (shoulder_x, sw_y + sw_half), SHOULDER_COLOR, 5)
+                        draw_text_with_bg(top_debug, f"Shoulder: {measurements['shoulder_width_cm']}cm",
+                                         (shoulder_x - 60, y - line_extend - 10), SHOULDER_COLOR)
+                    
+                    # Waist line and measurement
+                    cv2.line(top_debug, (waist_x, y - line_extend), (waist_x, y + h + line_extend), WAIST_COLOR, 3)
+                    if measurements.get('waist_width_cm'):
+                        waist_width_px = measurements['waist_width_cm'] * self.top_pixels_per_cm
+                        ww_y = y + h // 2
+                        ww_half = int(waist_width_px / 2)
+                        cv2.line(top_debug, (waist_x, ww_y - ww_half), (waist_x, ww_y + ww_half), WAIST_COLOR, 5)
+                        draw_text_with_bg(top_debug, f"Waist: {measurements['waist_width_cm']}cm",
+                                         (waist_x - 50, y - line_extend - 10), WAIST_COLOR)
+                    
+                    # Rump line and measurement
+                    cv2.line(top_debug, (rump_x, y - line_extend), (rump_x, y + h + line_extend), RUMP_COLOR, 3)
+                    if measurements.get('rump_width_cm'):
+                        rump_width_px = measurements['rump_width_cm'] * self.top_pixels_per_cm
+                        rw_y = y + h // 2
+                        rw_half = int(rump_width_px / 2)
+                        cv2.line(top_debug, (rump_x, rw_y - rw_half), (rump_x, rw_y + rw_half), RUMP_COLOR, 5)
+                        draw_text_with_bg(top_debug, f"Rump: {measurements['rump_width_cm']}cm",
+                                         (rump_x - 40, y - line_extend - 10), RUMP_COLOR)
+                    
+                    # Label if using fallback
+                    if not (leg_positions and leg_positions.detected):
+                        draw_text_with_bg(top_debug, '(Estimated positions - leg detection failed)',
+                                         (10, 30), (0, 165, 255), 0.5)
+            
+            # Add title
+            draw_text_with_bg(top_debug, f'TOP VIEW - {serial_id}', (10, top_debug.shape[0] - 20), (255, 255, 255), 0.7)
+            
+            debug_images['top'] = top_debug
+        
+        # =====================================================================
+        # FRONT VIEW DEBUG
+        # =====================================================================
+        if front_image is not None:
+            front_debug = front_image.copy()
+            
+            if front_mask is not None:
+                contours, _ = cv2.findContours(front_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if contours:
+                    cv2.drawContours(front_debug, contours, -1, MASK_COLOR, 2)
+                    
+                    contour = max(contours, key=cv2.contourArea)
+                    x, y, w, h = cv2.boundingRect(contour)
+                    
+                    # Draw bounding box
+                    cv2.rectangle(front_debug, (x, y), (x + w, y + h), (128, 128, 128), 1)
+                    
+                    # Draw width measurement line
+                    mid_y = y + h // 2
+                    cv2.line(front_debug, (x, mid_y), (x + w, mid_y), SHOULDER_COLOR, 3)
+                    
+                    # Draw width endpoints
+                    cv2.circle(front_debug, (x, mid_y), 8, SHOULDER_COLOR, -1)
+                    cv2.circle(front_debug, (x + w, mid_y), 8, SHOULDER_COLOR, -1)
+                    
+                    if measurements.get('front_body_width_cm'):
+                        draw_text_with_bg(front_debug, f"Chest Width: {measurements['front_body_width_cm']}cm",
+                                         (x, mid_y - 20), SHOULDER_COLOR)
+            
+            # Add title
+            draw_text_with_bg(front_debug, f'FRONT VIEW - {serial_id}', (10, front_debug.shape[0] - 20), (255, 255, 255), 0.7)
+            
+            debug_images['front'] = front_debug
+        
+        log.info('grader:debug', 'Debug images generated', serial_id=serial_id, count=len(debug_images))
+        
+        return debug_images
+
     def run_test_inference(self) -> Tuple[bool, float]:
         """
         Run a quick test inference to verify models are working.

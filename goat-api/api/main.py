@@ -366,6 +366,25 @@ async def analyze(
     # Process images
     grader_result = grader.process_images(side_img, top_img, front_img, serial_id)
     
+    # Save debug images if generated
+    debug_image_paths = {}
+    if grader_result.get('debug_images'):
+        import os
+        debug_dir = f'/app/data/debug/{serial_id}'
+        os.makedirs(debug_dir, exist_ok=True)
+        
+        for view_name, debug_img in grader_result['debug_images'].items():
+            if debug_img is not None:
+                debug_path = f'{debug_dir}/{view_name}_debug.jpg'
+                try:
+                    cv2.imwrite(debug_path, debug_img, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                    debug_image_paths[view_name] = debug_path
+                    log.info('analyze', f'Saved debug image', 
+                            serial_id=serial_id, view=view_name, path=debug_path)
+                except Exception as e:
+                    log.error('analyze', f'Failed to save debug image',
+                             serial_id=serial_id, view=view_name, error=str(e))
+    
     # Calculate grade
     grade = None
     if grader_result.get('all_views_successful'):
@@ -380,9 +399,15 @@ async def analyze(
     
     # Build response
     measurements = MeasurementsResponse(
+        # Heights from side view
         head_height_cm=grader_result['measurements'].get('head_height_cm'),
         withers_height_cm=grader_result['measurements'].get('withers_height_cm'),
         rump_height_cm=grader_result['measurements'].get('rump_height_cm'),
+        # Widths from top view (cross-referenced with side view leg positions)
+        shoulder_width_cm=grader_result['measurements'].get('shoulder_width_cm'),
+        waist_width_cm=grader_result['measurements'].get('waist_width_cm'),
+        rump_width_cm=grader_result['measurements'].get('rump_width_cm'),
+        # Fallback/legacy
         top_body_width_cm=grader_result['measurements'].get('top_body_width_cm'),
         front_body_width_cm=grader_result['measurements'].get('front_body_width_cm'),
         avg_body_width_cm=grader_result['measurements'].get('avg_body_width_cm')
@@ -490,3 +515,97 @@ async def delete_result(serial_id: str):
                 "error_code": "NOT_FOUND"
             }
         )
+
+
+@app.get("/debug/{serial_id}/{view}")
+async def get_debug_image(serial_id: str, view: str):
+    """
+    Get debug image for a specific serial_id and view.
+    
+    Args:
+        serial_id: Goat identifier
+        view: One of 'side', 'top', 'front'
+        
+    Returns:
+        JPEG image with measurement overlays
+    """
+    from fastapi.responses import FileResponse
+    import os
+    
+    # Validate view
+    if view not in ['side', 'top', 'front']:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": f"Invalid view: {view}",
+                "error_code": "INVALID_VIEW",
+                "fix": "View must be one of: side, top, front"
+            }
+        )
+    
+    # Sanitize serial_id
+    serial_id, error = sanitize_serial_id(serial_id)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+    
+    # Check if debug image exists
+    debug_path = f'/app/data/debug/{serial_id}/{view}_debug.jpg'
+    
+    if not os.path.exists(debug_path):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": f"Debug image not found for {serial_id}/{view}",
+                "error_code": "NOT_FOUND",
+                "fix": "Ensure the goat was analyzed and debug images were generated"
+            }
+        )
+    
+    return FileResponse(
+        debug_path,
+        media_type="image/jpeg",
+        filename=f"{serial_id}_{view}_debug.jpg"
+    )
+
+
+@app.get("/debug/{serial_id}")
+async def list_debug_images(serial_id: str):
+    """
+    List available debug images for a serial_id.
+    
+    Returns:
+        List of available views with URLs
+    """
+    import os
+    
+    # Sanitize serial_id
+    serial_id, error = sanitize_serial_id(serial_id)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+    
+    debug_dir = f'/app/data/debug/{serial_id}'
+    
+    if not os.path.exists(debug_dir):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": f"No debug images found for serial_id: {serial_id}",
+                "error_code": "NOT_FOUND"
+            }
+        )
+    
+    available_views = []
+    for view in ['side', 'top', 'front']:
+        debug_path = f'{debug_dir}/{view}_debug.jpg'
+        if os.path.exists(debug_path):
+            available_views.append({
+                "view": view,
+                "url": f"/debug/{serial_id}/{view}",
+                "filename": f"{view}_debug.jpg"
+            })
+    
+    return {
+        "serial_id": serial_id,
+        "debug_images": available_views,
+        "count": len(available_views)
+    }

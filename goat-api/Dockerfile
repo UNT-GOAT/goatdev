@@ -4,7 +4,7 @@ FROM python:3.11-slim
 
 # Install system dependencies for OpenCV
 RUN apt-get update && apt-get install -y \
-    libgl1 \
+    libgl1-mesa-glx \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
@@ -17,21 +17,18 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy requirements first for layer caching
-COPY goat-api/requirements.txt .
+COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY goat-api/api/ ./api/
+COPY api/ ./api/
+COPY data/ ./data/
 
-# Copy only the model files needed for inference
-COPY model/side/best.pt ./model/side/
-COPY model/side/side_calibration.json ./model/side/
-COPY model/top/best.pt ./model/top/
-COPY model/top/top_calibration.json ./model/top/
-COPY model/front/best.pt ./model/front/
-COPY model/front/front_calibration.json ./model/front/
+# Copy model directory (models and calibrations)
+# Note: This assumes model/ is copied during build or mounted at runtime
+# COPY model/ ./model/
 
 # Create data directory
 RUN mkdir -p /app/data
