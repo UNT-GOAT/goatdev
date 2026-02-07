@@ -29,6 +29,9 @@ yolov8n-seg.pt
 # Latest model measurements (generated, not source)
 *measurements.json
 *results.json
+# just keeping local for now
+calibrate.py
+*_calibration.json
 
 # Drive uploads files for training
 *driveupload
