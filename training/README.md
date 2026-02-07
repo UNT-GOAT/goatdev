@@ -1,7 +1,5 @@
 # Training Data Collection System
 
-> **TEMPORARY** - Delete this entire folder once model retraining is complete.
-
 ## Overview
 
 This system allows Becky to record short video clips of goats for model retraining. Videos are automatically uploaded to S3, then processed locally to extract frames for training.

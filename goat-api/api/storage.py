@@ -1,7 +1,7 @@
 """
 Storage module for persisting analysis results
 
-Currently uses local JSON file. Will be extended to use S3 Tables or other storage.
+Currently uses local JSON file. Can be extended to use S3 Tables or other storage.
 """
 
 import json

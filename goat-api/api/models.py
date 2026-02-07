@@ -12,11 +12,21 @@ from .config import MIN_WEIGHT_LBS, MAX_WEIGHT_LBS, VALID_GRADES
 
 class MeasurementsResponse(BaseModel):
     """Measurements extracted from all three views"""
+    # Heights from side view
     head_height_cm: Optional[float] = None
     withers_height_cm: Optional[float] = None
     rump_height_cm: Optional[float] = None
-    top_body_width_cm: Optional[float] = None
-    front_body_width_cm: Optional[float] = None
+    
+    # Widths from top view (using leg positions from side view)
+    shoulder_width_cm: Optional[float] = None
+    waist_width_cm: Optional[float] = None
+    rump_width_cm: Optional[float] = None
+    
+    # Fallback/legacy width measurements
+    top_body_width_cm: Optional[float] = None  # Fallback if leg detection fails
+    front_body_width_cm: Optional[float] = None  # From front view
+    
+    # Computed
     avg_body_width_cm: Optional[float] = None
 
 
