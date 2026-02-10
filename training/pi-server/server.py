@@ -389,8 +389,14 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
     try:
         set_state(progress='capturing')
 
-        # Capture all cameras in parallel
-        threads = {}
+        # Capture cameras in batches of 2 to stay within 4GB RAM
+        # (each ffmpeg process uses ~500MB for 4656x3496 decode/encode)
+        # Batch 1: side + top in parallel (~20s)
+        # Batch 2: front alone (~20s)
+        # Total: ~40s instead of 60s sequential
+
+        # Pre-check all cameras
+        available_cameras = {}
         for name, path in CAMERAS.items():
             check = check_camera(name, path)
             if check['error']:
@@ -402,28 +408,38 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
                     'error': check['error'],
                     'fix': check['fix']
                 }
-                continue
+            else:
+                available_cameras[name] = path
 
-            t = threading.Thread(
-                target=lambda n=name, p=path: results.update({n: capture_single_camera(n, p, goat_id)})
-            )
-            threads[name] = t
-            t.start()
+        # Define capture batches (max 2 concurrent to avoid OOM)
+        MAX_PARALLEL = 2
+        camera_list = list(available_cameras.items())
+        batches = [camera_list[i:i + MAX_PARALLEL] for i in range(0, len(camera_list), MAX_PARALLEL)]
 
-        # Wait for all captures
-        log.info('capture', f'Waiting for {len(threads)} cameras', cameras=','.join(threads.keys()))
-        for name, t in threads.items():
-            t.join(timeout=CAPTURE_TOTAL_TIMEOUT_SEC + 5)
-            if t.is_alive():
-                log.error(f'camera:{name}', 'Thread did not complete in time')
-                results[name] = {
-                    'name': name,
-                    'success': False,
-                    'filepaths': [],
-                    'image_count': 0,
-                    'error': 'Capture thread hung',
-                    'fix': 'Restart the service: sudo systemctl restart goat-training'
-                }
+        for batch_num, batch in enumerate(batches, 1):
+            log.info('capture', f'Starting batch {batch_num}/{len(batches)}',
+                    cameras=','.join(name for name, _ in batch))
+
+            threads = {}
+            for name, path in batch:
+                t = threading.Thread(
+                    target=lambda n=name, p=path: results.update({n: capture_single_camera(n, p, goat_id)})
+                )
+                threads[name] = t
+                t.start()
+
+            for name, t in threads.items():
+                t.join(timeout=CAPTURE_TOTAL_TIMEOUT_SEC + 5)
+                if t.is_alive():
+                    log.error(f'camera:{name}', 'Thread did not complete in time')
+                    results[name] = {
+                        'name': name,
+                        'success': False,
+                        'filepaths': [],
+                        'image_count': 0,
+                        'error': 'Capture thread hung',
+                        'fix': 'Restart the service: sudo systemctl restart goat-training'
+                    }
 
         successful = [r for r in results.values() if r.get('success')]
         failed = [r for r in results.values() if not r.get('success')]
