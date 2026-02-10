@@ -849,24 +849,34 @@ class GoatGrader:
             return width_pixels
         
         if leg_positions and leg_positions.detected:
-            # Calculate real-world distances from rump using side view
-            side_bbox_w = leg_positions.bbox[2]  # side view bounding box width in pixels
+            # Calculate real-world distances using side view
+            side_bbox_w = leg_positions.bbox[2]
             
+            # Distance from back legs to tail end (right edge of side bbox)
+            tail_overhang_pct = 1.0 - leg_positions.rump_pct
+            tail_overhang_cm = (tail_overhang_pct * side_bbox_w) / self.side_pixels_per_cm
+            
+            # Distance between back legs and front legs
             rump_to_shoulder_px = abs(leg_positions.rump_pct - leg_positions.shoulder_pct) * side_bbox_w
             rump_to_shoulder_cm = rump_to_shoulder_px / self.side_pixels_per_cm
-            rump_to_waist_cm = rump_to_shoulder_cm / 2
             
-            # In top view, rump is always the left edge of the mask
-            rump_x = x
-            shoulder_x = int(rump_x + rump_to_shoulder_cm * self.top_pixels_per_cm)
-            waist_x = int(rump_x + rump_to_waist_cm * self.top_pixels_per_cm)
+            # In top view, left edge is tail tip — offset by tail overhang to find back legs
+            tail_overhang_top_px = tail_overhang_cm * self.top_pixels_per_cm
+            rump_leg_x = int(x + tail_overhang_top_px)
+            shoulder_x = int(rump_leg_x + rump_to_shoulder_cm * self.top_pixels_per_cm)
+            waist_x = int((rump_leg_x + shoulder_x) / 2)
             
             # Clamp to mask bounds
+            rump_leg_x = min(rump_leg_x, x + w)
             shoulder_x = min(shoulder_x, x + w)
             waist_x = min(waist_x, x + w)
             
+            # Use rump_leg_x for rump measurement position
+            rump_x = rump_leg_x
+            
             log.info('grader:top:widths', 'Rump-anchored mapping',
                     serial_id=serial_id,
+                    tail_overhang_cm=round(tail_overhang_cm, 2),
                     rump_to_shoulder_cm=round(rump_to_shoulder_cm, 2),
                     rump_x=rump_x,
                     waist_x=waist_x,
@@ -1164,13 +1174,16 @@ class GoatGrader:
                     if leg_positions and leg_positions.detected:
                         side_bbox_w = leg_positions.bbox[2]
                         
+                        tail_overhang_pct = 1.0 - leg_positions.rump_pct
+                        tail_overhang_cm = (tail_overhang_pct * side_bbox_w) / self.side_pixels_per_cm
+                        
                         rump_to_shoulder_px = abs(leg_positions.rump_pct - leg_positions.shoulder_pct) * side_bbox_w
                         rump_to_shoulder_cm = rump_to_shoulder_px / self.side_pixels_per_cm
-                        rump_to_waist_cm = rump_to_shoulder_cm / 2
                         
-                        rump_x = x
+                        tail_overhang_top_px = tail_overhang_cm * self.top_pixels_per_cm
+                        rump_x = min(int(x + tail_overhang_top_px), x + w)
                         shoulder_x = min(int(rump_x + rump_to_shoulder_cm * self.top_pixels_per_cm), x + w)
-                        waist_x = min(int(rump_x + rump_to_waist_cm * self.top_pixels_per_cm), x + w)
+                        waist_x = min(int((rump_x + shoulder_x) / 2), x + w)
                     
                     waist_x = int((shoulder_x + rump_x) / 2)
                     
