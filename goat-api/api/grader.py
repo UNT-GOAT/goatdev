@@ -858,8 +858,6 @@ class GoatGrader:
             if SIDE_VIEW_DIRECTION != TOP_VIEW_DIRECTION:
                 shoulder_pct = 1 - shoulder_pct
                 rump_pct = 1 - rump_pct
-                # After flip, former rump is now smaller — swap to keep shoulder < rump
-                shoulder_pct, rump_pct = rump_pct, shoulder_pct
             
             log.info('grader:top:widths', 'Leg position mapping',
                     serial_id=serial_id,
@@ -1170,7 +1168,6 @@ class GoatGrader:
                         if SIDE_VIEW_DIRECTION != TOP_VIEW_DIRECTION:
                             shoulder_pct = 1 - shoulder_pct
                             rump_pct = 1 - rump_pct
-                            shoulder_pct, rump_pct = rump_pct, shoulder_pct
                         
                         shoulder_x = int(x + shoulder_pct * w)
                         rump_x = int(x + rump_pct * w)
