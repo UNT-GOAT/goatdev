@@ -1092,7 +1092,7 @@ class GoatGrader:
                         if leg_positions.leg_regions:
                             for i, leg in enumerate(leg_positions.leg_regions):
                                 leg_x = int(leg['midline'])
-                                leg_bottom = int(leg['max_depth'])
+                                leg_bottom = int(leg.get('max_depth', ground_level))
                                 # Draw leg midline
                                 cv2.line(side_debug, (leg_x, ground_level - 50), (leg_x, leg_bottom), 
                                         (255, 255, 0), 2)  # Cyan
