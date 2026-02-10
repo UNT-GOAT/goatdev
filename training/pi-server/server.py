@@ -12,6 +12,7 @@ import shutil
 import json
 import re
 import time
+import tarfile
 from datetime import datetime
 
 app = Flask(__name__)
@@ -32,13 +33,15 @@ S3_TRAINING_BUCKET = os.environ.get('S3_TRAINING_BUCKET', 'training-937249941844
 # Capture settings
 NUM_IMAGES = 20             # Number of images to capture per camera
 CAPTURE_FPS = 1             # 1 picture per second (1 second apart)
+CAMERA_NATIVE_FPS = 10      # Camera's native FPS at capture resolution
 IMAGE_WIDTH = 4656
 IMAGE_HEIGHT = 3496
 
 # Thresholds
 MIN_DISK_MB = 1000          # Require 1GB free
 MIN_IMAGE_BYTES = 50000     # 50KB minimum valid image
-FFMPEG_TIMEOUT_SEC = 30     # Kill ffmpeg after this
+FFMPEG_TIMEOUT_SEC = 30     # Kill individual ffmpeg after this
+CAPTURE_TOTAL_TIMEOUT_SEC = 60  # Max time for full capture sequence per camera
 MAX_GOAT_ID_LEN = 50        # Prevent path traversal
 
 # ============================================================
@@ -258,8 +261,10 @@ def validate_image(filepath: str) -> tuple[bool, str]:
 def capture_single_camera(name: str, path: str, goat_id: str) -> dict:
     """
     Capture still images from a single camera. Returns result dict.
-    Uses -codec:v copy to pass through raw MJPEG frames without
-    decoding/re-encoding, keeping RAM usage minimal (~50-100MB vs ~3GB).
+    Runs in a thread (one per camera, all cameras in parallel).
+
+    Uses a single ffmpeg process per camera with -framerate to control timing.
+    Re-encodes with -threads 1 to limit memory (~400-500MB per process).
     """
     output_pattern = f'/tmp/{goat_id}_{name}_%02d.jpg'
     result = {
@@ -272,15 +277,23 @@ def capture_single_camera(name: str, path: str, goat_id: str) -> dict:
         'fix': None
     }
 
+    # Camera streams at CAMERA_NATIVE_FPS (10fps). We select every Nth frame
+    # to get CAPTURE_FPS (1fps) output. This guarantees exactly 1s between frames.
+    frame_interval = CAMERA_NATIVE_FPS // CAPTURE_FPS  # e.g. 10fps / 1fps = every 10th frame
+
     cmd = [
         'ffmpeg', '-y',
         '-f', 'v4l2',
         '-input_format', 'mjpeg',
-        '-framerate', str(CAPTURE_FPS),
+        '-framerate', str(CAMERA_NATIVE_FPS),
         '-video_size', f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
         '-i', path,
+        '-vf', f'select=not(mod(n\\,{frame_interval}))',
+        '-vsync', 'vfn',
         '-frames:v', str(NUM_IMAGES),
-        '-codec:v', 'copy',
+        '-threads', '1',
+        '-qmin', '1',
+        '-q:v', '1',
         output_pattern
     ]
 
@@ -293,7 +306,7 @@ def capture_single_camera(name: str, path: str, goat_id: str) -> dict:
             cmd,
             capture_output=True,
             text=True,
-            timeout=FFMPEG_TIMEOUT_SEC
+            timeout=CAPTURE_TOTAL_TIMEOUT_SEC
         )
 
         if proc.returncode != 0:
@@ -357,10 +370,10 @@ def capture_single_camera(name: str, path: str, goat_id: str) -> dict:
                 image_count=len(valid_files), total_size_bytes=total_size)
 
     except subprocess.TimeoutExpired:
-        result['error'] = f'Capture timed out after {FFMPEG_TIMEOUT_SEC}s'
+        result['error'] = f'Capture timed out after {CAPTURE_TOTAL_TIMEOUT_SEC}s'
         result['fix'] = 'Camera may be frozen. Unplug USB hub, wait 5s, replug.'
         log.error(f'camera:{name}', 'Capture timeout',
-                 timeout_sec=FFMPEG_TIMEOUT_SEC, fix=result['fix'])
+                 timeout_sec=CAPTURE_TOTAL_TIMEOUT_SEC, fix=result['fix'])
 
         subprocess.run(['pkill', '-9', '-f', f'ffmpeg.*{path}'], timeout=5)
 
@@ -383,8 +396,14 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
     try:
         set_state(progress='capturing')
 
-        # Capture all cameras in parallel
-        threads = {}
+        # Capture cameras in batches of 2 to stay within 4GB RAM
+        # (each ffmpeg process uses ~500MB for 4656x3496 decode/encode)
+        # Batch 1: side + top in parallel (~20s)
+        # Batch 2: front alone (~20s)
+        # Total: ~40s instead of 60s sequential
+
+        # Pre-check all cameras
+        available_cameras = {}
         for name, path in CAMERAS.items():
             check = check_camera(name, path)
             if check['error']:
@@ -396,28 +415,38 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
                     'error': check['error'],
                     'fix': check['fix']
                 }
-                continue
+            else:
+                available_cameras[name] = path
 
-            t = threading.Thread(
-                target=lambda n=name, p=path: results.update({n: capture_single_camera(n, p, goat_id)})
-            )
-            threads[name] = t
-            t.start()
+        # Define capture batches (max 2 concurrent to avoid OOM)
+        MAX_PARALLEL = 2
+        camera_list = list(available_cameras.items())
+        batches = [camera_list[i:i + MAX_PARALLEL] for i in range(0, len(camera_list), MAX_PARALLEL)]
 
-        # Wait for all captures
-        log.info('capture', f'Waiting for {len(threads)} cameras', cameras=','.join(threads.keys()))
-        for name, t in threads.items():
-            t.join(timeout=FFMPEG_TIMEOUT_SEC + 5)
-            if t.is_alive():
-                log.error(f'camera:{name}', 'Thread did not complete in time')
-                results[name] = {
-                    'name': name,
-                    'success': False,
-                    'filepaths': [],
-                    'image_count': 0,
-                    'error': 'Capture thread hung',
-                    'fix': 'Restart the service: sudo systemctl restart goat-training'
-                }
+        for batch_num, batch in enumerate(batches, 1):
+            log.info('capture', f'Starting batch {batch_num}/{len(batches)}',
+                    cameras=','.join(name for name, _ in batch))
+
+            threads = {}
+            for name, path in batch:
+                t = threading.Thread(
+                    target=lambda n=name, p=path: results.update({n: capture_single_camera(n, p, goat_id)})
+                )
+                threads[name] = t
+                t.start()
+
+            for name, t in threads.items():
+                t.join(timeout=CAPTURE_TOTAL_TIMEOUT_SEC + 5)
+                if t.is_alive():
+                    log.error(f'camera:{name}', 'Thread did not complete in time')
+                    results[name] = {
+                        'name': name,
+                        'success': False,
+                        'filepaths': [],
+                        'image_count': 0,
+                        'error': 'Capture thread hung',
+                        'fix': 'Restart the service: sudo systemctl restart goat-training'
+                    }
 
         successful = [r for r in results.values() if r.get('success')]
         failed = [r for r in results.values() if not r.get('success')]
@@ -544,41 +573,58 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
                         goat_id=goat_id, total_images=total_images, cameras=len(successful), duration_sec=total_time)
             return
 
-        # Upload to S3 (REAL)
+        # Upload to S3 (REAL) - tar per camera for fewer S3 round trips
         set_state(progress='uploading')
         uploaded = []
         upload_errors = []
 
         for r in successful:
-            for fp in r.get('filepaths', []):
-                filename = os.path.basename(fp)
-                s3_key = f'{goat_id}/{r["name"]}/{filename}'
+            cam_name = r['name']
+            filepaths = r.get('filepaths', [])
+            if not filepaths:
+                continue
 
-                try:
-                    log.info(f's3:{r["name"]}', 'Uploading',
-                            key=s3_key, size_bytes=os.path.getsize(fp))
+            tar_path = f'/tmp/{goat_id}_{cam_name}.tar.gz'
+            s3_key = f'{goat_id}/{cam_name}/images.tar.gz'
 
-                    get_s3().upload_file(fp, S3_TRAINING_BUCKET, s3_key)
-                    uploaded.append(s3_key)
+            try:
+                # Create tar.gz of all images for this camera
+                with tarfile.open(tar_path, 'w:gz') as tar:
+                    for fp in filepaths:
+                        tar.add(fp, arcname=os.path.basename(fp))
 
-                except Exception as e:
-                    error_msg = str(e)
-                    if 'NoSuchBucket' in error_msg:
-                        fix = f'Bucket {S3_TRAINING_BUCKET} does not exist'
-                    elif 'AccessDenied' in error_msg:
-                        fix = 'Check IAM permissions for S3 upload'
-                    elif 'timeout' in error_msg.lower():
-                        fix = 'Network issue - check internet connection'
-                    else:
-                        fix = 'Check AWS credentials and network'
+                tar_size = os.path.getsize(tar_path)
+                log.info(f's3:{cam_name}', 'Uploading tar',
+                        key=s3_key, size_bytes=tar_size,
+                        image_count=len(filepaths))
 
-                    upload_errors.append({'camera': r['name'], 'error': error_msg, 'fix': fix, 'file': filename})
-                    log.error(f's3:{r["name"]}', 'Upload failed',
-                             error=error_msg, fix=fix, key=s3_key)
+                get_s3().upload_file(tar_path, S3_TRAINING_BUCKET, s3_key)
+                uploaded.append(s3_key)
 
-                finally:
+                log.info(f's3:{cam_name}', 'Upload complete', key=s3_key)
+
+            except Exception as e:
+                error_msg = str(e)
+                if 'NoSuchBucket' in error_msg:
+                    fix = f'Bucket {S3_TRAINING_BUCKET} does not exist'
+                elif 'AccessDenied' in error_msg:
+                    fix = 'Check IAM permissions for S3 upload'
+                elif 'timeout' in error_msg.lower():
+                    fix = 'Network issue - check internet connection'
+                else:
+                    fix = 'Check AWS credentials and network'
+
+                upload_errors.append({'camera': cam_name, 'error': error_msg, 'fix': fix})
+                log.error(f's3:{cam_name}', 'Upload failed',
+                         error=error_msg, fix=fix, key=s3_key)
+
+            finally:
+                # Clean up local files
+                for fp in filepaths:
                     if os.path.exists(fp):
                         os.remove(fp)
+                if os.path.exists(tar_path):
+                    os.remove(tar_path)
 
         # Upload goat_data.json
         if goat_data and uploaded:
@@ -897,7 +943,8 @@ if __name__ == '__main__':
             capture_fps=CAPTURE_FPS,
             resolution=f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
             min_disk_mb=MIN_DISK_MB,
-            ffmpeg_timeout=FFMPEG_TIMEOUT_SEC)
+            ffmpeg_timeout=FFMPEG_TIMEOUT_SEC,
+            capture_total_timeout=CAPTURE_TOTAL_TIMEOUT_SEC)
 
     # Cleanup any stale state from previous run
     kill_stale_ffmpeg()
