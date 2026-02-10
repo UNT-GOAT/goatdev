@@ -849,12 +849,29 @@ class GoatGrader:
             return width_pixels
         
         if leg_positions and leg_positions.detected:
-            # Use leg positions for precise measurements
-            body_length = w
+            from .config import SIDE_VIEW_DIRECTION, TOP_VIEW_DIRECTION
+            
+            shoulder_pct = leg_positions.shoulder_pct
+            rump_pct = leg_positions.rump_pct
+            
+            # If side and top views have opposite directions, flip the percentages
+            if SIDE_VIEW_DIRECTION != TOP_VIEW_DIRECTION:
+                shoulder_pct = 1 - shoulder_pct
+                rump_pct = 1 - rump_pct
+                # After flip, former rump is now smaller — swap to keep shoulder < rump
+                shoulder_pct, rump_pct = rump_pct, shoulder_pct
+            
+            log.info('grader:top:widths', 'Leg position mapping',
+                    serial_id=serial_id,
+                    raw_shoulder=round(leg_positions.shoulder_pct, 3),
+                    raw_rump=round(leg_positions.rump_pct, 3),
+                    mapped_shoulder=round(shoulder_pct, 3),
+                    mapped_rump=round(rump_pct, 3),
+                    flipped=SIDE_VIEW_DIRECTION != TOP_VIEW_DIRECTION)
             
             # Calculate x positions from percentages
-            shoulder_x = int(x + leg_positions.shoulder_pct * body_length)
-            rump_x = int(x + leg_positions.rump_pct * body_length)
+            shoulder_x = int(x + shoulder_pct * w)
+            rump_x = int(x + rump_pct * w)
             waist_x = int((shoulder_x + rump_x) / 2)
             
             # Get widths at each position (average over small window for stability)
@@ -1145,8 +1162,18 @@ class GoatGrader:
                     
                     # Calculate measurement positions
                     if leg_positions and leg_positions.detected:
-                        shoulder_x = int(x + leg_positions.shoulder_pct * w)
-                        rump_x = int(x + leg_positions.rump_pct * w)
+                        from .config import SIDE_VIEW_DIRECTION, TOP_VIEW_DIRECTION
+                        
+                        shoulder_pct = leg_positions.shoulder_pct
+                        rump_pct = leg_positions.rump_pct
+                        
+                        if SIDE_VIEW_DIRECTION != TOP_VIEW_DIRECTION:
+                            shoulder_pct = 1 - shoulder_pct
+                            rump_pct = 1 - rump_pct
+                            shoulder_pct, rump_pct = rump_pct, shoulder_pct
+                        
+                        shoulder_x = int(x + shoulder_pct * w)
+                        rump_x = int(x + rump_pct * w)
                     else:
                         # Fallback positions
                         shoulder_x = int(x + 0.25 * w)
