@@ -663,7 +663,9 @@
       }
 
       async function pollStatus() {
-        const maxAttempts = 120;
+        const maxAttempts = 240; // 240 * 500ms = 2 minutes
+        let lastProgress = null;
+
         for (let i = 0; i < maxAttempts; i++) {
           await sleep(500);
 
@@ -677,7 +679,9 @@
 
           const data = await response.json();
 
-          if (data.progress) {
+          // Only log when progress stage changes (not every poll)
+          if (data.progress && data.progress !== lastProgress) {
+            lastProgress = data.progress;
             const progressMessages = {
               starting: "Initializing cameras...",
               capturing: "Capturing images...",

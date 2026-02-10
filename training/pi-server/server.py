@@ -12,6 +12,7 @@ import shutil
 import json
 import re
 import time
+import tarfile
 from datetime import datetime
 
 app = Flask(__name__)
@@ -544,41 +545,58 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
                         goat_id=goat_id, total_images=total_images, cameras=len(successful), duration_sec=total_time)
             return
 
-        # Upload to S3 (REAL)
+        # Upload to S3 (REAL) - tar per camera for fewer S3 round trips
         set_state(progress='uploading')
         uploaded = []
         upload_errors = []
 
         for r in successful:
-            for fp in r.get('filepaths', []):
-                filename = os.path.basename(fp)
-                s3_key = f'{goat_id}/{r["name"]}/{filename}'
+            cam_name = r['name']
+            filepaths = r.get('filepaths', [])
+            if not filepaths:
+                continue
 
-                try:
-                    log.info(f's3:{r["name"]}', 'Uploading',
-                            key=s3_key, size_bytes=os.path.getsize(fp))
+            tar_path = f'/tmp/{goat_id}_{cam_name}.tar.gz'
+            s3_key = f'{goat_id}/{cam_name}/images.tar.gz'
 
-                    get_s3().upload_file(fp, S3_TRAINING_BUCKET, s3_key)
-                    uploaded.append(s3_key)
+            try:
+                # Create tar.gz of all images for this camera
+                with tarfile.open(tar_path, 'w:gz') as tar:
+                    for fp in filepaths:
+                        tar.add(fp, arcname=os.path.basename(fp))
 
-                except Exception as e:
-                    error_msg = str(e)
-                    if 'NoSuchBucket' in error_msg:
-                        fix = f'Bucket {S3_TRAINING_BUCKET} does not exist'
-                    elif 'AccessDenied' in error_msg:
-                        fix = 'Check IAM permissions for S3 upload'
-                    elif 'timeout' in error_msg.lower():
-                        fix = 'Network issue - check internet connection'
-                    else:
-                        fix = 'Check AWS credentials and network'
+                tar_size = os.path.getsize(tar_path)
+                log.info(f's3:{cam_name}', 'Uploading tar',
+                        key=s3_key, size_bytes=tar_size,
+                        image_count=len(filepaths))
 
-                    upload_errors.append({'camera': r['name'], 'error': error_msg, 'fix': fix, 'file': filename})
-                    log.error(f's3:{r["name"]}', 'Upload failed',
-                             error=error_msg, fix=fix, key=s3_key)
+                get_s3().upload_file(tar_path, S3_TRAINING_BUCKET, s3_key)
+                uploaded.append(s3_key)
 
-                finally:
+                log.info(f's3:{cam_name}', 'Upload complete', key=s3_key)
+
+            except Exception as e:
+                error_msg = str(e)
+                if 'NoSuchBucket' in error_msg:
+                    fix = f'Bucket {S3_TRAINING_BUCKET} does not exist'
+                elif 'AccessDenied' in error_msg:
+                    fix = 'Check IAM permissions for S3 upload'
+                elif 'timeout' in error_msg.lower():
+                    fix = 'Network issue - check internet connection'
+                else:
+                    fix = 'Check AWS credentials and network'
+
+                upload_errors.append({'camera': cam_name, 'error': error_msg, 'fix': fix})
+                log.error(f's3:{cam_name}', 'Upload failed',
+                         error=error_msg, fix=fix, key=s3_key)
+
+            finally:
+                # Clean up local files
+                for fp in filepaths:
                     if os.path.exists(fp):
                         os.remove(fp)
+                if os.path.exists(tar_path):
+                    os.remove(tar_path)
 
         # Upload goat_data.json
         if goat_data and uploaded:
