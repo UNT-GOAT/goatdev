@@ -289,7 +289,7 @@ def capture_single_camera(name: str, path: str, goat_id: str) -> dict:
         '-video_size', f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
         '-i', path,
         '-vf', f'select=not(mod(n\\,{frame_interval}))',
-        '-vsync', 'vfn',
+        '-fps_mode', 'vfr',
         '-frames:v', str(NUM_IMAGES),
         '-threads', '1',
         '-qmin', '1',
