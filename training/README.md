@@ -157,7 +157,7 @@ Emergency stop. Kills all ffmpeg processes, cleans up temp files, resets state.
 
 ## Web UI
 
-![Training Capture Interface](~/readme_assets/training_interface.png)
+![Training Capture Interface](../readme_assets/training_interface.png)
 
 `index.html` — a single-page app that connects to the Pi server over Tailscale.
 
