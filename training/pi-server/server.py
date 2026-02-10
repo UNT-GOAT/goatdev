@@ -279,7 +279,9 @@ def capture_single_camera(name: str, path: str, goat_id: str) -> dict:
 
     # Camera streams at CAMERA_NATIVE_FPS (10fps). We select every Nth frame
     # to get CAPTURE_FPS (1fps) output. This guarantees exactly 1s between frames.
+    # Skip the first second (CAMERA_NATIVE_FPS frames) for autofocus/white balance.
     frame_interval = CAMERA_NATIVE_FPS // CAPTURE_FPS  # e.g. 10fps / 1fps = every 10th frame
+    warmup_frames = CAMERA_NATIVE_FPS  # skip first 1s of frames
 
     cmd = [
         'ffmpeg', '-y',
@@ -288,7 +290,7 @@ def capture_single_camera(name: str, path: str, goat_id: str) -> dict:
         '-framerate', str(CAMERA_NATIVE_FPS),
         '-video_size', f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
         '-i', path,
-        '-vf', f'select=not(mod(n\\,{frame_interval}))',
+        '-vf', f'select=gt(n\\,{warmup_frames - 1})*not(mod(n\\,{frame_interval}))',
         '-fps_mode', 'vfr',
         '-frames:v', str(NUM_IMAGES),
         '-threads', '1',
