@@ -352,21 +352,17 @@
           <div class="counter" id="counter">...</div>
 
           <div class="buttons">
-            <div class="warning">⚠️ Only use RECORD for real data</div>
+            <div class="warning">⚠️ Only use CAPTURE for real data</div>
 
             <button
               class="record-btn"
               id="recordBtn"
-              onclick="startRecording(false)"
+              onclick="startCapture(false)"
             >
-              RECORD
+              CAPTURE
             </button>
 
-            <button
-              class="mock-btn"
-              id="mockBtn"
-              onclick="startRecording(true)"
-            >
+            <button class="mock-btn" id="mockBtn" onclick="startCapture(true)">
               TEST<br />(no save)
             </button>
           </div>
@@ -424,7 +420,7 @@
       const S3_REGION = "us-east-2";
 
       let goatId = 1;
-      let isRecording = false;
+      let isCapturing = false;
 
       // Form functions
       function getFormData() {
@@ -518,7 +514,7 @@
 
           goatId = maxId + 1;
           log(
-            "Found " + maxId + " existing recordings. Next goat: #" + goatId,
+            "Found " + maxId + " existing captures. Next goat: #" + goatId,
             "success",
           );
         } catch (err) {
@@ -538,8 +534,8 @@
         localStorage.setItem("goatId", goatId.toString());
       }
 
-      async function startRecording(isMock) {
-        if (isRecording) return;
+      async function startCapture(isMock) {
+        if (isCapturing) return;
 
         const btn = isMock
           ? document.getElementById("mockBtn")
@@ -549,7 +545,7 @@
           : document.getElementById("mockBtn");
         const status = document.getElementById("status");
 
-        isRecording = true;
+        isCapturing = true;
         btn.disabled = true;
         otherBtn.disabled = true;
         btn.classList.add("recording");
@@ -558,31 +554,30 @@
 
         if (isMock) {
           btn.innerHTML = "TESTING...";
-          status.textContent = "Mock recording (not saving)...";
-          log("Starting TEST recording (will not save)", "warn");
+          status.textContent = "Test capture (not saving)...";
+          log("Starting TEST capture (will not save)", "warn");
         } else {
-          btn.textContent = "RECORDING...";
-          status.textContent = "Recording goat #" + goatId + "...";
-          log("Starting recording for goat #" + goatId, "info");
+          btn.textContent = "CAPTURING...";
+          status.textContent = "Capturing goat #" + goatId + "...";
+          log("Starting capture for goat #" + goatId, "info");
         }
         status.className = "status";
 
         try {
           log("Connecting to Pi server...", "info");
 
-          // Get form data for real recordings
+          // Get form data for real captures
           const formData = isMock ? {} : getFormData();
 
-          // Start recording
-          const recordId = isMock ? "test_" + Date.now() : goatId;
+          // Start capture
+          const captureId = isMock ? "test_" + Date.now() : goatId;
           let response;
           try {
             response = await fetch(API_BASE + "/record", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                goat_id: recordId,
-                duration: 10,
+                goat_id: captureId,
                 goat_data: formData,
                 is_test: isMock,
                 require_all_cameras: !isMock,
@@ -599,23 +594,23 @@
             const errorMessages = {
               NO_CAMERAS:
                 "No cameras connected. Please plug in the cameras and try again.",
-              RECORDING_IN_PROGRESS:
-                "Recording already in progress on another connection. Please wait.",
+              CAPTURE_IN_PROGRESS:
+                "Capture already in progress on another connection. Please wait.",
               CAMERA_PERMISSION_DENIED:
                 "Camera permission denied. Check creds and connections.",
               LOW_DISK_SPACE: "Pi is low on disk space.",
               MISSING_CAMERAS:
-                "Not all cameras are connected. Plug in all cameras to record data.",
+                "Not all cameras are connected. Plug in all cameras to capture data.",
             };
             const friendlyMessage =
               errorMessages[errorData.error_code] ||
               errorData.message ||
-              "Failed to start recording";
+              "Failed to start capture";
             throw new Error(friendlyMessage);
           }
 
           const startData = await response.json();
-          log("Recording started on Pi", "success");
+          log("Capture started on Pi", "success");
 
           // Show camera status clearly
           if (startData.cameras_available?.length > 0) {
@@ -628,22 +623,22 @@
             log(startData.warning, "warn");
           }
 
-          log("Recording for 10 seconds...", "info");
+          log("Capturing 20 images (~20 seconds)...", "info");
 
           // Poll for completion
           await pollStatus();
 
           if (isMock) {
-            log("Test recording complete.", "success");
+            log("Test capture complete.", "success");
             status.textContent = "Test complete";
             status.className = "status success";
           } else {
-            log("Recording saved to S3.", "success");
+            log("Images saved to S3.", "success");
             log(
               "Goat #" + goatId + " complete. Next: #" + (goatId + 1),
               "success",
             );
-            status.textContent = "Goat #" + goatId + " recorded.";
+            status.textContent = "Goat #" + goatId + " captured.";
             status.className = "status success";
             goatId++;
             updateCounter();
@@ -654,7 +649,7 @@
           status.textContent = isMock ? "Test failed" : "Failed";
           status.className = "status error";
         } finally {
-          isRecording = false;
+          isCapturing = false;
           btn.disabled = false;
           otherBtn.disabled = false;
           btn.classList.remove("recording");
@@ -662,13 +657,13 @@
           if (isMock) {
             btn.innerHTML = "TEST<br>(no save)";
           } else {
-            btn.textContent = "RECORD";
+            btn.textContent = "CAPTURE";
           }
         }
       }
 
       async function pollStatus() {
-        const maxAttempts = 30;
+        const maxAttempts = 120;
         for (let i = 0; i < maxAttempts; i++) {
           await sleep(500);
 
@@ -685,8 +680,9 @@
           if (data.progress) {
             const progressMessages = {
               starting: "Initializing cameras...",
-              recording: "Recording video...",
-              uploading: "Uploading to cloud...",
+              capturing: "Capturing images...",
+              checking_s3: "Checking S3 access...",
+              uploading: "Uploading images to cloud...",
             };
             log(progressMessages[data.progress] || data.progress, "info");
           }
@@ -699,13 +695,23 @@
               // Show per-camera status
               if (data.last_result.camera_status) {
                 const cs = data.last_result.camera_status;
-                for (const [cam, status] of Object.entries(cs)) {
-                  if (status === "uploaded") {
-                    log(`✓ ${cam}: uploaded`, "success");
-                  } else if (status === "failed") {
-                    log(`✗ ${cam}: recording failed`, "error");
+                for (const [cam, camStatus] of Object.entries(cs)) {
+                  if (camStatus.startsWith("captured")) {
+                    log(`✓ ${cam}: ${camStatus}`, "success");
+                  } else if (camStatus === "failed") {
+                    log(`✗ ${cam}: capture failed`, "error");
+                  } else if (camStatus === "missing") {
+                    log(`— ${cam}: not connected`, "warn");
                   }
                 }
+              }
+
+              // Show total images
+              if (data.last_result.total_images) {
+                log(
+                  `Total images captured: ${data.last_result.total_images}`,
+                  "info",
+                );
               }
 
               if (data.last_result.s3_check) {
@@ -722,24 +728,25 @@
 
               if (data.last_result.errors?.length > 0) {
                 data.last_result.errors.forEach((e) => {
-                  // Make ffmpeg errors more readable
-                  if (e.includes("ffmpeg")) {
-                    // Already shown above
-                  } else if (e.includes("S3")) {
-                    log("Upload failed - check internet connection", "warn");
-                  } else {
+                  if (typeof e === "object") {
+                    if (e.fix) {
+                      log(`${e.camera}: ${e.error}`, "warn");
+                    } else {
+                      log(`${e.camera}: ${e.error}`, "warn");
+                    }
+                  } else if (typeof e === "string") {
                     log("Warning: " + e, "warn");
                   }
                 });
               }
               if (!data.last_result.success) {
-                throw new Error("Recording failed. Check camera connections.");
+                throw new Error("Capture failed. Check camera connections.");
               }
             }
             return; // Success
           }
         }
-        throw new Error("Recording timed out. The Pi may be unresponsive.");
+        throw new Error("Capture timed out. The Pi may be unresponsive.");
       }
 
       function sleep(ms) {

@@ -1,6 +1,6 @@
 """
 Training Data Collection Server
-Records video from 3 cameras, uploads to S3
+Captures still images from 3 cameras, uploads to S3
 """
 
 from flask import Flask, jsonify, request
@@ -29,9 +29,15 @@ CAMERAS = {
 
 S3_TRAINING_BUCKET = os.environ.get('S3_TRAINING_BUCKET', 'training-937249941844')
 
+# Capture settings
+NUM_IMAGES = 20             # Number of images to capture per camera
+CAPTURE_FPS = 1             # 1 picture per second (1 second apart)
+IMAGE_WIDTH = 4656
+IMAGE_HEIGHT = 3496
+
 # Thresholds
 MIN_DISK_MB = 1000          # Require 1GB free
-MIN_VIDEO_BYTES = 100000    # 100KB minimum valid video
+MIN_IMAGE_BYTES = 50000     # 50KB minimum valid image
 FFMPEG_TIMEOUT_SEC = 30     # Kill ffmpeg after this
 MAX_GOAT_ID_LEN = 50        # Prevent path traversal
 
@@ -127,7 +133,6 @@ def s3_upload_check(bucket: str, would_upload_keys: list[str]) -> dict:
 def sanitize_goat_id(goat_id) -> str:
     """Sanitize goat_id to prevent path traversal and weirdness."""
     goat_id = str(goat_id)
-    # Allow alphanumeric, underscore, hyphen only
     sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', goat_id)
     if not sanitized:
         raise ValueError("goat_id must contain alphanumeric characters")
@@ -200,27 +205,27 @@ def cleanup_temp_files(goat_id: str):
     """Remove any temp files for this goat_id."""
     try:
         for f in os.listdir('/tmp'):
-            if f.startswith(f'{goat_id}_') and f.endswith('.mp4'):
+            if f.startswith(f'{goat_id}_') and (f.endswith('.jpg') or f.endswith('.json')):
                 os.remove(f'/tmp/{f}')
                 log.debug('cleanup', f'Removed temp file', file=f)
     except Exception as e:
         log.warn('cleanup', 'Temp file cleanup failed', error=str(e))
 
 
-def validate_video(filepath: str) -> tuple[bool, str]:
-    """Check if video file is valid using ffprobe."""
+def validate_image(filepath: str) -> tuple[bool, str]:
+    """Check if image file is valid."""
     if not os.path.exists(filepath):
         return False, 'File does not exist'
 
     size = os.path.getsize(filepath)
-    if size < MIN_VIDEO_BYTES:
+    if size < MIN_IMAGE_BYTES:
         return False, f'File too small ({size} bytes)'
 
     try:
         result = subprocess.run([
             'ffprobe', '-v', 'error',
             '-select_streams', 'v:0',
-            '-show_entries', 'stream=codec_type,width,height,nb_frames',
+            '-show_entries', 'stream=codec_type,width,height',
             '-of', 'json',
             filepath
         ], capture_output=True, text=True, timeout=10)
@@ -230,9 +235,15 @@ def validate_video(filepath: str) -> tuple[bool, str]:
 
         probe = json.loads(result.stdout)
         if not probe.get('streams'):
-            return False, 'No video stream found'
+            return False, 'No image stream found'
 
-        return True, f'OK ({size} bytes)'
+        stream = probe['streams'][0]
+        width = stream.get('width', 0)
+        height = stream.get('height', 0)
+        if width < IMAGE_WIDTH or height < IMAGE_HEIGHT:
+            return False, f'Resolution too low ({width}x{height}, expected {IMAGE_WIDTH}x{IMAGE_HEIGHT})'
+
+        return True, f'OK ({width}x{height}, {size} bytes)'
 
     except subprocess.TimeoutExpired:
         return False, 'ffprobe timeout'
@@ -241,20 +252,21 @@ def validate_video(filepath: str) -> tuple[bool, str]:
 
 
 # ============================================================
-# RECORDING LOGIC
+# CAPTURE LOGIC
 # ============================================================
 
-def record_single_camera(name: str, path: str, goat_id: str, duration: int) -> dict:
+def capture_single_camera(name: str, path: str, goat_id: str) -> dict:
     """
-    Record from a single camera. Returns result dict.
+    Capture still images from a single camera. Returns result dict.
     Runs in a thread.
     """
-    filepath = f'/tmp/{goat_id}_{name}.mp4'
+    output_pattern = f'/tmp/{goat_id}_{name}_%02d.jpg'
     result = {
         'name': name,
         'success': False,
-        'filepath': None,
-        'size_bytes': 0,
+        'filepaths': [],
+        'total_size_bytes': 0,
+        'image_count': 0,
         'error': None,
         'fix': None
     }
@@ -262,17 +274,19 @@ def record_single_camera(name: str, path: str, goat_id: str, duration: int) -> d
     cmd = [
         'ffmpeg', '-y',
         '-f', 'v4l2',
-        '-framerate', '30',
-        '-video_size', '1920x1080',
+        '-input_format', 'mjpeg',
+        '-framerate', str(CAPTURE_FPS),
+        '-video_size', f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
         '-i', path,
-        '-t', str(duration),
-        '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-crf', '23',
-        filepath
+        '-frames:v', str(NUM_IMAGES),
+        '-qmin', '1',
+        '-q:v', '1',
+        output_pattern
     ]
 
-    log.info(f'camera:{name}', 'Starting capture', path=path, duration=duration)
+    log.info(f'camera:{name}', 'Starting capture',
+            path=path, num_images=NUM_IMAGES, fps=CAPTURE_FPS,
+            resolution=f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}')
 
     try:
         proc = subprocess.run(
@@ -283,17 +297,16 @@ def record_single_camera(name: str, path: str, goat_id: str, duration: int) -> d
         )
 
         if proc.returncode != 0:
-            # Parse common ffmpeg errors
             stderr = proc.stderr
             if 'No such file or directory' in stderr:
-                result['error'] = 'Camera disconnected during recording'
+                result['error'] = 'Camera disconnected during capture'
                 result['fix'] = f'Check USB cable for {name} camera'
             elif 'Device or resource busy' in stderr:
                 result['error'] = 'Camera is busy (another process using it)'
                 result['fix'] = 'Run: sudo pkill -9 ffmpeg'
             elif 'Invalid argument' in stderr:
-                result['error'] = 'Camera does not support 1920x1080@30fps'
-                result['fix'] = 'Check camera model compatibility'
+                result['error'] = f'Camera does not support {IMAGE_WIDTH}x{IMAGE_HEIGHT} MJPEG'
+                result['fix'] = 'Check camera resolution support with: v4l2-ctl --list-formats-ext'
             else:
                 result['error'] = f'ffmpeg error (code {proc.returncode})'
                 result['fix'] = f'Check logs, stderr: {stderr[:200]}'
@@ -302,32 +315,53 @@ def record_single_camera(name: str, path: str, goat_id: str, duration: int) -> d
                      error=result['error'], fix=result['fix'], returncode=proc.returncode)
             return result
 
-        # Validate the output
-        valid, validation_msg = validate_video(filepath)
-        if not valid:
-            result['error'] = f'Video validation failed: {validation_msg}'
-            result['fix'] = 'Camera may be malfunctioning, try unplugging and replugging'
-            log.error(f'camera:{name}', 'Video validation failed',
-                     error=validation_msg, file=filepath)
-            # Clean up bad file
-            if os.path.exists(filepath):
+        # Collect and validate output files
+        valid_files = []
+        total_size = 0
+        validation_failures = []
+
+        for i in range(1, NUM_IMAGES + 1):
+            filepath = f'/tmp/{goat_id}_{name}_{i:02d}.jpg'
+            if not os.path.exists(filepath):
+                validation_failures.append(f'Image {i:02d} missing')
+                continue
+
+            valid, msg = validate_image(filepath)
+            if not valid:
+                validation_failures.append(f'Image {i:02d}: {msg}')
                 os.remove(filepath)
+                continue
+
+            size = os.path.getsize(filepath)
+            total_size += size
+            valid_files.append(filepath)
+
+        if not valid_files:
+            result['error'] = f'No valid images captured. Failures: {"; ".join(validation_failures[:5])}'
+            result['fix'] = 'Camera may be malfunctioning, try unplugging and replugging'
+            log.error(f'camera:{name}', 'All images failed validation',
+                     failures=validation_failures[:5])
             return result
 
+        if len(valid_files) < NUM_IMAGES:
+            log.warn(f'camera:{name}', 'Some images failed validation',
+                    valid=len(valid_files), expected=NUM_IMAGES,
+                    failures=validation_failures[:5])
+
         result['success'] = True
-        result['filepath'] = filepath
-        result['size_bytes'] = os.path.getsize(filepath)
+        result['filepaths'] = valid_files
+        result['total_size_bytes'] = total_size
+        result['image_count'] = len(valid_files)
 
         log.info(f'camera:{name}', 'Capture complete',
-                size_bytes=result['size_bytes'], file=filepath)
+                image_count=len(valid_files), total_size_bytes=total_size)
 
     except subprocess.TimeoutExpired:
-        result['error'] = f'Recording timed out after {FFMPEG_TIMEOUT_SEC}s'
+        result['error'] = f'Capture timed out after {FFMPEG_TIMEOUT_SEC}s'
         result['fix'] = 'Camera may be frozen. Unplug USB hub, wait 5s, replug.'
         log.error(f'camera:{name}', 'Capture timeout',
                  timeout_sec=FFMPEG_TIMEOUT_SEC, fix=result['fix'])
 
-        # Kill the hung process
         subprocess.run(['pkill', '-9', '-f', f'ffmpeg.*{path}'], timeout=5)
 
     except Exception as e:
@@ -337,40 +371,41 @@ def record_single_camera(name: str, path: str, goat_id: str, duration: int) -> d
     return result
 
 
-def do_recording(goat_id: str, duration: int, goat_data: dict, is_test: bool):
+def do_capture(goat_id: str, goat_data: dict, is_test: bool):
     """
-    Main recording workflow. Runs in background thread.
+    Main capture workflow. Runs in background thread.
     REAL: all cameras must succeed and upload.
-    TEST: record what is available, do S3 capability check only (no upload).
+    TEST: capture what is available, do S3 capability check only (no upload).
     """
     start_time = time.time()
     results = {}
 
     try:
-        set_state(progress='recording')
+        set_state(progress='capturing')
 
-        # Record all cameras in parallel
+        # Capture all cameras in parallel
         threads = {}
         for name, path in CAMERAS.items():
-            # Only record from cameras that exist
             check = check_camera(name, path)
             if check['error']:
                 results[name] = {
                     'name': name,
                     'success': False,
+                    'filepaths': [],
+                    'image_count': 0,
                     'error': check['error'],
                     'fix': check['fix']
                 }
                 continue
 
             t = threading.Thread(
-                target=lambda n=name, p=path: results.update({n: record_single_camera(n, p, goat_id, duration)})
+                target=lambda n=name, p=path: results.update({n: capture_single_camera(n, p, goat_id)})
             )
             threads[name] = t
             t.start()
 
-        # Wait for all recordings
-        log.info('record', f'Waiting for {len(threads)} cameras', cameras=','.join(threads.keys()))
+        # Wait for all captures
+        log.info('capture', f'Waiting for {len(threads)} cameras', cameras=','.join(threads.keys()))
         for name, t in threads.items():
             t.join(timeout=FFMPEG_TIMEOUT_SEC + 5)
             if t.is_alive():
@@ -378,7 +413,9 @@ def do_recording(goat_id: str, duration: int, goat_data: dict, is_test: bool):
                 results[name] = {
                     'name': name,
                     'success': False,
-                    'error': 'Recording thread hung',
+                    'filepaths': [],
+                    'image_count': 0,
+                    'error': 'Capture thread hung',
                     'fix': 'Restart the service: sudo systemctl restart goat-training'
                 }
 
@@ -391,19 +428,22 @@ def do_recording(goat_id: str, duration: int, goat_data: dict, is_test: bool):
             if not r:
                 camera_status[cam] = "missing"
             elif r.get("success"):
-                camera_status[cam] = "recorded"
+                camera_status[cam] = f"captured ({r.get('image_count', 0)} images)"
             else:
                 if r.get("error") in ("Camera not connected", "Camera not readable (permission denied)"):
                     camera_status[cam] = "missing"
                 else:
                     camera_status[cam] = "failed"
 
+        total_images = sum(r.get('image_count', 0) for r in successful)
+
         # REAL mode: strict (any failure => batch fail)
         if (not is_test) and failed:
             for r in successful:
-                if r.get('filepath') and os.path.exists(r['filepath']):
-                    os.remove(r['filepath'])
-                    log.info(f"camera:{r['name']}", 'Cleaned up file (batch failed)')
+                for fp in r.get('filepaths', []):
+                    if os.path.exists(fp):
+                        os.remove(fp)
+                log.info(f"camera:{r['name']}", 'Cleaned up files (batch failed)')
 
             error_summary = '; '.join([f"{r['name']}: {r.get('error', 'unknown')}" for r in failed])
             fix_summary = ' | '.join([r.get('fix', '') for r in failed if r.get('fix')])
@@ -414,13 +454,14 @@ def do_recording(goat_id: str, duration: int, goat_data: dict, is_test: bool):
                     'goat_id': goat_id,
                     'success': False,
                     'uploaded': [],
+                    'total_images': 0,
                     'camera_status': camera_status,
                     'errors': [{'camera': r['name'], 'error': r.get('error'), 'fix': r.get('fix')} for r in failed],
                     'duration_sec': round(time.time() - start_time, 2)
                 }
             )
 
-            log.error('record', 'Recording batch failed',
+            log.error('capture', 'Capture batch failed',
                      goat_id=goat_id,
                      failed_cameras=','.join([r['name'] for r in failed]),
                      error=error_summary,
@@ -429,7 +470,7 @@ def do_recording(goat_id: str, duration: int, goat_data: dict, is_test: bool):
 
         # TEST mode: permissive (require at least 1 camera success)
         if is_test and not successful:
-            error_summary = '; '.join([f"{r['name']}: {r.get('error', 'unknown')}" for r in failed]) or "No cameras recorded"
+            error_summary = '; '.join([f"{r['name']}: {r.get('error', 'unknown')}" for r in failed]) or "No cameras captured"
             set_state(
                 last_error=error_summary,
                 last_result={
@@ -437,27 +478,34 @@ def do_recording(goat_id: str, duration: int, goat_data: dict, is_test: bool):
                     'success': False,
                     'test': True,
                     'uploaded': [],
+                    'total_images': 0,
                     'camera_status': camera_status,
                     'errors': [{'camera': r['name'], 'error': r.get('error'), 'fix': r.get('fix')} for r in failed],
                     'duration_sec': round(time.time() - start_time, 2)
                 }
             )
-            log.error('record', 'Test recording failed (no cameras succeeded)', goat_id=goat_id, error=error_summary)
+            log.error('capture', 'Test capture failed (no cameras succeeded)', goat_id=goat_id, error=error_summary)
             return
 
         # TEST: do NOT upload; do S3 capability check only
         if is_test:
-            set_state(progress='uploading')
+            set_state(progress='checking_s3')
 
-            would_upload = [f'{goat_id}/{goat_id}_{r["name"]}.mp4' for r in successful]
+            would_upload = []
+            for r in successful:
+                for fp in r.get('filepaths', []):
+                    filename = os.path.basename(fp)
+                    would_upload.append(f'{goat_id}/{r["name"]}/{filename}')
             if goat_data:
                 would_upload.append(f'{goat_id}/goat_data.json')
 
             s3_check = s3_upload_check(S3_TRAINING_BUCKET, would_upload)
 
+            # Clean up local files
             for r in successful:
-                if r.get('filepath') and os.path.exists(r['filepath']):
-                    os.remove(r['filepath'])
+                for fp in r.get('filepaths', []):
+                    if os.path.exists(fp):
+                        os.remove(fp)
 
             total_time = round(time.time() - start_time, 2)
 
@@ -469,13 +517,14 @@ def do_recording(goat_id: str, duration: int, goat_data: dict, is_test: bool):
                         'success': False,
                         'test': True,
                         'uploaded': [],
+                        'total_images': total_images,
                         'camera_status': camera_status,
                         's3_check': s3_check,
                         'errors': [{'camera': 's3', 'error': s3_check.get('error')}],
                         'duration_sec': total_time
                     }
                 )
-                log.error('record', 'Test complete but S3 upload check failed', goat_id=goat_id, error=s3_check.get("error"))
+                log.error('capture', 'Test complete but S3 upload check failed', goat_id=goat_id, error=s3_check.get("error"))
             else:
                 set_state(
                     last_error=None,
@@ -484,14 +533,15 @@ def do_recording(goat_id: str, duration: int, goat_data: dict, is_test: bool):
                         'success': True,
                         'test': True,
                         'uploaded': [],
+                        'total_images': total_images,
                         'camera_status': camera_status,
                         's3_check': s3_check,
                         'errors': [],
                         'duration_sec': total_time
                     }
                 )
-                log.info('record', 'Test recording complete (upload check passed; no upload)',
-                        goat_id=goat_id, cameras=len(successful), duration_sec=total_time)
+                log.info('capture', 'Test capture complete (upload check passed; no upload)',
+                        goat_id=goat_id, total_images=total_images, cameras=len(successful), duration_sec=total_time)
             return
 
         # Upload to S3 (REAL)
@@ -500,45 +550,47 @@ def do_recording(goat_id: str, duration: int, goat_data: dict, is_test: bool):
         upload_errors = []
 
         for r in successful:
-            s3_key = f'{goat_id}/{goat_id}_{r["name"]}.mp4'
+            for fp in r.get('filepaths', []):
+                filename = os.path.basename(fp)
+                s3_key = f'{goat_id}/{r["name"]}/{filename}'
 
-            try:
-                log.info(f's3:{r["name"]}', 'Uploading',
-                        key=s3_key, size_bytes=r['size_bytes'])
+                try:
+                    log.info(f's3:{r["name"]}', 'Uploading',
+                            key=s3_key, size_bytes=os.path.getsize(fp))
 
-                get_s3().upload_file(r['filepath'], S3_TRAINING_BUCKET, s3_key)
-                uploaded.append(s3_key)
+                    get_s3().upload_file(fp, S3_TRAINING_BUCKET, s3_key)
+                    uploaded.append(s3_key)
 
-                log.info(f's3:{r["name"]}', 'Upload complete', key=s3_key)
+                except Exception as e:
+                    error_msg = str(e)
+                    if 'NoSuchBucket' in error_msg:
+                        fix = f'Bucket {S3_TRAINING_BUCKET} does not exist'
+                    elif 'AccessDenied' in error_msg:
+                        fix = 'Check IAM permissions for S3 upload'
+                    elif 'timeout' in error_msg.lower():
+                        fix = 'Network issue - check internet connection'
+                    else:
+                        fix = 'Check AWS credentials and network'
 
-            except Exception as e:
-                error_msg = str(e)
-                if 'NoSuchBucket' in error_msg:
-                    fix = f'Bucket {S3_TRAINING_BUCKET} does not exist'
-                elif 'AccessDenied' in error_msg:
-                    fix = 'Check IAM permissions for S3 upload'
-                elif 'timeout' in error_msg.lower():
-                    fix = 'Network issue - check internet connection'
-                else:
-                    fix = 'Check AWS credentials and network'
+                    upload_errors.append({'camera': r['name'], 'error': error_msg, 'fix': fix, 'file': filename})
+                    log.error(f's3:{r["name"]}', 'Upload failed',
+                             error=error_msg, fix=fix, key=s3_key)
 
-                upload_errors.append({'camera': r['name'], 'error': error_msg, 'fix': fix})
-                log.error(f's3:{r["name"]}', 'Upload failed',
-                         error=error_msg, fix=fix, key=s3_key)
-
-            finally:
-                # Always clean up local file
-                if os.path.exists(r['filepath']):
-                    os.remove(r['filepath'])
+                finally:
+                    if os.path.exists(fp):
+                        os.remove(fp)
 
         # Upload goat_data.json
-        if goat_data and uploaded:  # Only if we uploaded videos
+        if goat_data and uploaded:
             try:
                 json_data = {
                     'goat_id': goat_id,
                     'timestamp': datetime.now().isoformat(),
                     'cameras': [r['name'] for r in successful],
-                    **{k: v for k, v in goat_data.items() if v}  # Only non-empty fields
+                    'images_per_camera': NUM_IMAGES,
+                    'resolution': f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
+                    'capture_fps': CAPTURE_FPS,
+                    **{k: v for k, v in goat_data.items() if v}
                 }
 
                 json_key = f'{goat_id}/goat_data.json'
@@ -567,11 +619,12 @@ def do_recording(goat_id: str, duration: int, goat_data: dict, is_test: bool):
                     'goat_id': goat_id,
                     'success': False,
                     'uploaded': uploaded,
+                    'total_images': total_images,
                     'errors': upload_errors,
                     'duration_sec': total_time
                 }
             )
-            log.error('record', 'Recording complete but upload failed',
+            log.error('capture', 'Capture complete but upload failed',
                      goat_id=goat_id, uploaded=len(uploaded), errors=len(upload_errors))
         else:
             set_state(
@@ -580,15 +633,17 @@ def do_recording(goat_id: str, duration: int, goat_data: dict, is_test: bool):
                     'goat_id': goat_id,
                     'success': True,
                     'uploaded': uploaded,
+                    'total_images': total_images,
                     'errors': [],
                     'duration_sec': total_time
                 }
             )
-            log.info('record', 'Recording complete',
-                    goat_id=goat_id, uploaded=len(uploaded), duration_sec=total_time)
+            log.info('capture', 'Capture complete',
+                    goat_id=goat_id, total_images=total_images,
+                    uploaded=len(uploaded), duration_sec=total_time)
 
     except Exception as e:
-        log.exception('record', 'Unexpected error in recording workflow', error=str(e))
+        log.exception('capture', 'Unexpected error in capture workflow', error=str(e))
         set_state(
             last_error=str(e),
             last_result={
@@ -631,6 +686,12 @@ def diagnostics():
         'cameras': {},
         'disk': {},
         's3': {},
+        'capture_config': {
+            'num_images': NUM_IMAGES,
+            'capture_fps': CAPTURE_FPS,
+            'resolution': f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
+            'format': 'mjpeg'
+        },
         'state': get_state()
     }
 
@@ -659,19 +720,19 @@ def diagnostics():
 
 @app.route('/record', methods=['POST'])
 def record():
-    """Start a recording. REAL requires all 3 cameras; TEST can proceed with missing cameras."""
+    """Start a capture. REAL requires all 3 cameras; TEST can proceed with missing cameras."""
 
-    # Check if already recording
+    # Check if already capturing
     state = get_state()
     if state['active']:
-        log.warn('record', 'Recording already in progress',
+        log.warn('capture', 'Capture already in progress',
                 current_goat_id=state['goat_id'],
                 started_at=state['started_at'])
         return jsonify({
             'status': 'error',
-            'error_code': 'RECORDING_IN_PROGRESS',
-            'message': f'Recording already in progress for goat {state["goat_id"]}. Please wait.',
-            'current_recording': {
+            'error_code': 'CAPTURE_IN_PROGRESS',
+            'message': f'Capture already in progress for goat {state["goat_id"]}. Please wait.',
+            'current_capture': {
                 'goat_id': state['goat_id'],
                 'started_at': state['started_at'],
                 'progress': state['progress']
@@ -687,21 +748,10 @@ def record():
     try:
         goat_id = sanitize_goat_id(data.get('goat_id', f'goat_{int(time.time())}'))
     except ValueError as e:
-        log.warn('record', 'Invalid goat_id', error=str(e), raw_goat_id=str(data.get('goat_id'))[:50])
+        log.warn('capture', 'Invalid goat_id', error=str(e), raw_goat_id=str(data.get('goat_id'))[:50])
         return jsonify({
             'status': 'error',
             'error_code': 'INVALID_GOAT_ID',
-            'message': str(e)
-        }), 400
-
-    try:
-        duration = int(data.get('duration', 5))
-        if duration < 1 or duration > 10:
-            raise ValueError('Duration must be 1-10 seconds')
-    except (ValueError, TypeError) as e:
-        return jsonify({
-            'status': 'error',
-            'error_code': 'INVALID_DURATION',
             'message': str(e)
         }), 400
 
@@ -718,19 +768,21 @@ def record():
         require_all_cameras = False
 
     # Pre-flight checks
-    log.info('record', 'Recording requested', goat_id=goat_id, duration=duration)
+    log.info('capture', 'Capture requested',
+            goat_id=goat_id, num_images=NUM_IMAGES, fps=CAPTURE_FPS,
+            resolution=f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}')
 
     # Check disk space
     disk_ok, disk_mb = check_disk_space()
     if not disk_ok:
-        log.error('record', 'Insufficient disk space',
+        log.error('capture', 'Insufficient disk space',
                  free_mb=disk_mb, required_mb=MIN_DISK_MB,
                  fix='Clear /tmp or reboot Pi')
         return jsonify({
             'status': 'error',
             'error_code': 'LOW_DISK_SPACE',
             'message': f'Only {disk_mb}MB free, need {MIN_DISK_MB}MB',
-            'fix': 'Run: sudo rm -rf /tmp/*.mp4'
+            'fix': 'Run: sudo rm -rf /tmp/*.jpg'
         }), 507  # Insufficient Storage
 
     # Check cameras before starting
@@ -742,7 +794,7 @@ def record():
     working_cameras = {name: check for name, check in camera_checks.items() if not check.get('error')}
 
     if failed_cameras:
-        log.warn('record', 'Some cameras not ready',
+        log.warn('capture', 'Some cameras not ready',
                 goat_id=goat_id,
                 missing=','.join(failed_cameras.keys()),
                 available=','.join(working_cameras.keys()))
@@ -764,7 +816,7 @@ def record():
         }), 503
 
     if not working_cameras:
-        log.error('record', 'No cameras available at all', goat_id=goat_id)
+        log.error('capture', 'No cameras available at all', goat_id=goat_id)
         return jsonify({
             'status': 'error',
             'error_code': 'NO_CAMERAS',
@@ -774,7 +826,7 @@ def record():
     # Kill any stale ffmpeg processes
     kill_stale_ffmpeg()
 
-    # Set state and start recording
+    # Set state and start capture
     set_state(
         active=True,
         goat_id=goat_id,
@@ -783,16 +835,19 @@ def record():
         last_error=None
     )
 
-    thread = threading.Thread(target=do_recording, args=(goat_id, duration, goat_data, is_test))
+    thread = threading.Thread(target=do_capture, args=(goat_id, goat_data, is_test))
     thread.start()
 
-    log.info('record', 'Recording started',
-            goat_id=goat_id, duration=duration, cameras=','.join(CAMERAS.keys()))
+    log.info('capture', 'Capture started',
+            goat_id=goat_id, num_images=NUM_IMAGES,
+            cameras=','.join(CAMERAS.keys()))
 
     return jsonify({
-        'status': 'recording_started',
+        'status': 'capture_started',
         'goat_id': goat_id,
-        'duration': duration,
+        'num_images': NUM_IMAGES,
+        'capture_fps': CAPTURE_FPS,
+        'resolution': f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
         'is_test': bool(is_test),
         'require_all_cameras': bool(require_all_cameras),
         'cameras_expected': list(CAMERAS.keys()),
@@ -804,7 +859,7 @@ def record():
 
 @app.route('/status')
 def status():
-    """Get current recording state."""
+    """Get current capture state."""
     return jsonify(get_state())
 
 
@@ -820,9 +875,9 @@ def cancel():
         cleanup_temp_files(state['goat_id'])
 
     reset_state()
-    set_state(last_error='Recording cancelled by user')
+    set_state(last_error='Capture cancelled by user')
 
-    log.info('cancel', 'Recording cancelled and state reset')
+    log.info('cancel', 'Capture cancelled and state reset')
 
     return jsonify({'status': 'cancelled'})
 
@@ -838,6 +893,9 @@ if __name__ == '__main__':
     # Config
     log.info('startup', 'Configuration',
             bucket=S3_TRAINING_BUCKET,
+            num_images=NUM_IMAGES,
+            capture_fps=CAPTURE_FPS,
+            resolution=f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
             min_disk_mb=MIN_DISK_MB,
             ffmpeg_timeout=FFMPEG_TIMEOUT_SEC)
 
@@ -860,7 +918,7 @@ if __name__ == '__main__':
     if not disk_ok:
         log.error('startup:disk', 'Low disk space',
                  free_mb=disk_mb, required_mb=MIN_DISK_MB,
-                 fix='Run: sudo rm -rf /tmp/*.mp4')
+                 fix='Run: sudo rm -rf /tmp/*.jpg')
     else:
         log.info('startup:disk', 'Disk OK', free_mb=disk_mb)
 
