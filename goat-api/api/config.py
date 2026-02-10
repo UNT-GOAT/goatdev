@@ -15,20 +15,10 @@ import os
 # - 'left' means head is on the left side of the image
 # - 'right' means head is on the right side of the image
 #
-# NOTE: If goat faces LEFT in side view, it typically faces RIGHT in top view
-# (because top camera is above looking down)
 #
 # This will be adjusted once we have cameras set up and can confirm orientations
 
-SIDE_VIEW_DIRECTION = 'left'   # Goat faces left in side view
-TOP_VIEW_DIRECTION = 'right'   # Goat faces right in top view (opposite of side)
-FRONT_VIEW_DIRECTION = None    # Not applicable for front view
-
-# Fallback measurement positions (as % from LEFT side of image)
-# Used when leg detection fails
-# These should be adjusted based on typical goat positioning in your chute
-FALLBACK_SHOULDER_PCT = 0.25  # 25% from left edge
-FALLBACK_RUMP_PCT = 0.75      # 75% from left edge
+TOP_VIEW_DIRECTION = 'right'   # Goat faces right in top view
 #=============================================================
 
 # Base paths
