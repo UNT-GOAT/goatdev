@@ -33,6 +33,7 @@ S3_TRAINING_BUCKET = os.environ.get('S3_TRAINING_BUCKET', 'training-937249941844
 # Capture settings
 NUM_IMAGES = 20             # Number of images to capture per camera
 CAPTURE_FPS = 1             # 1 picture per second (1 second apart)
+CAMERA_NATIVE_FPS = 10      # Camera's native FPS at capture resolution
 IMAGE_WIDTH = 4656
 IMAGE_HEIGHT = 3496
 
@@ -276,13 +277,19 @@ def capture_single_camera(name: str, path: str, goat_id: str) -> dict:
         'fix': None
     }
 
+    # Camera streams at CAMERA_NATIVE_FPS (10fps). We select every Nth frame
+    # to get CAPTURE_FPS (1fps) output. This guarantees exactly 1s between frames.
+    frame_interval = CAMERA_NATIVE_FPS // CAPTURE_FPS  # e.g. 10fps / 1fps = every 10th frame
+
     cmd = [
         'ffmpeg', '-y',
         '-f', 'v4l2',
         '-input_format', 'mjpeg',
-        '-framerate', str(CAPTURE_FPS),
+        '-framerate', str(CAMERA_NATIVE_FPS),
         '-video_size', f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
         '-i', path,
+        '-vf', f'select=not(mod(n\\,{frame_interval}))',
+        '-vsync', 'vfn',
         '-frames:v', str(NUM_IMAGES),
         '-threads', '1',
         '-qmin', '1',
