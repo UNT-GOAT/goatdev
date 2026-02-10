@@ -849,28 +849,30 @@ class GoatGrader:
             return width_pixels
         
         if leg_positions and leg_positions.detected:
-            from .config import SIDE_VIEW_DIRECTION, TOP_VIEW_DIRECTION
+            # Calculate real-world distances from rump using side view
+            side_bbox_w = leg_positions.bbox[2]  # side view bounding box width in pixels
             
-            shoulder_pct = leg_positions.shoulder_pct
-            rump_pct = leg_positions.rump_pct
+            rump_to_shoulder_px = abs(leg_positions.rump_pct - leg_positions.shoulder_pct) * side_bbox_w
+            rump_to_shoulder_cm = rump_to_shoulder_px / self.side_pixels_per_cm
+            rump_to_waist_cm = rump_to_shoulder_cm / 2
             
-            # If side and top views have opposite directions, flip the percentages
-            if SIDE_VIEW_DIRECTION != TOP_VIEW_DIRECTION:
-                shoulder_pct = 1 - shoulder_pct
-                rump_pct = 1 - rump_pct
+            # In top view, rump is always the left edge of the mask
+            rump_x = x
+            shoulder_x = int(rump_x + rump_to_shoulder_cm * self.top_pixels_per_cm)
+            waist_x = int(rump_x + rump_to_waist_cm * self.top_pixels_per_cm)
             
-            log.info('grader:top:widths', 'Leg position mapping',
+            # Clamp to mask bounds
+            shoulder_x = min(shoulder_x, x + w)
+            waist_x = min(waist_x, x + w)
+            
+            log.info('grader:top:widths', 'Rump-anchored mapping',
                     serial_id=serial_id,
-                    raw_shoulder=round(leg_positions.shoulder_pct, 3),
-                    raw_rump=round(leg_positions.rump_pct, 3),
-                    mapped_shoulder=round(shoulder_pct, 3),
-                    mapped_rump=round(rump_pct, 3),
-                    flipped=SIDE_VIEW_DIRECTION != TOP_VIEW_DIRECTION)
-            
-            # Calculate x positions from percentages
-            shoulder_x = int(x + shoulder_pct * w)
-            rump_x = int(x + rump_pct * w)
-            waist_x = int((shoulder_x + rump_x) / 2)
+                    rump_to_shoulder_cm=round(rump_to_shoulder_cm, 2),
+                    rump_x=rump_x,
+                    waist_x=waist_x,
+                    shoulder_x=shoulder_x,
+                    top_bbox_x=x,
+                    top_bbox_w=w)
             
             # Get widths at each position (average over small window for stability)
             window = 5  # pixels on each side
@@ -1160,21 +1162,15 @@ class GoatGrader:
                     
                     # Calculate measurement positions
                     if leg_positions and leg_positions.detected:
-                        from .config import SIDE_VIEW_DIRECTION, TOP_VIEW_DIRECTION
+                        side_bbox_w = leg_positions.bbox[2]
                         
-                        shoulder_pct = leg_positions.shoulder_pct
-                        rump_pct = leg_positions.rump_pct
+                        rump_to_shoulder_px = abs(leg_positions.rump_pct - leg_positions.shoulder_pct) * side_bbox_w
+                        rump_to_shoulder_cm = rump_to_shoulder_px / self.side_pixels_per_cm
+                        rump_to_waist_cm = rump_to_shoulder_cm / 2
                         
-                        if SIDE_VIEW_DIRECTION != TOP_VIEW_DIRECTION:
-                            shoulder_pct = 1 - shoulder_pct
-                            rump_pct = 1 - rump_pct
-                        
-                        shoulder_x = int(x + shoulder_pct * w)
-                        rump_x = int(x + rump_pct * w)
-                    else:
-                        # Fallback positions
-                        shoulder_x = int(x + 0.25 * w)
-                        rump_x = int(x + 0.80 * w)
+                        rump_x = x
+                        shoulder_x = min(int(rump_x + rump_to_shoulder_cm * self.top_pixels_per_cm), x + w)
+                        waist_x = min(int(rump_x + rump_to_waist_cm * self.top_pixels_per_cm), x + w)
                     
                     waist_x = int((shoulder_x + rump_x) / 2)
                     
