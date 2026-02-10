@@ -258,7 +258,8 @@ def validate_image(filepath: str) -> tuple[bool, str]:
 def capture_single_camera(name: str, path: str, goat_id: str) -> dict:
     """
     Capture still images from a single camera. Returns result dict.
-    Runs in a thread.
+    Uses -codec:v copy to pass through raw MJPEG frames without
+    decoding/re-encoding, keeping RAM usage minimal (~50-100MB vs ~3GB).
     """
     output_pattern = f'/tmp/{goat_id}_{name}_%02d.jpg'
     result = {
@@ -279,8 +280,7 @@ def capture_single_camera(name: str, path: str, goat_id: str) -> dict:
         '-video_size', f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
         '-i', path,
         '-frames:v', str(NUM_IMAGES),
-        '-qmin', '1',
-        '-q:v', '1',
+        '-codec:v', 'copy',
         output_pattern
     ]
 
@@ -923,8 +923,10 @@ if __name__ == '__main__':
         log.info('startup:disk', 'Disk OK', free_mb=disk_mb)
 
     # Check S3
+    s3_ok = False
     try:
         get_s3().head_bucket(Bucket=S3_TRAINING_BUCKET)
+        s3_ok = True
         log.info('startup:s3', 'S3 connection OK', bucket=S3_TRAINING_BUCKET)
     except Exception as e:
         log.error('startup:s3', 'S3 connection failed',
@@ -932,7 +934,7 @@ if __name__ == '__main__':
                  fix='Check AWS credentials in ~/.aws/credentials')
 
     # Summary
-    if all_cameras_ok and disk_ok:
+    if all_cameras_ok and disk_ok and s3_ok:
         log.info('startup', 'All systems ready')
     else:
         log.warn('startup', 'Starting with errors - some features may not work')
