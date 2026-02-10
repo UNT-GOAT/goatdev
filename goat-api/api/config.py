@@ -19,6 +19,8 @@ import os
 # This will be adjusted once we have cameras set up and can confirm orientations
 
 TOP_VIEW_DIRECTION = 'right'   # Goat faces right in top view
+TOP_RUMP_PCT = 0.30            # back legs ~30% from tail end
+TOP_SHOULDER_PCT = 0.70        # front legs ~70% from tail end
 #=============================================================
 
 # Base paths
