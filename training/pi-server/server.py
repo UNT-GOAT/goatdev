@@ -262,9 +262,10 @@ def capture_single_camera(name: str, path: str, goat_id: str) -> dict:
     Capture still images from a single camera. Returns result dict.
     Runs in a thread (one per camera, all cameras in parallel).
 
-    Captures one frame at a time with 1-second spacing using -codec:v copy
-    (raw MJPEG passthrough, ~50MB RAM per ffmpeg call).
+    Uses a single ffmpeg process per camera with -framerate to control timing.
+    Re-encodes with -threads 1 to limit memory (~400-500MB per process).
     """
+    output_pattern = f'/tmp/{goat_id}_{name}_%02d.jpg'
     result = {
         'name': name,
         'success': False,
@@ -275,77 +276,71 @@ def capture_single_camera(name: str, path: str, goat_id: str) -> dict:
         'fix': None
     }
 
+    cmd = [
+        'ffmpeg', '-y',
+        '-f', 'v4l2',
+        '-input_format', 'mjpeg',
+        '-framerate', str(CAPTURE_FPS),
+        '-video_size', f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
+        '-i', path,
+        '-frames:v', str(NUM_IMAGES),
+        '-threads', '1',
+        '-qmin', '1',
+        '-q:v', '1',
+        output_pattern
+    ]
+
     log.info(f'camera:{name}', 'Starting capture',
             path=path, num_images=NUM_IMAGES, fps=CAPTURE_FPS,
             resolution=f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}')
 
-    valid_files = []
-    total_size = 0
-    validation_failures = []
-
     try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=CAPTURE_TOTAL_TIMEOUT_SEC
+        )
+
+        if proc.returncode != 0:
+            stderr = proc.stderr
+            if 'No such file or directory' in stderr:
+                result['error'] = 'Camera disconnected during capture'
+                result['fix'] = f'Check USB cable for {name} camera'
+            elif 'Device or resource busy' in stderr:
+                result['error'] = 'Camera is busy (another process using it)'
+                result['fix'] = 'Run: sudo pkill -9 ffmpeg'
+            elif 'Invalid argument' in stderr:
+                result['error'] = f'Camera does not support {IMAGE_WIDTH}x{IMAGE_HEIGHT} MJPEG'
+                result['fix'] = 'Check camera resolution support with: v4l2-ctl --list-formats-ext'
+            else:
+                result['error'] = f'ffmpeg error (code {proc.returncode})'
+                result['fix'] = f'Check logs, stderr: {stderr[:200]}'
+
+            log.error(f'camera:{name}', 'Capture failed',
+                     error=result['error'], fix=result['fix'], returncode=proc.returncode)
+            return result
+
+        # Collect and validate output files
+        valid_files = []
+        total_size = 0
+        validation_failures = []
+
         for i in range(1, NUM_IMAGES + 1):
             filepath = f'/tmp/{goat_id}_{name}_{i:02d}.jpg'
-
-            cmd = [
-                'ffmpeg', '-y',
-                '-f', 'v4l2',
-                '-input_format', 'mjpeg',
-                '-video_size', f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
-                '-i', path,
-                '-frames:v', '1',
-                '-codec:v', 'copy',
-                filepath
-            ]
-
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=10  # Single frame should be fast
-            )
-
-            if proc.returncode != 0:
-                stderr = proc.stderr
-                if 'No such file or directory' in stderr:
-                    result['error'] = 'Camera disconnected during capture'
-                    result['fix'] = f'Check USB cable for {name} camera'
-                    log.error(f'camera:{name}', 'Capture failed mid-sequence',
-                             error=result['error'], frame=i)
-                    return result
-                elif 'Device or resource busy' in stderr:
-                    result['error'] = 'Camera is busy (another process using it)'
-                    result['fix'] = 'Run: sudo pkill -9 ffmpeg'
-                    log.error(f'camera:{name}', 'Capture failed',
-                             error=result['error'])
-                    return result
-                elif 'Invalid argument' in stderr:
-                    result['error'] = f'Camera does not support {IMAGE_WIDTH}x{IMAGE_HEIGHT} MJPEG'
-                    result['fix'] = 'Check camera resolution support with: v4l2-ctl --list-formats-ext'
-                    log.error(f'camera:{name}', 'Capture failed',
-                             error=result['error'])
-                    return result
-                else:
-                    validation_failures.append(f'Image {i:02d}: ffmpeg error (code {proc.returncode})')
-                    continue
-
-            # Validate the captured frame
             if not os.path.exists(filepath):
                 validation_failures.append(f'Image {i:02d} missing')
                 continue
 
-            size = os.path.getsize(filepath)
-            if size < MIN_IMAGE_BYTES:
-                validation_failures.append(f'Image {i:02d}: too small ({size} bytes)')
+            valid, msg = validate_image(filepath)
+            if not valid:
+                validation_failures.append(f'Image {i:02d}: {msg}')
                 os.remove(filepath)
                 continue
 
+            size = os.path.getsize(filepath)
             total_size += size
             valid_files.append(filepath)
-
-            # Wait before next capture (skip delay after last frame)
-            if i < NUM_IMAGES:
-                time.sleep(1.0 / CAPTURE_FPS)
 
         if not valid_files:
             result['error'] = f'No valid images captured. Failures: {"; ".join(validation_failures[:5])}'
@@ -368,9 +363,10 @@ def capture_single_camera(name: str, path: str, goat_id: str) -> dict:
                 image_count=len(valid_files), total_size_bytes=total_size)
 
     except subprocess.TimeoutExpired:
-        result['error'] = f'Capture timed out on frame'
+        result['error'] = f'Capture timed out after {CAPTURE_TOTAL_TIMEOUT_SEC}s'
         result['fix'] = 'Camera may be frozen. Unplug USB hub, wait 5s, replug.'
-        log.error(f'camera:{name}', 'Capture timeout', fix=result['fix'])
+        log.error(f'camera:{name}', 'Capture timeout',
+                 timeout_sec=CAPTURE_TOTAL_TIMEOUT_SEC, fix=result['fix'])
 
         subprocess.run(['pkill', '-9', '-f', f'ffmpeg.*{path}'], timeout=5)
 
