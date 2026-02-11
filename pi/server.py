@@ -826,6 +826,152 @@ def status():
     return jsonify(get_state())
 
 
+@app.route('/grade/test', methods=['POST'])
+def grade_test():
+    """
+    Test grading with local image files instead of cameras.
+    Runs the same EC2 submission pipeline as /grade but skips capture.
+
+    Usage:
+        curl -X POST http://localhost:5000/grade/test \
+          -F "serial_id=GOAT123" \
+          -F "live_weight=85.5" \
+          -F "side_image=@/tmp/side_17.jpg" \
+          -F "top_image=@/tmp/top_17.jpg" \
+          -F "front_image=@/tmp/front_17.jpg"
+    """
+    serial_id = request.form.get('serial_id', '').strip()
+    live_weight = request.form.get('live_weight')
+
+    # Validate
+    if not serial_id:
+        return jsonify({'status': 'error', 'error_code': 'MISSING_SERIAL_ID',
+                       'message': 'serial_id is required'}), 400
+
+    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', serial_id)
+    if not sanitized:
+        return jsonify({'status': 'error', 'error_code': 'INVALID_SERIAL_ID',
+                       'message': 'serial_id must be alphanumeric'}), 400
+
+    try:
+        live_weight = float(live_weight)
+        if live_weight <= 0 or live_weight > 500:
+            raise ValueError()
+    except (TypeError, ValueError):
+        return jsonify({'status': 'error', 'error_code': 'INVALID_WEIGHT',
+                       'message': 'live_weight must be a number between 0 and 500'}), 400
+
+    # Check all 3 images provided
+    for view in ['side_image', 'top_image', 'front_image']:
+        if view not in request.files:
+            return jsonify({'status': 'error', 'error_code': 'MISSING_IMAGE',
+                           'message': f'{view} is required'}), 400
+        f = request.files[view]
+        if not f.filename:
+            return jsonify({'status': 'error', 'error_code': 'EMPTY_IMAGE',
+                           'message': f'{view} has no filename'}), 400
+
+    log.info('grade:test', 'Test grade request',
+            serial_id=sanitized, live_weight=live_weight,
+            side_size=request.files['side_image'].content_length,
+            top_size=request.files['top_image'].content_length,
+            front_size=request.files['front_image'].content_length)
+
+    # Forward to EC2
+    start_time = time.time()
+    try:
+        files = {
+            'side_image': (
+                request.files['side_image'].filename,
+                request.files['side_image'].stream,
+                request.files['side_image'].content_type or 'image/jpeg'
+            ),
+            'top_image': (
+                request.files['top_image'].filename,
+                request.files['top_image'].stream,
+                request.files['top_image'].content_type or 'image/jpeg'
+            ),
+            'front_image': (
+                request.files['front_image'].filename,
+                request.files['front_image'].stream,
+                request.files['front_image'].content_type or 'image/jpeg'
+            ),
+        }
+        data = {
+            'serial_id': sanitized,
+            'live_weight': str(live_weight),
+        }
+
+        ec2_start = time.time()
+        response = requests.post(
+            f'{EC2_API}/analyze',
+            files=files,
+            data=data,
+            timeout=EC2_TIMEOUT_SEC
+        )
+        ec2_time = round(time.time() - ec2_start, 2)
+        total_time = round(time.time() - start_time, 2)
+
+        if response.status_code == 200:
+            grade_result = response.json()
+            log.info('grade:test', 'Test grade complete',
+                    serial_id=sanitized,
+                    grade=grade_result.get('grade'),
+                    ec2_sec=ec2_time, total_sec=total_time)
+            return jsonify({
+                'status': 'success',
+                'test': True,
+                'serial_id': sanitized,
+                'grade': grade_result.get('grade'),
+                'measurements': grade_result.get('measurements'),
+                'confidence_scores': grade_result.get('confidence_scores'),
+                'all_views_successful': grade_result.get('all_views_successful'),
+                'warnings': grade_result.get('warnings'),
+                'timing': {
+                    'ec2_sec': ec2_time,
+                    'total_sec': total_time
+                }
+            })
+        else:
+            error_body = response.text[:500]
+            log.error('grade:test', 'EC2 error',
+                     serial_id=sanitized,
+                     status_code=response.status_code,
+                     response=error_body)
+            return jsonify({
+                'status': 'error',
+                'error_code': 'EC2_ERROR',
+                'message': f'EC2 returned {response.status_code}',
+                'ec2_response': error_body
+            }), 502
+
+    except requests.exceptions.ConnectTimeout:
+        log.error('grade:test', 'EC2 timeout', serial_id=sanitized)
+        return jsonify({
+            'status': 'error',
+            'error_code': 'EC2_TIMEOUT',
+            'message': 'EC2 connection timeout',
+            'fix': 'Check EC2 is running and port 8000 is open'
+        }), 504
+
+    except requests.exceptions.ConnectionError:
+        log.error('grade:test', 'EC2 connection refused', serial_id=sanitized)
+        return jsonify({
+            'status': 'error',
+            'error_code': 'EC2_UNREACHABLE',
+            'message': 'Cannot reach EC2 API',
+            'fix': 'Check EC2 container is running: docker ps'
+        }), 502
+
+    except Exception as e:
+        log.exception('grade:test', 'Unexpected error', serial_id=sanitized, error=str(e))
+        return jsonify({
+            'status': 'error',
+            'error_code': 'INTERNAL_ERROR',
+            'message': str(e)
+        }), 500
+
+
 @app.route('/cancel', methods=['POST'])
 def cancel():
     """Emergency cancel - kill ffmpeg and reset."""
