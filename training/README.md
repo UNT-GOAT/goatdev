@@ -4,16 +4,9 @@ Captures training images from 3 USB cameras on a Raspberry Pi and uploads them t
 
 ## Overview
 
-A Flask server running on the Pi exposes a REST API. A web UI (served separately or opened locally) connects to the API to trigger captures. Each capture session photographs a single goat from three angles (side, top, front), producing 20 images per camera — 60 total — with exactly 1-second spacing between frames.
+A Flask server running on the Pi exposes a REST API. A web UI (served separately or opened locally) connects to the API to trigger captures. Each capture session photographs a single goat from three angles (side, top, front), producing 20 images per camera, 60 total, with exactly 1-second spacing between frames.
 
 Images are tarred per camera and uploaded to S3. An optional metadata JSON file records goat data (description, weight, grade) alongside the images.
-
-## Hardware
-
-- **Raspberry Pi 4B (4GB RAM)**
-- **3× USB cameras** capable of 4656×3496 MJPEG at 10fps
-- USB hub (powered recommended — 3 cameras draw significant current)
-- Network connection (Tailscale VPN for remote access)
 
 ### Camera Mapping
 
@@ -55,7 +48,7 @@ Raw MJPEG passthrough (`-codec:v copy`) uses almost no RAM, but ffmpeg can't app
 ## S3 Structure
 
 ```
-s3://training-937249941844/
+s3://training-*******1844/
 ├── 1/
 │   ├── side/images.tar.gz      # 20 JPEGs
 │   ├── top/images.tar.gz       # 20 JPEGs
@@ -187,39 +180,7 @@ All config is at the top of `server.py`:
 | `CAPTURE_TOTAL_TIMEOUT_SEC` | 60                      | Total timeout for one camera's full capture       |
 | `S3_TRAINING_BUCKET`        | `training-937249941844` | S3 bucket (overridable via env var)               |
 
-## Setup
-
-### Prerequisites
-
-```bash
-sudo apt install ffmpeg v4l-utils
-pip install flask flask-cors boto3
-```
-
-### AWS Credentials
-
-The Pi uses a static IAM user (`goat-pi-capture`) with S3 put/get/list permissions:
-
-```bash
-aws configure
-# Access Key ID: ...
-# Secret Access Key: ...
-# Region: us-east-2
-```
-
-### Camera udev Rules
-
-Create `/etc/udev/rules.d/99-cameras.rules` to map cameras to stable device paths based on USB port:
-
-```
-SUBSYSTEM=="video4linux", ATTRS{idVendor}=="xxxx", ATTRS{idProduct}=="xxxx", ATTR{index}=="0", KERNELS=="x-x.x", SYMLINK+="camera_side"
-SUBSYSTEM=="video4linux", ATTRS{idVendor}=="xxxx", ATTRS{idProduct}=="xxxx", ATTR{index}=="0", KERNELS=="x-x.x", SYMLINK+="camera_top"
-SUBSYSTEM=="video4linux", ATTRS{idVendor}=="xxxx", ATTRS{idProduct}=="xxxx", ATTR{index}=="0", KERNELS=="x-x.x", SYMLINK+="camera_front"
-```
-
-Then reload: `sudo udevadm control --reload-rules && sudo udevadm trigger`
-
-### Systemd Service
+## Systemd Service
 
 ```ini
 [Unit]
@@ -236,27 +197,6 @@ Environment=S3_TRAINING_BUCKET=training-937249941844
 
 [Install]
 WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl enable goat-training
-sudo systemctl start goat-training
-```
-
-### Verify
-
-```bash
-# Check service
-sudo systemctl status goat-training
-
-# Check cameras
-v4l2-ctl -d /dev/camera_side --list-formats-ext
-
-# Check S3 access
-aws s3 ls s3://training-937249941844/
-
-# Hit health endpoint
-curl http://localhost:5001/health
 ```
 
 ## Troubleshooting
