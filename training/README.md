@@ -48,7 +48,7 @@ Raw MJPEG passthrough (`-codec:v copy`) uses almost no RAM, but ffmpeg can't app
 ## S3 Structure
 
 ```
-s3://training-*******1844/
+s3://training-********1844/
 ├── 1/
 │   ├── side/images.tar.gz      # 20 JPEGs
 │   ├── top/images.tar.gz       # 20 JPEGs
@@ -178,7 +178,7 @@ All config is at the top of `server.py`:
 | `MIN_IMAGE_BYTES`           | 50000                   | Minimum valid image size (50KB)                   |
 | `FFMPEG_TIMEOUT_SEC`        | 30                      | Per-ffmpeg process timeout                        |
 | `CAPTURE_TOTAL_TIMEOUT_SEC` | 60                      | Total timeout for one camera's full capture       |
-| `S3_TRAINING_BUCKET`        | `training-937249941844` | S3 bucket (overridable via env var)               |
+| `S3_TRAINING_BUCKET`        | `training-********1844` | S3 bucket (overridable via env var)               |
 
 ## Systemd Service
 
@@ -193,7 +193,7 @@ WorkingDirectory=/home/pi/goat-capture/training
 ExecStart=/home/pi/goat-capture/venv/bin/python server.py
 Restart=always
 RestartSec=5
-Environment=S3_TRAINING_BUCKET=training-937249941844
+Environment=S3_TRAINING_BUCKET=training-********1844
 
 [Install]
 WantedBy=multi-user.target
