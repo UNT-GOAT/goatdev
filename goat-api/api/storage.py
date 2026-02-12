@@ -2,16 +2,9 @@
 Storage module for persisting analysis results
 
 Currently uses local JSON file. Can be extended to use S3 Tables or other storage.
-
-_write_results() now uses atomic writes (write to temp file, then
-os.replace to final path) to prevent corruption if the process crashes
-mid-write. Previously a crash during json.dump() would leave a truncated
-or empty results.json, losing all historical data.
 """
 
 import json
-import os
-import tempfile
 import threading
 import shutil
 from pathlib import Path
@@ -95,36 +88,9 @@ class ResultsStorage:
             return json.load(f)
     
     def _write_results(self, results: List[Dict]):
-        """
-        Write results to file atomically (no locking, internal use).
-
-        Uses write-to-temp-then-rename pattern so that a crash
-        mid-write never leaves a truncated/empty results.json. os.replace()
-        is atomic on POSIX filesystems when src and dst are on the same
-        filesystem (guaranteed here since both are in DATA_DIR).
-
-        Previously this did a direct open('w') + json.dump(), meaning a
-        crash or OOM kill during the write would corrupt the file and lose
-        all historical results.
-        """
-        # Write to a temp file in the same directory (same filesystem = atomic rename)
-        tmp_fd, tmp_path = tempfile.mkstemp(
-            dir=str(DATA_DIR),
-            suffix='.json.tmp',
-            prefix='results_'
-        )
-        try:
-            with os.fdopen(tmp_fd, 'w') as f:
-                json.dump(results, f, indent=2)
-            # Atomic replace — old file is replaced in one operation
-            os.replace(tmp_path, str(RESULTS_FILE))
-        except Exception:
-            # Clean up temp file on failure
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
+        """Write results to file (no locking, internal use)"""
+        with open(RESULTS_FILE, 'w') as f:
+            json.dump(results, f, indent=2)
     
     def save_result(self, result: Dict) -> tuple[bool, Optional[str]]:
         """
