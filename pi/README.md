@@ -2,9 +2,9 @@
 
 ## Architecture Overview
 
-![Raspberry Pi](../readme_assets/pi1.png)
+<img src="../readme_assets/pi1.png" alt="Raspberry Pi" width="50%"/>
 
-![Raspberry Pi with case](../readme_assets/pi2.png)
+<img src="../readme_assets/pi2.png" alt="Raspberry Pi with case" width="50%"/>
 
 The Pi runs two Flask services for goat image capture, both accessible remotely via Tailscale VPN.
 
