@@ -9,28 +9,28 @@
 The Pi runs two Flask services for goat image capture, both accessible remotely via Tailscale VPN.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Raspberry Pi 5 (4GB)                       │
-│                                                                 │
-│  ┌─────────────────────┐    ┌─────────────────────┐            │
-│  │   goat-prod.service │    │ goat-training.service│            │
-│  │       Port 5000     │    │       Port 5001      │            │
-│  │                     │    │                      │            │
-│  │  Single-shot capture│    │  20-image capture    │            │
-│  │  + EC2 grading      │    │  + S3 upload         │            │
-│  └──────────┬──────────┘    └──────────┬───────────┘            │
-│             │                          │                        │
-│             ▼                          ▼                        │
-│  ┌─────────────────────────────────────────────────┐            │
-│  │              3x USB Cameras (udev symlinks)     │            │
-│  │   /dev/camera_side  /dev/camera_top  /dev/camera_front      │
-│  └─────────────────────────────────────────────────┘            │
-│                                                                 │
-│  ┌─────────────────────┐    ┌─────────────────────┐            │
-│  │  CloudWatch Logger  │    │  Heartbeat Cron     │            │
-│  │  (all services)     │    │  (every 2 min)      │            │
-│  └─────────────────────┘    └─────────────────────┘            │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                      Raspberry Pi 5 (4GB)                   │
+│                                                             │
+│  ┌─────────────────────┐    ┌──────────────────────┐        │
+│  │   goat-prod.service │    │ goat-training.service│        │
+│  │       Port 5000     │    │       Port 5001      │        │
+│  │                     │    │                      │        │
+│  │  Single-shot capture│    │  20-image capture    │        │
+│  │  + EC2 grading      │    │  + S3 upload         │        │
+│  └──────────┬──────────┘    └──────────┬───────────┘        │
+│             │                          │                    │
+│             ▼                          ▼                    │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │              3x USB Cameras (udev symlinks)          │   │
+│  │ /dev/camera_side  /dev/camera_top  /dev/camera_front |   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                             │
+│  ┌─────────────────────┐    ┌─────────────────────┐         │
+│  │  CloudWatch Logger  │    │  Heartbeat Cron     │         │
+│  │  (all services)     │    │  (every 2 min)      │         │
+│  └─────────────────────┘    └─────────────────────┘         │
+└─────────────────────────────────────────────────────────────┘
                               │
                               │ Tailscale VPN
                               ▼
@@ -40,8 +40,8 @@ The Pi runs two Flask services for goat image capture, both accessible remotely 
 │   Developer Machine ──────► ssh pi@100.xxx.xxx.xxx              │
 │                      ──────► curl http://100.xxx.xxx.xxx:5000   │
 │                                                                 │
-│   EC2 API Server ◄────────── Pi sends images for grading       │
-│   S3 Buckets     ◄────────── Pi uploads training data          │
+│   EC2 API Server ◄────────── Pi sends images for grading        │
+│   S3 Buckets     ◄────────── Pi uploads training data           │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
