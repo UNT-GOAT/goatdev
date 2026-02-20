@@ -8,8 +8,8 @@ on:
       - "pi/training_server**"
       - "pi/requirements.txt"
       - "pi/focus_tool**"
-      - "logger/pi_cloudwatch**"
-      - "logger/pi_heartbeat_cron**"
+      - "pi/logger/pi_cloudwatch**"
+      - "pi/logger/pi_heartbeat_cron**"
       - ".github/workflows/deploy-pi.yml"
   workflow_dispatch:
 

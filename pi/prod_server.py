@@ -53,7 +53,7 @@ MAX_SERIAL_ID_LEN = 50
 # ============================================================
 
 import sys
-sys.path.insert(0, '/home/pi/goat-capture')
+sys.path.insert(0, '/home/pi/goat-capture/pi')
 from logger.pi_cloudwatch import Logger
 
 log = Logger('pi/prod')
