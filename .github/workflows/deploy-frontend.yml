@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths:
       - "goat-app/**"
-      - "training/web/**"
       - ".github/workflows/deploy-frontend.yml"
   workflow_dispatch:
 
@@ -21,7 +20,7 @@ jobs:
       - name: Check for training changes
         id: check
         run: |
-          if git diff --name-only HEAD~1 | grep -q "training/web/"; then
+          if git diff --name-only HEAD~1 | grep -q "goat-app/training/"; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
@@ -34,16 +33,17 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: us-east-2
         run: |
-          aws s3 sync training/web/ s3://goat-web-937249941844/training/
+          aws s3 sync goat-app/training/ s3://goat-web-937249941844/training/
           echo "Training UI deployed"
 
       - name: Invalidate CloudFront
+        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: us-east-2
         run: |
-          aws cloudfront create-invalidation --distribution-id EB8KCE4E7TGI4 --paths "/*"
+          aws cloudfront create-invalidation --distribution-id EB8KCE4E7TGI4 --paths "/training/*"
 
   deploy-prod:
     runs-on: ubuntu-latest
@@ -56,7 +56,7 @@ jobs:
       - name: Check for prod changes
         id: check
         run: |
-          if git diff --name-only HEAD~1 | grep -q "goat-app/"; then
+          if git diff --name-only HEAD~1 | grep -v "goat-app/training/" | grep -q "goat-app/"; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
@@ -72,6 +72,7 @@ jobs:
           echo "Prod build skipped - React not configured yet"
 
       - name: Invalidate CloudFront
+        if: steps.check.outputs.changed == 'true'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
