@@ -170,18 +170,26 @@ A cron job runs every 2 minutes checking service health:
 - Logs errors to CloudWatch only when unhealthy
 - Logs single "recovered" message when health restored
 
-## File Structure
+## System Configuration
+
+All Pi system config lives in `pi/system/` and is deployed via the CI pipeline. This means systemd services, udev rules, and cron jobs can be updated with a git push, no SSH needed.
+
+### Repo Structure
 
 ```
-/home/pi/goat-capture/
-├── pi/
-│   ├── prod_server.py       # Production service
-│   ├── training_server.py   # Training service
-│   └── focus_tool.py        # Camera focus adjustment
+pi/
+├── prod_server.py           # Production service
+├── training_server.py       # Training service
+├── focus_tool.py            # Camera focus adjustment
+├── requirements.txt         # Python dependencies
 ├── logger/
-│   ├── pi_cloudwatch.py     # Shared logging module
-│   └── pi_heartbeat_cron.py
-└── venv/                    # Python virtual environment
+│   ├── pi_cloudwatch.py     # Shared CloudWatch logging module
+│   └── pi_heartbeat_cron.py # Heartbeat cron script
+└── system/
+    ├── goat-prod.service    # Systemd unit for production
+    ├── goat-training.service# Systemd unit for training
+    ├── 99-cameras.rules     # Udev rules for camera symlinks
+    └── goat-heartbeat.cron  # Cron job for health monitoring
 ```
 
 ## Quick Reference
@@ -372,24 +380,6 @@ All config is at the top of `training_server.py`:
 | `FFMPEG_TIMEOUT_SEC`        | 30                  | Per-ffmpeg process timeout                        |
 | `CAPTURE_TOTAL_TIMEOUT_SEC` | 60                  | Total timeout for one camera's full capture       |
 | `S3_TRAINING_BUCKET`        | `training-********` | S3 bucket (overridable via env var)               |
-
-### Training Systemd Service
-
-```ini
-[Unit]
-Description=Goat Training Capture Server
-After=network.target
-
-[Service]
-User=pi
-WorkingDirectory=/home/pi/goat-capture/pi
-ExecStart=/home/pi/goat-capture/venv/bin/python training_server.py
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
 
 ### Training Troubleshooting
 
