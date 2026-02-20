@@ -4,12 +4,12 @@ on:
   push:
     branches: [main]
     paths:
-      - "pi/server**" # Prod pi server
-      - "pi/requirements.txt" # Prod pi server dependencies
-      - "pi/focus_tool**" # Prod pi server systemd service files
-      - "training/pi-server**" # Temp training pi server
-      - "logger/pi_cloudwatch**" # Pi CloudWatch logging for both servers
-      - "logger/pi_heartbeat_cron**" # Pi heartbeat cron job for both servers
+      - "pi/prod_server**"
+      - "pi/training_server**"
+      - "pi/requirements.txt"
+      - "pi/focus_tool**"
+      - "logger/pi_cloudwatch**"
+      - "logger/pi_heartbeat_cron**"
       - ".github/workflows/deploy-pi.yml"
   workflow_dispatch:
 
