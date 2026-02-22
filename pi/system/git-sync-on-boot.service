@@ -1,0 +1,12 @@
+[Unit]
+Description=Pull latest code and restart services on boot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+ExecStart=/home/pi/sync-on-boot.sh
+
+[Install]
+WantedBy=multi-user.target
