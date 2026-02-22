@@ -36,7 +36,7 @@ SCREEN_H = 320
 ROTATION = 0  # 0=portrait, 90/180/270 to rotate
 
 # === SYSTEM CONFIG ===
-LOGO_PATH = "/home/pi/display/boot_logo.png"
+LOGO_PATH = "/home/pi/goat-capture/pi/display/boot_logo.png"
 
 SENSOR_IDS = {
     'camera1': '28-0000007193ed',
