@@ -231,19 +231,6 @@ def show_boot(disp):
             break
         time.sleep(2)
 
-    # Fade out
-    for alpha_pct in range(100, -5, -5):
-        img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
-        logo_faded = logo.copy()
-        r, g, b, a = logo_faded.split()
-        a = a.point(lambda x: int(x * alpha_pct / 100))
-        logo_faded = Image.merge("RGBA", (r, g, b, a))
-        lx = (SCREEN_W - logo_faded.width) // 2
-        ly = (SCREEN_H - logo_faded.height) // 2
-        img.paste(logo_faded, (lx, ly), logo_faded)
-        disp.image(img)
-        time.sleep(0.04)
-
 
 # === STATUS SCREEN ===
 def draw_status(disp, font_big, font_med, font_sm):
