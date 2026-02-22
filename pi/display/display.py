@@ -37,6 +37,7 @@ ROTATION = 0  # 0=portrait, 90/180/270 to rotate
 
 # === SYSTEM CONFIG ===
 LOGO_PATH = "/home/pi/goatdev/pi/display/boot_logo.png"
+EC2_API_URL = os.environ.get('EC2_API_URL', 'http://3.16.96.182:8000')
 
 SENSOR_IDS = {
     'camera1': '28-0000007193ed',
@@ -50,7 +51,11 @@ HEATER_PINS = {
     'camera3': 22,
 }
 
-CAMERA_DEVICES = ['/dev/video0', '/dev/video2', '/dev/video4']
+CAMERA_DEVICES = {
+    'CAM 1': '/dev/video0',
+    'CAM 2': '/dev/video2',
+    'CAM 3': '/dev/video4',
+}
 
 # === COLORS ===
 BLACK = (0, 0, 0)
@@ -106,13 +111,8 @@ def read_temp_f(sensor_id):
 
 
 def check_cameras():
-    """Return 'all', 'some', or 'none'."""
-    count = sum(1 for dev in CAMERA_DEVICES if os.path.exists(dev))
-    if count == len(CAMERA_DEVICES):
-        return 'all'
-    elif count > 0:
-        return 'some'
-    return 'none'
+    """Return dict of camera name -> True/False."""
+    return {name: os.path.exists(dev) for name, dev in CAMERA_DEVICES.items()}
 
 
 def check_network():
@@ -132,24 +132,25 @@ def check_network():
         return 0
 
 
-def check_servers():
-    """Check prod, training, and EC2 API are all responding."""
+def _curl_ok(url, timeout=2):
+    """Return True if curl gets a 2xx from url."""
     try:
-        prod = subprocess.run(
-            ['curl', '-sf', '-o', '/dev/null', '-m', '2', 'http://localhost:5000/health'],
-            capture_output=True, timeout=5
+        result = subprocess.run(
+            ['curl', '-sf', '-o', '/dev/null', '-m', str(timeout), url],
+            capture_output=True, timeout=timeout + 3
         )
-        training = subprocess.run(
-            ['curl', '-sf', '-o', '/dev/null', '-m', '2', 'http://localhost:5001/health'],
-            capture_output=True, timeout=5
-        )
-        ec2 = subprocess.run(
-            ['curl', '-sf', '-o', '/dev/null', '-m', '3', 'http://3.16.96.182:8000/health'],
-            capture_output=True, timeout=5
-        )
-        return prod.returncode == 0 and training.returncode == 0 and ec2.returncode == 0
+        return result.returncode == 0
     except Exception:
         return False
+
+
+def check_servers():
+    """Return dict of server name -> True/False."""
+    return {
+        'PROD': _curl_ok('http://localhost:5000/health'),
+        'TRAIN': _curl_ok('http://localhost:5001/health'),
+        'EC2': _curl_ok(f'{EC2_API_URL}/health', timeout=3),
+    }
 
 
 def check_heaters_active():
@@ -166,14 +167,12 @@ def check_heaters_active():
 # === DRAWING HELPERS ===
 def draw_dot(draw, x, y, color, radius=11):
     """Draw a filled circle (status dot) with glow."""
-    # Glow (larger, dimmer circle)
     glow_r = radius + 6
     glow_color = tuple(c // 3 for c in color)
     draw.ellipse(
         [x - glow_r, y - glow_r, x + glow_r, y + glow_r],
         fill=glow_color
     )
-    # Solid dot
     draw.ellipse(
         [x - radius, y - radius, x + radius, y + radius],
         fill=color
@@ -201,7 +200,6 @@ def show_boot(disp):
     if os.path.exists(LOGO_PATH):
         try:
             logo = Image.open(LOGO_PATH).convert("RGBA")
-            # Scale to fit display width with padding
             scale = 220 / max(logo.width, logo.height)
             new_w = int(logo.width * scale)
             new_h = int(logo.height * scale)
@@ -210,9 +208,11 @@ def show_boot(disp):
             print(f"Logo load error: {e}")
 
     if not logo:
-        # No logo — just show black for a moment
         img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
-        disp.image(img)
+        try:
+            disp.image(img)
+        except Exception:
+            pass
         time.sleep(2)
         return
 
@@ -223,29 +223,27 @@ def show_boot(disp):
         img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
         draw = ImageDraw.Draw(img)
 
-        # Composite logo at current alpha
         logo_faded = logo.copy()
-        # Adjust alpha channel
         r, g, b, a = logo_faded.split()
         a = a.point(lambda x: int(x * alpha_pct / 100))
         logo_faded = Image.merge("RGBA", (r, g, b, a))
 
-        # Center logo
         lx = (SCREEN_W - logo_faded.width) // 2
         ly = (SCREEN_H - logo_faded.height) // 2 - 20
         img.paste(logo_faded, (lx, ly), logo_faded)
 
-        # "Systems loading..." text below logo
         text = "Systems loading..."
         tw = draw.textlength(text, font=loading_font)
         text_color = tuple(int(255 * alpha_pct / 100) for _ in range(3))
         draw.text(((SCREEN_W - tw) // 2, ly + logo_faded.height + 12), text, font=loading_font, fill=text_color)
 
-        disp.image(img)
+        try:
+            disp.image(img)
+        except Exception:
+            pass
         time.sleep(0.04)
 
     # Hold logo while checking services (up to 60 seconds)
-    # Show static frame with full logo + loading text
     img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
     draw = ImageDraw.Draw(img)
     lx = (SCREEN_W - logo.width) // 2
@@ -254,37 +252,41 @@ def show_boot(disp):
     text = "Systems loading..."
     tw = draw.textlength(text, font=loading_font)
     draw.text(((SCREEN_W - tw) // 2, ly + logo.height + 12), text, font=loading_font, fill=WHITE)
-    disp.image(img)
+    try:
+        disp.image(img)
+    except Exception:
+        pass
 
     start = time.time()
     while time.time() - start < 60:
         servers = check_servers()
-        cameras = check_cameras()
+        cams = check_cameras()
         temps_ok = any(read_temp_f(s) is not None for s in SENSOR_IDS.values())
-        if servers or cameras or temps_ok:
+        if any(servers.values()) or any(cams.values()) or temps_ok:
             break
         time.sleep(2)
 
 
 # === STATUS SCREEN ===
-def draw_status(disp, font_big, font_med, font_sm):
+def draw_status(disp, font_big, font_med, font_sm, font_xs):
     """Main status loop."""
-    slow_interval = 10  # Network/server checks
-    fast_interval = 1   # Camera/temp/heater checks
+    slow_interval = 10
+    fast_interval = 1
     last_slow = 0
     last_fast = 0
+    frame_count = 0
 
     # Cached state
     wifi = 0
-    servers_ok = False
-    cam_status = 'none'
+    server_status = {'PROD': False, 'TRAIN': False, 'EC2': False}
+    cam_status = {name: False for name in CAMERA_DEVICES}
     heaters_on = False
     temps = {k: None for k in SENSOR_IDS}
 
     while True:
         now = time.time()
 
-        # Fast checks every 1 second (instant reads)
+        # Fast checks every 1 second
         if now - last_fast >= fast_interval:
             cam_status = check_cameras()
             heaters_on = check_heaters_active()
@@ -292,24 +294,26 @@ def draw_status(disp, font_big, font_med, font_sm):
                 temps[name] = read_temp_f(sid)
             last_fast = now
 
-        # Slow checks every 10 seconds (network calls)
+        # Slow checks every 10 seconds
         if now - last_slow >= slow_interval:
             wifi = check_network()
-            servers_ok = check_servers()
+            server_status = check_servers()
             last_slow = now
 
         # Determine colors
-        server_color = GREEN if servers_ok else RED
+        all_servers = all(server_status.values())
+        server_color = GREEN if all_servers else RED
 
-        if cam_status == 'all':
+        all_cams = all(cam_status.values())
+        some_cams = any(cam_status.values())
+        if all_cams:
             camera_color = GREEN
-        elif cam_status == 'some':
+        elif some_cams:
             camera_color = ORANGE
         else:
             camera_color = RED
-            
-        temps_all_ok = all(t is not None for t in temps.values())
 
+        temps_all_ok = all(t is not None for t in temps.values())
         if not temps_all_ok:
             temp_color = RED
         elif heaters_on:
@@ -318,69 +322,102 @@ def draw_status(disp, font_big, font_med, font_sm):
             temp_color = GREEN
 
         # === BUILD FRAME ===
-        img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
-        draw = ImageDraw.Draw(img)
+        try:
+            img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
+            draw = ImageDraw.Draw(img)
 
-        # Top bar: time + wifi
-        time_str = datetime.now().strftime("%-I:%M %p")
-        tw = draw.textlength(time_str, font=font_sm)
-        draw.text((SCREEN_W - tw - 30, 6), time_str, font=font_sm, fill=WHITE)
-        draw_wifi(draw, SCREEN_W - 22, 18, wifi)
+            # Top bar: heartbeat + time + wifi
+            heartbeat = "●" if frame_count % 2 == 0 else " "
+            draw.text((6, 6), heartbeat, font=font_sm, fill=GREEN)
 
-        # Status rows
-        labels = [
-            ("SERVERS", server_color),
-            ("CAMERAS", camera_color),
-            ("TEMPS", temp_color),
-        ]
+            time_str = datetime.now().strftime("%-I:%M %p")
+            tw = draw.textlength(time_str, font=font_sm)
+            draw.text((SCREEN_W - tw - 30, 6), time_str, font=font_sm, fill=WHITE)
+            draw_wifi(draw, SCREEN_W - 22, 18, wifi)
 
-        start_y = 40
-        row_h = 60
-        dot_x = SCREEN_W - 26
+            # --- SERVERS ---
+            y = 34
+            draw.text((12, y), "SERVERS", font=font_big, fill=WHITE)
+            draw_dot(draw, SCREEN_W - 26, y + 18, server_color)
+            if not all_servers:
+                down = [k for k, v in server_status.items() if not v]
+                draw.text((14, y + 34), "DOWN: " + ", ".join(down), font=font_xs, fill=RED)
+            else:
+                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=DIM)
 
-        for i, (label, color) in enumerate(labels):
-            y = start_y + i * row_h
-            draw.text((12, y), label, font=font_big, fill=WHITE)
-            draw_dot(draw, dot_x, y + 18, color)
+            # --- CAMERAS ---
+            y = 100
+            draw.text((12, y), "CAMERAS", font=font_big, fill=WHITE)
+            draw_dot(draw, SCREEN_W - 26, y + 18, camera_color)
+            if not all_cams:
+                down = [k for k, v in cam_status.items() if not v]
+                draw.text((14, y + 34), "OFF: " + ", ".join(down), font=font_xs, fill=RED)
+            else:
+                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=DIM)
 
-        # Camera temps
-        temp_y = start_y + 3 * row_h + 4
-        cam_labels = ['CAM 1', 'CAM 2', 'CAM 3']
-        cam_keys = ['camera1', 'camera2', 'camera3']
+            # --- TEMPS ---
+            y = 166
+            draw.text((12, y), "TEMPS", font=font_big, fill=WHITE)
+            draw_dot(draw, SCREEN_W - 26, y + 18, temp_color)
+            if heaters_on:
+                draw.text((14, y + 34), "HEATERS ON", font=font_xs, fill=ORANGE)
+            elif not temps_all_ok:
+                missing = [k for k, v in temps.items() if v is None]
+                draw.text((14, y + 34), "ERR: " + ", ".join(missing), font=font_xs, fill=RED)
+            else:
+                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=DIM)
 
-        for i, (label, key) in enumerate(zip(cam_labels, cam_keys)):
-            y = temp_y + i * 28
-            t = temps.get(key)
-            t_str = f"{t}°F" if t is not None else "--°F"
-            draw.text((16, y), label, font=font_med, fill=WHITE)
-            tw = draw.textlength(t_str, font=font_med)
-            draw.text((SCREEN_W - tw - 14, y), t_str, font=font_med, fill=WHITE)
+            # --- Camera temps ---
+            temp_y = 220
+            cam_labels = ['CAM 1', 'CAM 2', 'CAM 3']
+            cam_keys = ['camera1', 'camera2', 'camera3']
 
-        # Push to display
-        disp.image(img)
-        time.sleep(1)  # 1 FPS is fine for status
+            for i, (label, key) in enumerate(zip(cam_labels, cam_keys)):
+                y = temp_y + i * 28
+                t = temps.get(key)
+                t_str = f"{t}°F" if t is not None else "--°F"
+                t_color = WHITE if t is not None else RED
+                draw.text((16, y), label, font=font_med, fill=WHITE)
+                tw = draw.textlength(t_str, font=font_med)
+                draw.text((SCREEN_W - tw - 14, y), t_str, font=font_med, fill=t_color)
+
+            # Push to display
+            disp.image(img)
+            frame_count += 1
+
+        except Exception as e:
+            print(f"Display error: {e}")
+
+        time.sleep(1)
 
 
 # === MAIN ===
 def main():
+    while True:
+        try:
+            disp, bl = init_display()
 
-    disp, bl = init_display()
+            font_big = load_font(28)
+            font_med = load_font(20)
+            font_sm = load_font(15)
+            font_xs = load_font(11)
 
-    # Load fonts
-    font_big = load_font(30)
-    font_med = load_font(20)
-    font_sm = load_font(15)
+            show_boot(disp)
 
-    # Boot screen with eagle logo
-    show_boot(disp)
+            draw_status(disp, font_big, font_med, font_sm, font_xs)
 
-    # Main status loop
-    try:
-        draw_status(disp, font_big, font_med, font_sm)
-    except KeyboardInterrupt:
-        bl.value = False  # Turn off backlight
-        img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
-        disp.image(img)
+        except KeyboardInterrupt:
+            try:
+                bl.value = False
+                img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
+                disp.image(img)
+            except Exception:
+                pass
+            break
+
+        except Exception as e:
+            print(f"Fatal display error: {e}")
+            time.sleep(5)
 
 
 if __name__ == '__main__':
