@@ -9,6 +9,7 @@ User=pi
 Restart=always
 RestartSec=5
 EnvironmentFile=/etc/goat-pi.env
+Environment=PYTHONPATH=/home/pi/goatdev/pi
 
 [Install]
 WantedBy=multi-user.target
