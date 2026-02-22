@@ -8,7 +8,7 @@ WorkingDirectory=/home/pi/goatdev/pi
 User=pi
 Restart=always
 RestartSec=5
-Environment=S3_BUCKET=goatdevs-937249941844
+EnvironmentFile=/etc/goat-pi.env
 
 [Install]
 WantedBy=multi-user.target
