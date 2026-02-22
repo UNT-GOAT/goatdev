@@ -1,0 +1,14 @@
+[Unit]
+Description=Goat Training Capture Server
+After=network.target git-sync-on-boot.service
+
+[Service]
+ExecStart=/home/pi/venv/bin/python3 /home/pi/goatdev/pi/training_server.py
+WorkingDirectory=/home/pi/goatdev/pi
+User=pi
+Restart=always
+RestartSec=5
+Environment=S3_TRAINING_BUCKET=training-937249941844
+
+[Install]
+WantedBy=multi-user.target

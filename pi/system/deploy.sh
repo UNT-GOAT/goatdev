@@ -1,9 +1,9 @@
 #!/bin/bash
 # deploy.sh - Sets up all system services, udev rules, and cron from the repo
-# Run with: sudo bash /home/pi/goat-capture/pi/system/deploy.sh
+# Run with: sudo bash /home/pi/goatdev/pi/system/deploy.sh
 
 set -e
-REPO_ROOT="/home/pi/goat-capture"
+REPO_ROOT="/home/pi/goatdev"
 SYSTEM_DIR="$REPO_ROOT/pi/system"
 
 echo "=== GOAT-PI System Deploy ==="
