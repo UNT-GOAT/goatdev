@@ -190,7 +190,7 @@ def show_boot(disp):
         try:
             logo = Image.open(LOGO_PATH).convert("RGBA")
             # Scale to fit display width with padding
-            scale = 160 / max(logo.width, logo.height)
+            scale = 220 / max(logo.width, logo.height)
             new_w = int(logo.width * scale)
             new_h = int(logo.height * scale)
             logo = logo.resize((new_w, new_h), Image.LANCZOS)
