@@ -26,9 +26,9 @@ import subprocess
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 
-import digitalio
-import board
-import adafruit_rgb_display.ili9341 as ili9341
+import digitalio # type: ignore
+import board # type: ignore
+import adafruit_rgb_display.ili9341 as ili9341 # type: ignore
 
 # === PIN CONFIGURATION ===
 CS_PIN = board.CE0       # GPIO 8  / Pin 24
