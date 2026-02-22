@@ -1,1 +1,1 @@
-*/2 * * * * /home/pi/venv/bin/python /home/pi/goat-capture/pi/logger/pi_heartbeat_cron.py
+*/2 * * * * /home/pi/venv/bin/python /home/pi/goatdev/pi/logger/pi_heartbeat_cron.py
