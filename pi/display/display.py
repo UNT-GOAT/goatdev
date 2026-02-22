@@ -1,12 +1,6 @@
-#!/usr/bin/env python3
 """
 GOAT-PI Status Display
 2.4" ILI9341 SPI LCD (240x320)
-Raspberry Pi 4
-
-Install:
-  sudo apt install python3-pip python3-spidev python3-pil python3-numpy
-  pip install adafruit-circuitpython-rgb-display RPi.GPIO --break-system-packages
 
 Pin wiring:
   VCC  -> Pin 17 (3.3V)
@@ -42,7 +36,7 @@ SCREEN_H = 320
 ROTATION = 0  # 0=portrait, 90/180/270 to rotate
 
 # === SYSTEM CONFIG ===
-LOGO_PATH = "/home/pi/display/eagle.png"
+LOGO_PATH = "/home/pi/display/meangreen.png"
 
 SENSOR_IDS = {
     'camera1': '28-0000007193ed',
