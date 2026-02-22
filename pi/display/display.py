@@ -136,11 +136,11 @@ def check_servers():
     """Check prod, training, and EC2 API are all responding."""
     try:
         prod = subprocess.run(
-            ['curl', '-sf', '-o', '/dev/null', '-m', '2', 'http://localhost:5000/'],
+            ['curl', '-sf', '-o', '/dev/null', '-m', '2', 'http://localhost:5000/health'],
             capture_output=True, timeout=5
         )
         training = subprocess.run(
-            ['curl', '-sf', '-o', '/dev/null', '-m', '2', 'http://localhost:5001/'],
+            ['curl', '-sf', '-o', '/dev/null', '-m', '2', 'http://localhost:5001/health'],
             capture_output=True, timeout=5
         )
         ec2 = subprocess.run(
@@ -309,7 +309,7 @@ def draw_status(disp, font_big, font_med, font_sm):
             camera_color = RED
             
         temps_all_ok = all(t is not None for t in temps.values())
-        
+
         if not temps_all_ok:
             temp_color = RED
         elif heaters_on:
