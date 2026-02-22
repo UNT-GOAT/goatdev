@@ -106,10 +106,13 @@ def read_temp_f(sensor_id):
 
 
 def check_cameras():
-    for dev in CAMERA_DEVICES:
-        if not os.path.exists(dev):
-            return False
-    return True
+    """Return 'all', 'some', or 'none'."""
+    count = sum(1 for dev in CAMERA_DEVICES if os.path.exists(dev))
+    if count == len(CAMERA_DEVICES):
+        return 'all'
+    elif count > 0:
+        return 'some'
+    return 'none'
 
 
 def check_network():
@@ -130,12 +133,21 @@ def check_network():
 
 
 def check_servers():
+    """Check prod, training, and EC2 API are all responding."""
     try:
-        result = subprocess.run(
-            ['ping', '-c', '1', '-W', '2', '8.8.8.8'],
+        prod = subprocess.run(
+            ['curl', '-sf', '-o', '/dev/null', '-m', '2', 'http://localhost:5000/'],
             capture_output=True, timeout=5
         )
-        return result.returncode == 0
+        training = subprocess.run(
+            ['curl', '-sf', '-o', '/dev/null', '-m', '2', 'http://localhost:5001/'],
+            capture_output=True, timeout=5
+        )
+        ec2 = subprocess.run(
+            ['curl', '-sf', '-o', '/dev/null', '-m', '3', 'http://3.16.96.182:8000/health'],
+            capture_output=True, timeout=5
+        )
+        return prod.returncode == 0 and training.returncode == 0 and ec2.returncode == 0
     except Exception:
         return False
 
@@ -265,7 +277,7 @@ def draw_status(disp, font_big, font_med, font_sm):
     # Cached state
     wifi = 0
     servers_ok = False
-    cameras_ok = False
+    cam_status = 'none'
     heaters_on = False
     temps = {k: None for k in SENSOR_IDS}
 
@@ -274,7 +286,7 @@ def draw_status(disp, font_big, font_med, font_sm):
 
         # Fast checks every 1 second (instant reads)
         if now - last_fast >= fast_interval:
-            cameras_ok = check_cameras()
+            cam_status = check_cameras()
             heaters_on = check_heaters_active()
             for name, sid in SENSOR_IDS.items():
                 temps[name] = read_temp_f(sid)
@@ -288,8 +300,16 @@ def draw_status(disp, font_big, font_med, font_sm):
 
         # Determine colors
         server_color = GREEN if servers_ok else RED
-        camera_color = GREEN if cameras_ok else RED
+
+        if cam_status == 'all':
+            camera_color = GREEN
+        elif cam_status == 'some':
+            camera_color = ORANGE
+        else:
+            camera_color = RED
+            
         temps_all_ok = all(t is not None for t in temps.values())
+        
         if not temps_all_ok:
             temp_color = RED
         elif heaters_on:
