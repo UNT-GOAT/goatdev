@@ -3,7 +3,7 @@ Description=Goat Training Capture Server
 After=network.target git-sync-on-boot.service
 
 [Service]
-ExecStart=/home/pi/venv/bin/python3 /home/pi/goatdev/servers/pi/training_server.py
+ExecStart=/home/pi/venv/bin/python3 /home/pi/goatdev/pi/servers/training_server.py
 WorkingDirectory=/home/pi/goatdev/pi/servers
 User=pi
 Restart=always
