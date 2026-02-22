@@ -398,7 +398,7 @@ def main():
             disp, bl = init_display()
 
             font_big = load_font(28)
-            font_med = load_font(20)
+            font_med = load_font(18)
             font_sm = load_font(15)
             font_xs = load_font(11)
 
