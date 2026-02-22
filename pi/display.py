@@ -175,8 +175,7 @@ def draw_dot(draw, x, y, color, radius=11):
 
 
 def draw_wifi(draw, x, y, strength):
-    """Draw simple wifi bars."""
-    color = GREEN if strength > 60 else ORANGE if strength > 30 else RED
+    """Draw simple wifi bars — always white."""
     bar_w = 3
     gap = 2
     for i in range(4):
@@ -184,7 +183,7 @@ def draw_wifi(draw, x, y, strength):
         bx = x + i * (bar_w + gap)
         by = y - bar_h
         if strength > (i * 25):
-            draw.rectangle([bx, by, bx + bar_w, y], fill=color)
+            draw.rectangle([bx, by, bx + bar_w, y], fill=WHITE)
         else:
             draw.rectangle([bx, by, bx + bar_w, y], fill=(40, 40, 40))
 
@@ -255,8 +254,10 @@ def show_boot(disp):
 # === STATUS SCREEN ===
 def draw_status(disp, font_big, font_med, font_sm):
     """Main status loop."""
-    check_interval = 10
-    last_check = 0
+    slow_interval = 10  # Network/server checks
+    fast_interval = 1   # Camera/temp/heater checks
+    last_slow = 0
+    last_fast = 0
 
     # Cached state
     wifi = 0
@@ -268,15 +269,19 @@ def draw_status(disp, font_big, font_med, font_sm):
     while True:
         now = time.time()
 
-        # Periodic checks
-        if now - last_check > check_interval:
-            wifi = check_network()
-            servers_ok = check_servers()
+        # Fast checks every 1 second (instant reads)
+        if now - last_fast >= fast_interval:
             cameras_ok = check_cameras()
             heaters_on = check_heaters_active()
             for name, sid in SENSOR_IDS.items():
                 temps[name] = read_temp_f(sid)
-            last_check = now
+            last_fast = now
+
+        # Slow checks every 10 seconds (network calls)
+        if now - last_slow >= slow_interval:
+            wifi = check_network()
+            servers_ok = check_servers()
+            last_slow = now
 
         # Determine colors
         server_color = GREEN if servers_ok else RED
@@ -335,6 +340,7 @@ def draw_status(disp, font_big, font_med, font_sm):
 
 # === MAIN ===
 def main():
+    print("GOAT-PI Display starting...")
 
     disp, bl = init_display()
 
@@ -343,11 +349,16 @@ def main():
     font_med = load_font(20)
     font_sm = load_font(15)
 
+    # Boot screen with eagle logo
+    print("Showing boot screen...")
     show_boot(disp)
 
+    # Main status loop
+    print("Entering status loop...")
     try:
         draw_status(disp, font_big, font_med, font_sm)
     except KeyboardInterrupt:
+        print("\nShutting down display...")
         bl.value = False  # Turn off backlight
         img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
         disp.image(img)
