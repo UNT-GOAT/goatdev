@@ -42,8 +42,8 @@ FRONT_CALIBRATION_PATH = MODEL_DIR / "front" / "front_calibration.json"
 RESULTS_FILE = DATA_DIR / "results.json"
 
 # S3 buckets
-S3_CAPTURES_BUCKET = os.environ.get("S3_CAPTURES_BUCKET", "goat-captures-937249941844")
-S3_PROCESSED_BUCKET = os.environ.get("S3_PROCESSED_BUCKET", "goat-processed-937249941844")
+S3_CAPTURES_BUCKET = os.environ['S3_CAPTURES_BUCKET']
+S3_PROCESSED_BUCKET = os.environ['S3_PROCESSED_BUCKET']
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-2")
 
 # Validation thresholds

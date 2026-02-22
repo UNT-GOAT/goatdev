@@ -1,19 +1,16 @@
 name: Deploy to Raspberry Pi
-
 on:
   push:
     branches: [main]
     paths:
-      - "pi/prod_server**"
-      - "pi/training_server**"
-      - "pi/display**"
-      - "pi/requirements.txt"
+      - "pi/servers/**"
+      - "pi/display/**"
+      - "pi/logger/**"
+      - "pi/system/**"
       - "pi/focus_tool**"
-      - "pi/logger/pi_cloudwatch**"
-      - "pi/logger/pi_heartbeat_cron**"
+      - "pi/requirements.txt"
       - ".github/workflows/deploy-pi.yml"
   workflow_dispatch:
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -24,7 +21,6 @@ jobs:
           oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
           tags: tag:ci
-
       - name: Deploy to Pi
         env:
           SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
@@ -35,20 +31,18 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no pi@${TAILSCALE_IP} << 'EOF'
             set -e
-            cd /home/pi/goat-capture
+            cd /home/pi/goatdev
             git fetch origin
             git reset --hard origin/main
-            
             if [ ! -d "/home/pi/venv" ]; then
               python3 -m venv /home/pi/venv
             fi
-            
             source /home/pi/venv/bin/activate
             pip install -r pi/requirements.txt --quiet
-            
+            sudo bash pi/system/deploy.sh
             sudo systemctl restart goat-prod
             sudo systemctl restart goat-training
-            
+            sudo systemctl restart goat-display
             echo "Deployed and restarted at $(date)"
             git log -1 --oneline
           EOF

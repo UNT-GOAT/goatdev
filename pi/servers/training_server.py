@@ -28,7 +28,7 @@ CAMERAS = {
     'front': '/dev/camera_front'
 }
 
-S3_TRAINING_BUCKET = os.environ.get('S3_TRAINING_BUCKET', 'training-937249941844')
+S3_TRAINING_BUCKET = os.environ['S3_TRAINING_BUCKET']
 
 # Capture settings
 NUM_IMAGES = 20             # Number of images to capture per camera
