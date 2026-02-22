@@ -36,7 +36,7 @@ SCREEN_H = 320
 ROTATION = 0  # 0=portrait, 90/180/270 to rotate
 
 # === SYSTEM CONFIG ===
-LOGO_PATH = "/home/pi/display/meangreen.png"
+LOGO_PATH = "/home/pi/goat-capture/pi/display/boot_logo.png"
 
 SENSOR_IDS = {
     'camera1': '28-0000007193ed',
@@ -190,7 +190,7 @@ def show_boot(disp):
         try:
             logo = Image.open(LOGO_PATH).convert("RGBA")
             # Scale to fit display width with padding
-            scale = 160 / max(logo.width, logo.height)
+            scale = 220 / max(logo.width, logo.height)
             new_w = int(logo.width * scale)
             new_h = int(logo.height * scale)
             logo = logo.resize((new_w, new_h), Image.LANCZOS)
@@ -230,19 +230,6 @@ def show_boot(disp):
         if servers or cameras or temps_ok:
             break
         time.sleep(2)
-
-    # Fade out
-    for alpha_pct in range(100, -5, -5):
-        img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
-        logo_faded = logo.copy()
-        r, g, b, a = logo_faded.split()
-        a = a.point(lambda x: int(x * alpha_pct / 100))
-        logo_faded = Image.merge("RGBA", (r, g, b, a))
-        lx = (SCREEN_W - logo_faded.width) // 2
-        ly = (SCREEN_H - logo_faded.height) // 2
-        img.paste(logo_faded, (lx, ly), logo_faded)
-        disp.image(img)
-        time.sleep(0.04)
 
 
 # === STATUS SCREEN ===
