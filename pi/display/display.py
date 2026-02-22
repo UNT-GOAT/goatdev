@@ -75,7 +75,7 @@ def init_display():
         spi, cs=cs, dc=dc, rst=rst,
         width=SCREEN_W, height=SCREEN_H,
         rotation=ROTATION,
-        baudrate=24000000,
+        baudrate=4000000,
     )
     return disp, bl
 
@@ -204,9 +204,13 @@ def show_boot(disp):
         time.sleep(2)
         return
 
+    loading_font = load_font(14)
+
     # Fade in
     for alpha_pct in range(0, 105, 5):
         img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
+        draw = ImageDraw.Draw(img)
+
         # Composite logo at current alpha
         logo_faded = logo.copy()
         # Adjust alpha channel
@@ -216,12 +220,30 @@ def show_boot(disp):
 
         # Center logo
         lx = (SCREEN_W - logo_faded.width) // 2
-        ly = (SCREEN_H - logo_faded.height) // 2
+        ly = (SCREEN_H - logo_faded.height) // 2 - 20
         img.paste(logo_faded, (lx, ly), logo_faded)
+
+        # "Systems loading..." text below logo
+        text = "Systems loading..."
+        tw = draw.textlength(text, font=loading_font)
+        text_color = tuple(int(255 * alpha_pct / 100) for _ in range(3))
+        draw.text(((SCREEN_W - tw) // 2, ly + logo_faded.height + 12), text, font=loading_font, fill=text_color)
+
         disp.image(img)
         time.sleep(0.04)
 
     # Hold logo while checking services (up to 60 seconds)
+    # Show static frame with full logo + loading text
+    img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
+    draw = ImageDraw.Draw(img)
+    lx = (SCREEN_W - logo.width) // 2
+    ly = (SCREEN_H - logo.height) // 2 - 20
+    img.paste(logo, (lx, ly), logo)
+    text = "Systems loading..."
+    tw = draw.textlength(text, font=loading_font)
+    draw.text(((SCREEN_W - tw) // 2, ly + logo.height + 12), text, font=loading_font, fill=WHITE)
+    disp.image(img)
+
     start = time.time()
     while time.time() - start < 60:
         servers = check_servers()
@@ -321,7 +343,6 @@ def draw_status(disp, font_big, font_med, font_sm):
 
 # === MAIN ===
 def main():
-    print("GOAT-PI Display starting...")
 
     disp, bl = init_display()
 
@@ -331,15 +352,12 @@ def main():
     font_sm = load_font(15)
 
     # Boot screen with eagle logo
-    print("Showing boot screen...")
     show_boot(disp)
 
     # Main status loop
-    print("Entering status loop...")
     try:
         draw_status(disp, font_big, font_med, font_sm)
     except KeyboardInterrupt:
-        print("\nShutting down display...")
         bl.value = False  # Turn off backlight
         img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
         disp.image(img)

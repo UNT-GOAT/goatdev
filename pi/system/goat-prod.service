@@ -1,0 +1,14 @@
+[Unit]
+Description=Production Goat Capture Server
+After=network.target git-sync-on-boot.service
+
+[Service]
+ExecStart=/home/pi/venv/bin/python3 /home/pi/goatdev/pi/prod_server.py
+WorkingDirectory=/home/pi/goatdev/pi
+User=pi
+Restart=always
+RestartSec=5
+Environment=S3_BUCKET=goatdevs-937249941844
+
+[Install]
+WantedBy=multi-user.target
