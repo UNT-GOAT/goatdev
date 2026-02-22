@@ -3,14 +3,12 @@ on:
   push:
     branches: [main]
     paths:
-      - "pi/prod_server**"
-      - "pi/training_server**"
-      - "pi/display**"
-      - "pi/requirements.txt"
-      - "pi/focus_tool**"
-      - "pi/logger/pi_cloudwatch**"
-      - "pi/logger/pi_heartbeat_cron**"
+      - "pi/servers/**"
+      - "pi/display/**"
+      - "pi/logger/**"
       - "pi/system/**"
+      - "pi/focus_tool**"
+      - "pi/requirements.txt"
       - ".github/workflows/deploy-pi.yml"
   workflow_dispatch:
 jobs:
