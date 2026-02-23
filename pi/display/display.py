@@ -47,8 +47,8 @@ SENSOR_IDS = {
 
 HEATER_PINS = {
     'camera1': 17,
-    'camera2': 5,   # Moved from GPIO 27 to GPIO 5
-    'camera3': 22,
+    'camera2': 5,
+    'camera3': 6
 }
 
 CAMERA_DEVICES = {
