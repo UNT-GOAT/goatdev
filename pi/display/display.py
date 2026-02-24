@@ -1,368 +1,423 @@
 """
-GOAT-PI Heater Control Service
+GOAT-PI Status Display
+2.4" ILI9341 SPI LCD (240x320)
 
-Controls 3 MOSFET-driven heater circuits based on DS18B20 temperature readings.
-Logs all state changes and heartbeats to CloudWatch under /goatdev -> heating.
-
-Thresholds: ON below 40°F, OFF above 70°F (30°F hysteresis)
-Fail-safe: If sensor fails 10 consecutive reads, heater forced ON
-Safety: If forced-on for 2+ hours with no sensor recovery, logs CRITICAL
-
-Remote Override API:
-  GET  http://pi-ip:5002/status        - All heater/sensor states
-  POST http://pi-ip:5002/override      - Force heater on/off
-       Body: {"camera": "camera1", "state": "on"|"off"|"auto"}
-  GET  http://pi-ip:5002/history       - Recent state changes
-
-GPIO Pins:
-  camera1: GPIO 17 (pin 11)
-  camera2: GPIO 5  (pin 29)
-  camera3: GPIO 6  (pin 31)
-
-Sensor IDs:
-  camera1: 28-0000006d3eba
-  camera2: 28-0000007047ea
-  camera3: 28-0000007193ed
+Pin wiring:
+  VCC  -> Pin 17 (3.3V)
+  GND  -> Pin 30 (Ground)
+  DIN  -> Pin 19 (GPIO 10 / MOSI)
+  CLK  -> Pin 23 (GPIO 11 / SCLK)
+  CS   -> Pin 24 (GPIO 8  / CE0)
+  DC   -> Pin 12 (GPIO 18)
+  RST  -> Pin 13 (GPIO 27)
+  BL   -> Pin 22 (GPIO 25)
 """
 
-import RPi.GPIO as GPIO # type: ignore
 import time
-import sys
 import os
-import json
-import threading
-from datetime import datetime, timedelta
-from collections import deque
+import sys
+import subprocess
+from datetime import datetime
+from PIL import Image, ImageDraw, ImageFont
 
-sys.path.insert(0, '/home/pi/goatdev/pi')
-from logger.pi_cloudwatch import Logger
+import digitalio # type: ignore
+import board # type: ignore
+import adafruit_rgb_display.ili9341 as ili9341 # type: ignore
 
-# === CONFIGURATION ===
-TURN_ON_BELOW = 40      # °F — heater ON when temp drops below
-TURN_OFF_ABOVE = 70     # °F — heater OFF when temp rises above
-CHECK_INTERVAL = 2      # Seconds between sensor reads
-HEARTBEAT_INTERVAL = 300 # Seconds between heartbeat logs (5 min)
-FAIL_THRESHOLD = 10     # Consecutive failures before fail-safe ON
-FAILSAFE_MAX_HOURS = 2  # Log CRITICAL if forced-on this long
-BOGUS_TEMP_C = 85.0     # DS18B20 power-on default — filter this out
+from dotenv import load_dotenv
+load_dotenv("/home/pi/goatdev/pi/.env")
 
-CAMERAS = {
-    'camera1': {
-        'sensor': '/sys/bus/w1/devices/28-0000006d3eba/temperature',
-        'heater_pin': 17,
-    },
-    'camera2': {
-        'sensor': '/sys/bus/w1/devices/28-0000007047ea/temperature',
-        'heater_pin': 5,
-    },
-    'camera3': {
-        'sensor': '/sys/bus/w1/devices/28-0000007193ed/temperature',
-        'heater_pin': 6,
-    },
+# === PIN CONFIGURATION ===
+CS_PIN = board.CE0       # GPIO 8  / Pin 24
+DC_PIN = board.D18       # GPIO 18 / Pin 12
+RST_PIN = board.D27      # GPIO 27 / Pin 13
+BL_PIN = board.D25       # GPIO 25 / Pin 22
+
+# === DISPLAY SETUP ===
+SCREEN_W = 240
+SCREEN_H = 320
+ROTATION = 0  # 0=portrait, 90/180/270 to rotate
+
+# === SYSTEM CONFIG ===
+LOGO_PATH = "/home/pi/goatdev/pi/display/boot_logo.png"
+EC2_API = os.environ.get('EC2_API')
+
+SENSOR_IDS = {
+    'camera1': '28-0000006d3eba',
+    'camera2': '28-0000007047ea',
+    'camera3': '28-0000007193ed'
 }
 
-API_PORT = 5002
+HEATER_PINS = {
+    'camera1': 17,
+    'camera2': 5,
+    'camera3': 6
+}
 
-# === STATE TRACKING ===
-state = {}
-history = deque(maxlen=100)
-log = Logger('heating')
+CAMERAS = {
+    'SIDE': '/dev/camera_side',
+    'TOP': '/dev/camera_top',
+    'FRONT': '/dev/camera_front'
+}
 
-
-def init_state():
-    """Initialize tracking state for each camera."""
-    for name in CAMERAS:
-        state[name] = {
-            'heater_on': False,
-            'temp_f': None,
-            'last_good_temp': None,
-            'fail_count': 0,
-            'failsafe_on': False,
-            'failsafe_since': None,
-            'override': 'auto',
-            'last_change': None,
-        }
+# === COLORS ===
+BLACK = (0, 0, 0)
+WHITE = (255, 255, 255)
+GREEN = (34, 197, 94)
+ORANGE = (249, 115, 22)
+RED = (239, 68, 68)
+DIM = (80, 80, 80)
 
 
-def log_history(camera, event, **kwargs):
-    """Record a state change for the history API."""
-    entry = {
-        'time': datetime.now().isoformat(),
-        'camera': camera,
-        'event': event,
-        **kwargs,
-    }
-    history.append(entry)
+# === INIT DISPLAY ===
+def init_display():
+    cs = digitalio.DigitalInOut(CS_PIN)
+    dc = digitalio.DigitalInOut(DC_PIN)
+    rst = digitalio.DigitalInOut(RST_PIN)
+    bl = digitalio.DigitalInOut(BL_PIN)
+    bl.direction = digitalio.Direction.OUTPUT
+    bl.value = True  # Backlight on
+
+    spi = board.SPI()
+    disp = ili9341.ILI9341(
+        spi, cs=cs, dc=dc, rst=rst,
+        width=SCREEN_W, height=SCREEN_H,
+        rotation=ROTATION,
+        baudrate=4000000,
+    )
+    return disp, bl
 
 
-# === SENSOR READING ===
-def read_temp_f(sensor_path):
-    """Read DS18B20 sensor. Returns °F or None on failure."""
+# === LOAD FONT ===
+def load_font(size):
+    """Try to load a good font, fall back to default."""
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+    ]
+    for path in font_paths:
+        if os.path.exists(path):
+            return ImageFont.truetype(path, size)
+    return ImageFont.load_default()
+
+
+# === SYSTEM CHECKS ===
+def read_temp_f(sensor_id):
+    path = f'/sys/bus/w1/devices/{sensor_id}/temperature'
     try:
-        with open(sensor_path, 'r') as f:
-            raw = f.read().strip()
-            if not raw:
-                return None
-            temp_c = int(raw) / 1000.0
-
-            # Filter bogus 85°C power-on reading
-            if abs(temp_c - BOGUS_TEMP_C) < 0.5:
-                return None
-
-            return round(temp_c * 9.0 / 5.0 + 32.0, 1)
+        with open(path, 'r') as f:
+            temp_c = int(f.read().strip()) / 1000.0
+            return round(temp_c * 9.0 / 5.0 + 32.0)
     except Exception:
         return None
 
 
-# === HEATER CONTROL ===
-def set_heater(name, on):
-    """Set heater GPIO and verify."""
-    pin = CAMERAS[name]['heater_pin']
-    GPIO.output(pin, GPIO.HIGH if on else GPIO.LOW)
-
-    # Verify GPIO actually changed
-    actual = GPIO.input(pin)
-    expected = 1 if on else 0
-    if actual != expected:
-        log.error(f'gpio:{name}', 'GPIO verify failed',
-                  pin=pin, expected=expected, actual=actual)
-
-    state[name]['heater_on'] = on
-    state[name]['last_change'] = datetime.now().isoformat()
+def check_cameras():
+    """Return dict of camera name -> True/False."""
+    return {name: os.path.exists(dev) for name, dev in CAMERAS.items()}
 
 
-def control_loop():
-    """Main heater control loop."""
-    last_heartbeat = 0
+def check_network():
+    try:
+        result = subprocess.run(
+            ['iwconfig', 'wlan0'],
+            capture_output=True, text=True, timeout=5
+        )
+        for line in result.stdout.split('\n'):
+            if 'Signal level' in line:
+                parts = line.split('Signal level=')
+                if len(parts) > 1:
+                    dbm = int(parts[1].split(' ')[0])
+                    return max(0, min(100, (dbm + 90) * 100 // 60))
+        return 0
+    except Exception:
+        return 0
+
+
+def _curl_ok(url, timeout=2):
+    """Return True if curl gets a 2xx from url."""
+    try:
+        result = subprocess.run(
+            ['curl', '-sf', '-o', '/dev/null', '-m', str(timeout), url],
+            capture_output=True, timeout=timeout + 3
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def check_servers():
+    """Return dict of server name -> True/False."""
+    return {
+        'PROD': _curl_ok('http://localhost:5000/health'),
+        'EC2': _curl_ok(f'{EC2_API}/health', timeout=6),
+    }
+
+
+def check_heaters_active():
+    for pin in HEATER_PINS.values():
+        try:
+            with open(f'/sys/class/gpio/gpio{pin}/value', 'r') as f:
+                if f.read().strip() == '1':
+                    return True
+        except Exception:
+            pass
+    return False
+
+
+# === DRAWING HELPERS ===
+def draw_dot(draw, x, y, color, radius=11):
+    """Draw a filled circle (status dot) with glow."""
+    glow_r = radius + 6
+    glow_color = tuple(c // 3 for c in color)
+    draw.ellipse(
+        [x - glow_r, y - glow_r, x + glow_r, y + glow_r],
+        fill=glow_color
+    )
+    draw.ellipse(
+        [x - radius, y - radius, x + radius, y + radius],
+        fill=color
+    )
+
+
+def draw_wifi(draw, x, y, strength):
+    """Draw simple wifi bars — always white."""
+    bar_w = 3
+    gap = 2
+    for i in range(4):
+        bar_h = 4 + i * 3
+        bx = x + i * (bar_w + gap)
+        by = y - bar_h
+        if strength > (i * 25):
+            draw.rectangle([bx, by, bx + bar_w, y], fill=WHITE)
+        else:
+            draw.rectangle([bx, by, bx + bar_w, y], fill=(40, 40, 40))
+
+
+# === BOOT SCREEN ===
+def show_boot(disp):
+    """Show eagle logo fading in, hold until services ready."""
+    logo = None
+    if os.path.exists(LOGO_PATH):
+        try:
+            logo = Image.open(LOGO_PATH).convert("RGBA")
+            scale = 220 / max(logo.width, logo.height)
+            new_w = int(logo.width * scale)
+            new_h = int(logo.height * scale)
+            logo = logo.resize((new_w, new_h), Image.LANCZOS)
+        except Exception as e:
+            print(f"Logo load error: {e}")
+
+    if not logo:
+        img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
+        try:
+            disp.image(img)
+        except Exception:
+            pass
+        time.sleep(2)
+        return
+
+    loading_font = load_font(14)
+
+    # Fade in
+    for alpha_pct in range(0, 105, 5):
+        img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
+        draw = ImageDraw.Draw(img)
+
+        logo_faded = logo.copy()
+        r, g, b, a = logo_faded.split()
+        a = a.point(lambda x: int(x * alpha_pct / 100))
+        logo_faded = Image.merge("RGBA", (r, g, b, a))
+
+        lx = (SCREEN_W - logo_faded.width) // 2
+        ly = (SCREEN_H - logo_faded.height) // 2 - 20
+        img.paste(logo_faded, (lx, ly), logo_faded)
+
+        text = "Systems loading..."
+        tw = draw.textlength(text, font=loading_font)
+        text_color = tuple(int(255 * alpha_pct / 100) for _ in range(3))
+        draw.text(((SCREEN_W - tw) // 2, ly + logo_faded.height + 12), text, font=loading_font, fill=text_color)
+
+        try:
+            disp.image(img)
+        except Exception:
+            pass
+        time.sleep(0.04)
+
+    # Hold logo while checking services (up to 60 seconds)
+    img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
+    draw = ImageDraw.Draw(img)
+    lx = (SCREEN_W - logo.width) // 2
+    ly = (SCREEN_H - logo.height) // 2 - 20
+    img.paste(logo, (lx, ly), logo)
+    text = "Systems loading..."
+    tw = draw.textlength(text, font=loading_font)
+    draw.text(((SCREEN_W - tw) // 2, ly + logo.height + 12), text, font=loading_font, fill=WHITE)
+    try:
+        disp.image(img)
+    except Exception:
+        pass
+
+    start = time.time()
+    while time.time() - start < 20:
+        servers = check_servers()
+        if all(servers.values()):
+            break
+        time.sleep(2)
+
+
+# === STATUS SCREEN ===
+def draw_status(disp, font_big, font_med, font_sm, font_xs):
+    """Main status loop."""
+    slow_interval = 10
+    fast_interval = 1
+    last_slow = 0
+    last_fast = 0
+    frame_count = 0
+
+    # Cached state
+    wifi = 0
+    server_status = {'PROD': False, 'EC2': False}
+    cam_status = {name: False for name in CAMERAS}
+    heaters_on = False
+    temps = {k: None for k in SENSOR_IDS}
 
     while True:
         now = time.time()
 
-        for name, cfg in CAMERAS.items():
-            s = state[name]
-            temp = read_temp_f(cfg['sensor'])
+        # Fast checks every 1 second
+        if now - last_fast >= fast_interval:
+            cam_status = check_cameras()
+            heaters_on = check_heaters_active()
+            for name, sid in SENSOR_IDS.items():
+                temps[name] = read_temp_f(sid)
+            last_fast = now
 
-            # --- Handle override ---
-            if s['override'] != 'auto':
-                want_on = s['override'] == 'on'
-                if s['heater_on'] != want_on:
-                    set_heater(name, want_on)
-                    action = 'ON' if want_on else 'OFF'
-                    log.info(f'override:{name}', f'Heater forced {action}',
-                             override=s['override'])
-                    log_history(name, f'override_{action.lower()}')
-                # Still read sensor for monitoring
-                if temp is not None:
-                    s['temp_f'] = temp
-                    s['last_good_temp'] = temp
-                    s['fail_count'] = 0
-                continue
+        # Slow checks every 10 seconds
+        if now - last_slow >= slow_interval:
+            wifi = check_network()
+            server_status = check_servers()
+            last_slow = now
 
-            # --- Handle sensor read ---
-            if temp is not None:
-                s['temp_f'] = temp
-                s['last_good_temp'] = temp
+        # Determine colors
+        all_servers = all(server_status.values())
+        server_color = GREEN if all_servers else RED
 
-                # Recover from failsafe
-                if s['failsafe_on']:
-                    log.info(f'failsafe:{name}', 'Sensor recovered, resuming auto control',
-                             temp=temp, was_forced_minutes=round(_failsafe_minutes(s)))
-                    log_history(name, 'failsafe_recovered', temp=temp)
-                    s['failsafe_on'] = False
-                    s['failsafe_since'] = None
+        all_cams = all(cam_status.values())
+        some_cams = any(cam_status.values())
+        if all_cams:
+            camera_color = GREEN
+        elif some_cams:
+            camera_color = ORANGE
+        else:
+            camera_color = RED
 
-                s['fail_count'] = 0
+        temps_all_ok = all(t is not None for t in temps.values())
+        if not temps_all_ok:
+            temp_color = RED
+        elif heaters_on:
+            temp_color = ORANGE
+        else:
+            temp_color = GREEN
 
-                # --- Thermostat logic ---
-                if temp < TURN_ON_BELOW and not s['heater_on']:
-                    set_heater(name, True)
-                    log.info(f'heater:{name}', 'Heater ON', temp=temp,
-                             threshold=TURN_ON_BELOW)
-                    log_history(name, 'heater_on', temp=temp)
+        # === BUILD FRAME ===
+        try:
+            img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
+            draw = ImageDraw.Draw(img)
 
-                elif temp > TURN_OFF_ABOVE and s['heater_on']:
-                    set_heater(name, False)
-                    log.info(f'heater:{name}', 'Heater OFF', temp=temp,
-                             threshold=TURN_OFF_ABOVE)
-                    log_history(name, 'heater_off', temp=temp)
+            # Top bar: heartbeat + time + wifi
+            heartbeat = "●" if frame_count % 2 == 0 else " "
+            draw.text((6, 6), heartbeat, font=font_sm, fill=GREEN)
 
+            time_str = datetime.now().strftime("%-I:%M %p")
+            tw = draw.textlength(time_str, font=font_sm)
+            draw.text((SCREEN_W - tw - 30, 6), time_str, font=font_sm, fill=WHITE)
+            draw_wifi(draw, SCREEN_W - 22, 18, wifi)
+
+            # --- SERVERS ---
+            y = 34
+            draw.text((12, y), "SERVERS", font=font_big, fill=WHITE)
+            draw_dot(draw, SCREEN_W - 26, y + 18, server_color)
+            if not all_servers:
+                down = [k for k, v in server_status.items() if not v]
+                draw.text((14, y + 34), "DOWN: " + ", ".join(down), font=font_xs, fill=RED)
             else:
-                # Sensor failed
-                s['temp_f'] = None
-                s['fail_count'] += 1
+                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=DIM)
 
-                if s['fail_count'] == FAIL_THRESHOLD:
-                    # Engage fail-safe: force heater ON
-                    log.error(f'failsafe:{name}',
-                              f'Sensor failed {FAIL_THRESHOLD} consecutive reads, forcing heater ON',
-                              last_good_temp=s['last_good_temp'],
-                              fail_count=s['fail_count'])
-                    log_history(name, 'failsafe_on',
-                                last_good_temp=s['last_good_temp'])
-                    set_heater(name, True)
-                    s['failsafe_on'] = True
-                    s['failsafe_since'] = datetime.now()
+            # --- CAMERAS ---
+            y = 100
+            draw.text((12, y), "CAMERAS", font=font_big, fill=WHITE)
+            draw_dot(draw, SCREEN_W - 26, y + 18, camera_color)
+            if not all_cams:
+                down = [k for k, v in cam_status.items() if not v]
+                draw.text((14, y + 34), "ERR: " + ", ".join(down), font=font_xs, fill=RED)
+            else:
+                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=DIM)
 
-                elif s['fail_count'] > FAIL_THRESHOLD and s['failsafe_on']:
-                    # Check if forced-on too long
-                    minutes = _failsafe_minutes(s)
-                    if minutes > FAILSAFE_MAX_HOURS * 60:
-                        if s['fail_count'] % 30 == 0:  # Don't spam
-                            log.critical(f'failsafe:{name}',
-                                         f'Sensor dead for {minutes:.0f} min, heater still forced ON',
-                                         last_good_temp=s['last_good_temp'])
+            # --- TEMPS ---
+            y = 166
+            draw.text((12, y), "TEMPS", font=font_big, fill=WHITE)
+            draw_dot(draw, SCREEN_W - 26, y + 18, temp_color)
+            if heaters_on:
+                draw.text((14, y + 34), "HEATERS ON", font=font_xs, fill=ORANGE)
+            elif not temps_all_ok:
+                missing = [k for k, v in temps.items() if v is None]
+                draw.text((14, y + 34), "ERR: " + ", ".join(missing), font=font_xs, fill=RED)
+            else:
+                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=DIM)
 
-                elif s['fail_count'] % 10 == 0 and s['fail_count'] > 0:
-                    log.warn(f'sensor:{name}',
-                             f'Sensor read failed ({s["fail_count"]} consecutive)',
-                             last_good_temp=s['last_good_temp'])
+            # --- Camera temps ---
+            temp_y = 220
+            cam_labels = ['CAM 1', 'CAM 2', 'CAM 3']
+            cam_keys = ['camera1', 'camera2', 'camera3']
 
-        # --- Heartbeat ---
-        if now - last_heartbeat >= HEARTBEAT_INTERVAL:
-            temps = {n: s['temp_f'] for n, s in state.items()}
-            heaters = {n: 'ON' if s['heater_on'] else 'OFF' for n, s in state.items()}
-            overrides = {n: s['override'] for n, s in state.items() if s['override'] != 'auto'}
-            failsafes = {n: True for n, s in state.items() if s['failsafe_on']}
+            for i, (label, key) in enumerate(zip(cam_labels, cam_keys)):
+                y = temp_y + i * 28
+                t = temps.get(key)
+                t_str = f"{t}°F" if t is not None else "--°F"
+                t_color = WHITE if t is not None else RED
+                draw.text((16, y), label, font=font_med, fill=WHITE)
+                tw = draw.textlength(t_str, font=font_med)
+                draw.text((SCREEN_W - tw - 14, y), t_str, font=font_med, fill=t_color)
 
-            log.info('heartbeat', 'Status check',
-                     temps=json.dumps(temps),
-                     heaters=json.dumps(heaters),
-                     overrides=json.dumps(overrides) if overrides else None,
-                     failsafes=json.dumps(failsafes) if failsafes else None)
-            last_heartbeat = now
+            # Push to display
+            disp.image(img)
+            frame_count += 1
 
-        time.sleep(CHECK_INTERVAL)
+        except Exception as e:
+            print(f"Display error: {e}")
 
-
-def _failsafe_minutes(s):
-    """Minutes since failsafe was engaged."""
-    if s['failsafe_since']:
-        return (datetime.now() - s['failsafe_since']).total_seconds() / 60
-    return 0
-
-
-# === OVERRIDE API ===
-def start_api():
-    """Simple Flask API for remote heater control."""
-    from flask import Flask, jsonify, request
-    app = Flask(__name__)
-
-    @app.route('/status')
-    def api_status():
-        result = {}
-        for name, s in state.items():
-            result[name] = {
-                'temp_f': s['temp_f'],
-                'heater_on': s['heater_on'],
-                'override': s['override'],
-                'failsafe': s['failsafe_on'],
-                'fail_count': s['fail_count'],
-                'last_good_temp': s['last_good_temp'],
-                'last_change': s['last_change'],
-            }
-        return jsonify({
-            'status': 'ok',
-            'thresholds': {'on_below': TURN_ON_BELOW, 'off_above': TURN_OFF_ABOVE},
-            'cameras': result,
-            'timestamp': datetime.now().isoformat(),
-        })
-
-    @app.route('/override', methods=['POST'])
-    def api_override():
-        data = request.get_json()
-        camera = data.get('camera')
-        new_state = data.get('state')
-
-        if camera not in state:
-            return jsonify({'error': f'Unknown camera: {camera}'}), 400
-        if new_state not in ('on', 'off', 'auto'):
-            return jsonify({'error': 'State must be on, off, or auto'}), 400
-
-        old = state[camera]['override']
-        state[camera]['override'] = new_state
-
-        log.info(f'override:{camera}', f'Override changed: {old} -> {new_state}')
-        log_history(camera, 'override_set', old=old, new=new_state)
-
-        return jsonify({'ok': True, 'camera': camera, 'override': new_state})
-
-    @app.route('/history')
-    def api_history():
-        return jsonify({'history': list(history)})
-
-    # Suppress Flask startup banner
-    import logging as _logging
-    _logging.getLogger('werkzeug').setLevel(_logging.WARNING)
-
-    app.run(host='0.0.0.0', port=API_PORT, threaded=True)
-
-
-# === STARTUP ===
-def startup_check():
-    """Verify all sensors and GPIOs at startup."""
-    log.info('startup', 'Heater control starting',
-             on_below=TURN_ON_BELOW, off_above=TURN_OFF_ABOVE,
-             check_interval=CHECK_INTERVAL)
-
-    all_ok = True
-    for name, cfg in CAMERAS.items():
-        # Test sensor
-        temp = read_temp_f(cfg['sensor'])
-        if temp is not None:
-            state[name]['temp_f'] = temp
-            state[name]['last_good_temp'] = temp
-            log.info(f'startup:{name}', 'Sensor OK', temp=temp)
-        else:
-            log.error(f'startup:{name}', 'Sensor NOT responding',
-                      path=cfg['sensor'])
-            all_ok = False
-
-        # Test GPIO toggle
-        pin = cfg['heater_pin']
-        GPIO.output(pin, GPIO.HIGH)
-        time.sleep(0.05)
-        high_ok = GPIO.input(pin) == 1
-        GPIO.output(pin, GPIO.LOW)
-        time.sleep(0.05)
-        low_ok = GPIO.input(pin) == 0
-
-        if high_ok and low_ok:
-            log.info(f'startup:{name}', 'GPIO OK', pin=pin)
-        else:
-            log.error(f'startup:{name}', 'GPIO toggle failed',
-                      pin=pin, high_ok=high_ok, low_ok=low_ok)
-            all_ok = False
-
-    if all_ok:
-        log.info('startup', 'All systems OK')
-    else:
-        log.warn('startup', 'Some systems failed — starting anyway')
-
-    log_history('system', 'startup', all_ok=all_ok)
+        time.sleep(1)
 
 
 # === MAIN ===
 def main():
-    GPIO.setmode(GPIO.BCM)
-    for name, cfg in CAMERAS.items():
-        GPIO.setup(cfg['heater_pin'], GPIO.OUT)
-        GPIO.output(cfg['heater_pin'], GPIO.LOW)
+    while True:
+        try:
+            disp, bl = init_display()
 
-    init_state()
-    startup_check()
+            font_big = load_font(28)
+            font_med = load_font(18)
+            font_sm = load_font(15)
+            font_xs = load_font(11)
 
-    # Start API in background thread
-    api_thread = threading.Thread(target=start_api, daemon=True)
-    api_thread.start()
-    log.info('startup', 'Override API started', port=API_PORT)
+            show_boot(disp)
 
-    try:
-        control_loop()
-    except KeyboardInterrupt:
-        log.info('shutdown', 'Shutting down — turning all heaters off')
-        for name in CAMERAS:
-            set_heater(name, False)
-        # Don't call GPIO.cleanup() — it kills display pins
+            draw_status(disp, font_big, font_med, font_sm, font_xs)
+
+        except KeyboardInterrupt:
+            try:
+                bl.value = False
+                img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
+                disp.image(img)
+            except Exception:
+                pass
+            break
+
+        except Exception as e:
+            print(f"Fatal display error: {e}")
+            time.sleep(5)
 
 
 if __name__ == '__main__':
