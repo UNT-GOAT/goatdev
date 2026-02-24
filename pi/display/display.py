@@ -44,9 +44,9 @@ LOGO_PATH = "/home/pi/goatdev/pi/display/boot_logo.png"
 EC2_API = os.environ.get('EC2_API')
 
 SENSOR_IDS = {
-    'camera1': '28-0000006d3eba',
-    'camera2': '28-0000007047ea',
-    'camera3': '28-0000007193ed',
+    'sensor1': '28-0000007047ea',
+    'sensor2': '28-0000007193ed',
+    'sensor3': '28-0000006d3eba'
 }
 
 HEATER_PINS = {
@@ -429,7 +429,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             # --- Camera temps ---
             temp_y = 220
             cam_labels = ['CAM 1', 'CAM 2', 'CAM 3']
-            cam_keys = ['camera1', 'camera2', 'camera3']
+            cam_keys = ['sensor1', 'sensor2', 'sensor3']
 
             for i, (label, key) in enumerate(zip(cam_labels, cam_keys)):
                 y = temp_y + i * 28
