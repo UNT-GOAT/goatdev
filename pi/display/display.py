@@ -398,7 +398,13 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             draw_dot(draw, SCREEN_W - 26, y + 18, camera_color)
             if not all_cams:
                 issues = [f"{k}:{v}" for k, v in cam_status.items() if v != 'OK']
-                draw.text((14, y + 34), " ".join(issues), font=font_xs, fill=RED)
+                line = " ".join(issues)
+                if draw.textlength(line, font=font_xs) > SCREEN_W - 28:
+                    mid = len(issues) // 2 + 1
+                    draw.text((14, y + 34), " ".join(issues[:mid]), font=font_xs, fill=RED)
+                    draw.text((14, y + 46), " ".join(issues[mid:]), font=font_xs, fill=RED)
+                else:
+                    draw.text((14, y + 34), line, font=font_xs, fill=RED)
             else:
                 draw.text((14, y + 34), "ALL OK", font=font_xs, fill=DIM)
 
