@@ -8,6 +8,7 @@ on:
       - "pi/logger/**"
       - "pi/system/**"
       - "pi/focus_tool**"
+      - "pi/camera_heating.py"
       - "pi/requirements.txt"
       - ".github/workflows/deploy-pi.yml"
   workflow_dispatch:

@@ -43,9 +43,9 @@ LOGO_PATH = "/home/pi/goatdev/pi/display/boot_logo.png"
 EC2_API = os.environ.get('EC2_API')
 
 SENSOR_IDS = {
-    'camera1': '28-0000007193ed',
-    'camera2': '28-0000006f96b7',
-    'camera3': '28-000000704cc8',
+    'camera1': '28-0000006d3eba',
+    'camera2': '28-0000007047ea',
+    'camera3': '28-0000007193ed'
 }
 
 HEATER_PINS = {
@@ -54,10 +54,10 @@ HEATER_PINS = {
     'camera3': 6
 }
 
-CAMERA_DEVICES = {
-    'CAM 1': '/dev/video0',
-    'CAM 2': '/dev/video2',
-    'CAM 3': '/dev/video4',
+CAMERAS = {
+    'SIDE': '/dev/camera_side',
+    'TOP': '/dev/camera_top',
+    'FRONT': '/dev/camera_front'
 }
 
 # === COLORS ===
@@ -115,7 +115,7 @@ def read_temp_f(sensor_id):
 
 def check_cameras():
     """Return dict of camera name -> True/False."""
-    return {name: os.path.exists(dev) for name, dev in CAMERA_DEVICES.items()}
+    return {name: os.path.exists(dev) for name, dev in CAMERAS.items()}
 
 
 def check_network():
@@ -260,11 +260,9 @@ def show_boot(disp):
         pass
 
     start = time.time()
-    while time.time() - start < 60:
+    while time.time() - start < 20:
         servers = check_servers()
-        cams = check_cameras()
-        temps_ok = any(read_temp_f(s) is not None for s in SENSOR_IDS.values())
-        if any(servers.values()) or any(cams.values()) or temps_ok:
+        if all(servers.values()):
             break
         time.sleep(2)
 
@@ -281,7 +279,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
     # Cached state
     wifi = 0
     server_status = {'PROD': False, 'EC2': False}
-    cam_status = {name: False for name in CAMERA_DEVICES}
+    cam_status = {name: False for name in CAMERAS}
     heaters_on = False
     temps = {k: None for k in SENSOR_IDS}
 
@@ -353,7 +351,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             draw_dot(draw, SCREEN_W - 26, y + 18, camera_color)
             if not all_cams:
                 down = [k for k, v in cam_status.items() if not v]
-                draw.text((14, y + 34), "OFF: " + ", ".join(down), font=font_xs, fill=RED)
+                draw.text((14, y + 34), "ERR: " + ", ".join(down), font=font_xs, fill=RED)
             else:
                 draw.text((14, y + 34), "ALL OK", font=font_xs, fill=DIM)
 

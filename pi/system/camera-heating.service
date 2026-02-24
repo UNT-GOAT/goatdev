@@ -1,0 +1,11 @@
+[Service]
+Type=simple
+User=root
+ExecStart=/home/pi/venv/bin/python3 /home/pi/goatdev/pi/camera_heating.py
+WorkingDirectory=/home/pi/goatdev/pi
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
