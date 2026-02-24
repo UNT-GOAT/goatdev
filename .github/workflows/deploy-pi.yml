@@ -44,6 +44,7 @@ jobs:
             sudo systemctl restart goat-prod
             sudo systemctl restart goat-training
             sudo systemctl restart goat-display
+            sudo systemctl restart camera-heating
             echo "Deployed and restarted at $(date)"
             git log -1 --oneline
           EOF
