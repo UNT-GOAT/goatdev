@@ -44,9 +44,9 @@ LOGO_PATH = "/home/pi/goatdev/pi/display/boot_logo.png"
 EC2_API = os.environ.get('EC2_API')
 
 SENSOR_IDS = {    # TODO: reconfirm sensor id's to physical markers on sensors
-    'sensor1': '28-0000007047ea',
-    'sensor2': '28-0000007193ed',
-    'sensor3': '28-0000006d3eba'
+    'sensor1': '28-0000006d3eba',
+    'sensor2': '28-0000007047ea',
+    'sensor3': '28-0000007193ed'
 }
 
 HEATER_PINS = {
