@@ -43,9 +43,9 @@ LOGO_PATH = "/home/pi/goatdev/pi/display/boot_logo.png"
 EC2_API = os.environ.get('EC2_API')
 
 SENSOR_IDS = {
-    'camera1': '28-0000007193ed',
-    'camera2': '28-0000006f96b7',
-    'camera3': '28-000000704cc8',
+    'camera1': '28-0000006d3eba',
+    'camera2': '28-0000007047ea',
+    'camera3': '28-0000007193ed'
 }
 
 HEATER_PINS = {
