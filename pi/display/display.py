@@ -43,10 +43,10 @@ ROTATION = 0  # 0=portrait, 90/180/270 to rotate
 LOGO_PATH = "/home/pi/goatdev/pi/display/boot_logo.png"
 EC2_API = os.environ.get('EC2_API')
 
-SENSOR_IDS = {
-    'camera1': '28-0000006d3eba',
-    'camera2': '28-0000007047ea',
-    'camera3': '28-0000007193ed',
+SENSOR_IDS = {    # TODO: reconfirm sensor id's to physical markers on sensors
+    'sensor1': '28-0000006d3eba',
+    'sensor2': '28-0000007047ea',
+    'sensor3': '28-0000007193ed'
 }
 
 HEATER_PINS = {
@@ -390,7 +390,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
                 down = [k for k, v in server_status.items() if not v]
                 draw.text((14, y + 34), "DOWN: " + ", ".join(down), font=font_xs, fill=RED)
             else:
-                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=DIM)
+                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=GREEN)
 
             # --- CAMERAS ---
             y = 100
@@ -398,9 +398,15 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             draw_dot(draw, SCREEN_W - 26, y + 18, camera_color)
             if not all_cams:
                 issues = [f"{k}:{v}" for k, v in cam_status.items() if v != 'OK']
-                draw.text((14, y + 34), " ".join(issues), font=font_xs, fill=RED)
+                line = " ".join(issues)
+                if draw.textlength(line, font=font_xs) > SCREEN_W - 28:
+                    mid = len(issues) // 2 + 1
+                    draw.text((14, y + 34), " ".join(issues[:mid]), font=font_xs, fill=RED)
+                    draw.text((14, y + 46), " ".join(issues[mid:]), font=font_xs, fill=RED)
+                else:
+                    draw.text((14, y + 34), line, font=font_xs, fill=RED)
             else:
-                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=DIM)
+                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=GREEN)
 
             # --- TEMPS ---
             y = 166
@@ -418,12 +424,12 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
                 missing = [k for k, v in temps.items() if v is None]
                 draw.text((14, y + 34), "ERR: " + ", ".join(missing), font=font_xs, fill=RED)
             else:
-                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=DIM)
+                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=GREEN)
 
             # --- Camera temps ---
             temp_y = 220
             cam_labels = ['CAM 1', 'CAM 2', 'CAM 3']
-            cam_keys = ['camera1', 'camera2', 'camera3']
+            cam_keys = ['sensor1', 'sensor2', 'sensor3']
 
             for i, (label, key) in enumerate(zip(cam_labels, cam_keys)):
                 y = temp_y + i * 28
