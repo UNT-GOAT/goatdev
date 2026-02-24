@@ -148,7 +148,6 @@ def check_servers():
     """Return dict of server name -> True/False."""
     return {
         'PROD': _curl_ok('http://localhost:5000/health'),
-        'TRAIN': _curl_ok('http://localhost:5001/health'),
         'EC2': _curl_ok(f'{EC2_API_URL}/health', timeout=3),
     }
 
