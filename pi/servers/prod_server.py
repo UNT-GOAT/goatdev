@@ -17,6 +17,9 @@ from datetime import datetime
 app = Flask(__name__)
 CORS(app)
 
+from dotenv import load_dotenv
+load_dotenv(os.path.expanduser("~/.env"))
+
 # ============================================================
 # CONFIGURATION
 # ============================================================
