@@ -37,7 +37,7 @@ ROTATION = 0  # 0=portrait, 90/180/270 to rotate
 
 # === SYSTEM CONFIG ===
 LOGO_PATH = "/home/pi/goatdev/pi/display/boot_logo.png"
-EC2_API_URL = os.environ.get('EC2_API_URL', 'http://3.16.96.182:8000')
+EC2_API = os.environ.get('EC2_API')
 
 SENSOR_IDS = {
     'camera1': '28-0000007193ed',
@@ -148,7 +148,7 @@ def check_servers():
     """Return dict of server name -> True/False."""
     return {
         'PROD': _curl_ok('http://localhost:5000/health'),
-        'EC2': _curl_ok(f'{EC2_API_URL}/health', timeout=3),
+        'EC2': _curl_ok(f'{EC2_API}/health', timeout=3),
     }
 
 

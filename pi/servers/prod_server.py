@@ -21,8 +21,7 @@ CORS(app)
 # CONFIGURATION
 # ============================================================
 
-EC2_IP = os.environ.get('EC2_IP', '3.16.96.182')
-EC2_API = f'http://{EC2_IP}:8000'
+EC2_APT = os.environ.get('EC2_API')
 
 # Camera paths (udev symlinks)
 CAMERAS = {
