@@ -21,7 +21,8 @@ CORS(app)
 # CONFIGURATION
 # ============================================================
 
-EC2_APT = os.environ.get('EC2_API')
+EC2_IP = os.environ.get('EC2_IP')
+EC2_API = f'http://{EC2_IP}:8000'
 
 # Camera paths (udev symlinks)
 CAMERAS = {
@@ -655,7 +656,7 @@ def health():
         'status': 'ok' if all(cameras.values()) else 'degraded',
         'timestamp': datetime.now().isoformat(),
         'cameras': cameras,
-        'ec2_target': EC2_API,
+        'ec2_target': EC2_API, # type: ignore
         'mem_available_mb': sys_info.get('mem_available_mb'),
         'cpu_temp_c': sys_info.get('cpu_temp_c'),
         'capture_active': get_state()['active']
