@@ -4,14 +4,14 @@ on:
   push:
     branches: [main]
     paths:
-      - "goat-api/**"
+      - "ec2-api/**"
       - "model/**"
       - ".github/workflows/deploy-api.yml"
   workflow_dispatch:
 
 env:
   AWS_REGION: us-east-2
-  ECR_REPOSITORY: goat-api
+  ECR_REPOSITORY: ec2-api
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
@@ -41,7 +41,7 @@ jobs:
         run: |
           IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           echo "Building $IMAGE_URI"
-          docker build -f goat-api/Dockerfile -t $IMAGE_URI .
+          docker build -f ec2-api/Dockerfile -t $IMAGE_URI .
           docker tag $IMAGE_URI $ECR_REGISTRY/$ECR_REPOSITORY:latest
           echo "Pushing to ECR..."
           docker push $IMAGE_URI
@@ -67,25 +67,25 @@ jobs:
 
             # Pull latest image
             echo "Pulling latest image..."
-            docker pull 937249941844.dkr.ecr.us-east-2.amazonaws.com/goat-api:latest
+            docker pull 937249941844.dkr.ecr.us-east-2.amazonaws.com/ec2-api:latest
 
             # Stop and remove old container
             echo "Stopping old container..."
-            docker stop goat-api || true
-            docker rm goat-api || true
+            docker stop ec2-api || true
+            docker rm ec2-api || true
 
             # Run new container with CloudWatch logging
             echo "Starting new container..."
             docker run -d \
-              --name goat-api \
+              --name ec2-api \
               --restart unless-stopped \
               -p 8000:8000 \
-              --env-file /home/ubuntu/goat-api.env \
+              --env-file /home/ubuntu/ec2-api.env \
               --log-driver=awslogs \
               --log-opt awslogs-region=us-east-2 \
               --log-opt awslogs-group=/goatdev \
               --log-opt awslogs-stream=ec2/api \
-              937249941844.dkr.ecr.us-east-2.amazonaws.com/goat-api:latest
+              937249941844.dkr.ecr.us-east-2.amazonaws.com/ec2-api:latest
 
             # Wait and check health
             echo "Waiting for health check..."
