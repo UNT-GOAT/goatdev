@@ -351,7 +351,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             draw_dot(draw, SCREEN_W - 26, y + 18, camera_color)
             if not all_cams:
                 down = [k for k, v in cam_status.items() if not v]
-                draw.text((14, y + 34), "OFF: " + ", ".join(down), font=font_xs, fill=RED)
+                draw.text((14, y + 34), "ERR: " + ", ".join(down), font=font_xs, fill=RED)
             else:
                 draw.text((14, y + 34), "ALL OK", font=font_xs, fill=DIM)
 
