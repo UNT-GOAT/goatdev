@@ -19,7 +19,7 @@ app = Flask(__name__)
 CORS(app)
 
 from dotenv import load_dotenv
-load_dotenv(os.path.expanduser("../.env"))
+load_dotenv("/home/pi/goatdev/pi/.env")
 
 # ============================================================
 # CONFIGURATION
