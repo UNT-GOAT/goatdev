@@ -3,3 +3,4 @@ flask-cors
 boto3
 requests
 watchtower >= 3.0.0
+python-dotenv

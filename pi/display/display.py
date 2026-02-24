@@ -24,6 +24,9 @@ import digitalio # type: ignore
 import board # type: ignore
 import adafruit_rgb_display.ili9341 as ili9341 # type: ignore
 
+from dotenv import load_dotenv
+load_dotenv("/home/pi/goatdev/pi/.env")
+
 # === PIN CONFIGURATION ===
 CS_PIN = board.CE0       # GPIO 8  / Pin 24
 DC_PIN = board.D18       # GPIO 18 / Pin 12
@@ -148,7 +151,7 @@ def check_servers():
     """Return dict of server name -> True/False."""
     return {
         'PROD': _curl_ok('http://localhost:5000/health'),
-        'EC2': _curl_ok(f'{EC2_API}/health', timeout=3),
+        'EC2': _curl_ok(f'{EC2_API}/health', timeout=6),
     }
 
 
@@ -277,7 +280,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
 
     # Cached state
     wifi = 0
-    server_status = {'PROD': False, 'TRAIN': False, 'EC2': False}
+    server_status = {'PROD': False, 'EC2': False}
     cam_status = {name: False for name in CAMERA_DEVICES}
     heaters_on = False
     temps = {k: None for k in SENSOR_IDS}
