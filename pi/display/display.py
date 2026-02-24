@@ -47,8 +47,8 @@ SENSOR_IDS = {
 
 HEATER_PINS = {
     'camera1': 17,
-    'camera2': 5,   # Moved from GPIO 27 to GPIO 5
-    'camera3': 22,
+    'camera2': 5,
+    'camera3': 6
 }
 
 CAMERA_DEVICES = {
@@ -148,7 +148,6 @@ def check_servers():
     """Return dict of server name -> True/False."""
     return {
         'PROD': _curl_ok('http://localhost:5000/health'),
-        'TRAIN': _curl_ok('http://localhost:5001/health'),
         'EC2': _curl_ok(f'{EC2_API_URL}/health', timeout=3),
     }
 
@@ -398,7 +397,7 @@ def main():
             disp, bl = init_display()
 
             font_big = load_font(28)
-            font_med = load_font(20)
+            font_med = load_font(18)
             font_sm = load_font(15)
             font_xs = load_font(11)
 
