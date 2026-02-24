@@ -54,10 +54,10 @@ HEATER_PINS = {
     'camera3': 6
 }
 
-CAMERA_DEVICES = {
-    'CAM 1': '/dev/video0',
-    'CAM 2': '/dev/video2',
-    'CAM 3': '/dev/video4',
+CAMERAS = {
+    'SIDE': '/dev/camera_side',
+    'TOP': '/dev/camera_top',
+    'FRONT': '/dev/camera_front'
 }
 
 # === COLORS ===
@@ -115,7 +115,7 @@ def read_temp_f(sensor_id):
 
 def check_cameras():
     """Return dict of camera name -> True/False."""
-    return {name: os.path.exists(dev) for name, dev in CAMERA_DEVICES.items()}
+    return {name: os.path.exists(dev) for name, dev in CAMERAS.items()}
 
 
 def check_network():
@@ -279,7 +279,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
     # Cached state
     wifi = 0
     server_status = {'PROD': False, 'EC2': False}
-    cam_status = {name: False for name in CAMERA_DEVICES}
+    cam_status = {name: False for name in CAMERAS}
     heaters_on = False
     temps = {k: None for k in SENSOR_IDS}
 
