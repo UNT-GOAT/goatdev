@@ -390,7 +390,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
                 down = [k for k, v in server_status.items() if not v]
                 draw.text((14, y + 34), "DOWN: " + ", ".join(down), font=font_xs, fill=RED)
             else:
-                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=DIM)
+                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=GREEN)
 
             # --- CAMERAS ---
             y = 100
@@ -406,7 +406,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
                 else:
                     draw.text((14, y + 34), line, font=font_xs, fill=RED)
             else:
-                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=DIM)
+                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=GREEN)
 
             # --- TEMPS ---
             y = 166
@@ -424,7 +424,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
                 missing = [k for k, v in temps.items() if v is None]
                 draw.text((14, y + 34), "ERR: " + ", ".join(missing), font=font_xs, fill=RED)
             else:
-                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=DIM)
+                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=GREEN)
 
             # --- Camera temps ---
             temp_y = 220
