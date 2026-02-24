@@ -277,7 +277,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
 
     # Cached state
     wifi = 0
-    server_status = {'PROD': False, 'TRAIN': False, 'EC2': False}
+    server_status = {'PROD': False, 'EC2': False}
     cam_status = {name: False for name in CAMERA_DEVICES}
     heaters_on = False
     temps = {k: None for k in SENSOR_IDS}
