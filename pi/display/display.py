@@ -16,6 +16,7 @@ Pin wiring:
 import time
 import os
 import sys
+import json
 import subprocess
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
@@ -45,19 +46,19 @@ EC2_API = os.environ.get('EC2_API')
 SENSOR_IDS = {
     'camera1': '28-0000006d3eba',
     'camera2': '28-0000007047ea',
-    'camera3': '28-0000007193ed'
+    'camera3': '28-0000007193ed',
 }
 
 HEATER_PINS = {
     'camera1': 17,
     'camera2': 5,
-    'camera3': 6
+    'camera3': 6,
 }
 
 CAMERAS = {
     'SIDE': '/dev/camera_side',
     'TOP': '/dev/camera_top',
-    'FRONT': '/dev/camera_front'
+    'FRONT': '/dev/camera_front',
 }
 
 # === COLORS ===
@@ -114,8 +115,28 @@ def read_temp_f(sensor_id):
 
 
 def check_cameras():
-    """Return dict of camera name -> True/False."""
-    return {name: os.path.exists(dev) for name, dev in CAMERAS.items()}
+    """Return dict of camera name -> status string."""
+    result = {}
+    for name, dev in CAMERAS.items():
+        if not os.path.exists(dev):
+            if os.path.islink(dev):
+                result[name] = 'DANGLING'
+            else:
+                result[name] = 'MISSING'
+        elif not os.access(dev, os.R_OK):
+            result[name] = 'NO_PERM'
+        else:
+            try:
+                fuser = subprocess.run(
+                    ['fuser', dev], capture_output=True, text=True, timeout=2
+                )
+                if fuser.stdout.strip():
+                    result[name] = 'BUSY'
+                else:
+                    result[name] = 'OK'
+            except Exception:
+                result[name] = 'OK'
+    return result
 
 
 def check_network():
@@ -155,15 +176,39 @@ def check_servers():
     }
 
 
-def check_heaters_active():
+def check_heater_status():
+    """Check heater API for detailed state. Falls back to GPIO check."""
+    try:
+        result = subprocess.run(
+            ['curl', '-sf', '-m', '2', 'http://localhost:5002/status'],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            cameras = data.get('cameras', {})
+            return {
+                'any_on': any(c.get('heater_on') for c in cameras.values()),
+                'any_failsafe': any(c.get('failsafe') for c in cameras.values()),
+                'any_override': any(c.get('override') != 'auto' for c in cameras.values()),
+                'details': {name: {
+                    'on': c.get('heater_on', False),
+                    'failsafe': c.get('failsafe', False),
+                    'override': c.get('override', 'auto'),
+                } for name, c in cameras.items()},
+            }
+    except Exception:
+        pass
+
+    # Fallback: direct GPIO check
+    any_on = False
     for pin in HEATER_PINS.values():
         try:
             with open(f'/sys/class/gpio/gpio{pin}/value', 'r') as f:
                 if f.read().strip() == '1':
-                    return True
+                    any_on = True
         except Exception:
             pass
-    return False
+    return {'any_on': any_on, 'any_failsafe': False, 'any_override': False, 'details': {}}
 
 
 # === DRAWING HELPERS ===
@@ -245,7 +290,7 @@ def show_boot(disp):
             pass
         time.sleep(0.04)
 
-    # Hold logo while checking services (up to 60 seconds)
+    # Hold logo while checking services (up to 20 seconds)
     img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
     draw = ImageDraw.Draw(img)
     lx = (SCREEN_W - logo.width) // 2
@@ -279,8 +324,8 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
     # Cached state
     wifi = 0
     server_status = {'PROD': False, 'EC2': False}
-    cam_status = {name: False for name in CAMERAS}
-    heaters_on = False
+    cam_status = {name: 'MISSING' for name in CAMERAS}
+    heater_status = {'any_on': False, 'any_failsafe': False, 'any_override': False, 'details': {}}
     temps = {k: None for k in SENSOR_IDS}
 
     while True:
@@ -289,7 +334,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
         # Fast checks every 1 second
         if now - last_fast >= fast_interval:
             cam_status = check_cameras()
-            heaters_on = check_heaters_active()
+            heater_status = check_heater_status()
             for name, sid in SENSOR_IDS.items():
                 temps[name] = read_temp_f(sid)
             last_fast = now
@@ -304,8 +349,8 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
         all_servers = all(server_status.values())
         server_color = GREEN if all_servers else RED
 
-        all_cams = all(cam_status.values())
-        some_cams = any(cam_status.values())
+        all_cams = all(v == 'OK' for v in cam_status.values())
+        some_cams = any(v == 'OK' for v in cam_status.values())
         if all_cams:
             camera_color = GREEN
         elif some_cams:
@@ -314,9 +359,11 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             camera_color = RED
 
         temps_all_ok = all(t is not None for t in temps.values())
-        if not temps_all_ok:
+        if heater_status['any_failsafe']:
             temp_color = RED
-        elif heaters_on:
+        elif not temps_all_ok:
+            temp_color = RED
+        elif heater_status['any_on']:
             temp_color = ORANGE
         else:
             temp_color = GREEN
@@ -350,8 +397,8 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             draw.text((12, y), "CAMERAS", font=font_big, fill=WHITE)
             draw_dot(draw, SCREEN_W - 26, y + 18, camera_color)
             if not all_cams:
-                down = [k for k, v in cam_status.items() if not v]
-                draw.text((14, y + 34), "ERR: " + ", ".join(down), font=font_xs, fill=RED)
+                issues = [f"{k}:{v}" for k, v in cam_status.items() if v != 'OK']
+                draw.text((14, y + 34), " ".join(issues), font=font_xs, fill=RED)
             else:
                 draw.text((14, y + 34), "ALL OK", font=font_xs, fill=DIM)
 
@@ -359,7 +406,13 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             y = 166
             draw.text((12, y), "TEMPS", font=font_big, fill=WHITE)
             draw_dot(draw, SCREEN_W - 26, y + 18, temp_color)
-            if heaters_on:
+            if heater_status['any_failsafe']:
+                fs = [k for k, v in heater_status['details'].items() if v.get('failsafe')]
+                draw.text((14, y + 34), "FAILSAFE: " + ", ".join(fs), font=font_xs, fill=RED)
+            elif heater_status['any_override']:
+                ov = [k for k, v in heater_status['details'].items() if v.get('override') != 'auto']
+                draw.text((14, y + 34), "OVERRIDE: " + ", ".join(ov), font=font_xs, fill=ORANGE)
+            elif heater_status['any_on']:
                 draw.text((14, y + 34), "HEATERS ON", font=font_xs, fill=ORANGE)
             elif not temps_all_ok:
                 missing = [k for k, v in temps.items() if v is None]
