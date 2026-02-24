@@ -260,11 +260,9 @@ def show_boot(disp):
         pass
 
     start = time.time()
-    while time.time() - start < 60:
+    while time.time() - start < 20:
         servers = check_servers()
-        cams = check_cameras()
-        temps_ok = any(read_temp_f(s) is not None for s in SENSOR_IDS.values())
-        if any(servers.values()) or any(cams.values()) or temps_ok:
+        if all(servers.values()):
             break
         time.sleep(2)
 
