@@ -50,9 +50,9 @@ SENSOR_IDS = {    # TODO: reconfirm sensor id's to physical markers on sensors
 }
 
 HEATER_PINS = {
-    'camera1': 17,
-    'camera2': 5,
-    'camera3': 6,
+    'camera1': 5,
+    'camera2': 6,
+    'camera3': 17,
 }
 
 CAMERAS = {
