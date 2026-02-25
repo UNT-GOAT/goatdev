@@ -689,7 +689,7 @@
       function sleep(ms) {
         return new Promise((r) => setTimeout(r, ms));
       }
-      if (localStorage.getItem("auth") === "true") showApp();
+      if (localStorage.getItem("auth") === "true") showApp(); // Auto-login if already authenticated
     </script>
   </body>
 </html>
