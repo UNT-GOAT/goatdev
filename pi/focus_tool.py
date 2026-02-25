@@ -2,7 +2,7 @@
 """
 Multi-camera focus adjustment tool
 
-run sudo /home/pi/venv/bin/python3 /home/pi/goat-capture/pi/focus_tool.py on pi
+run sudo /home/pi/venv/bin/python3 /home/pi/goatdev/pi/focus_tool.py on pi
 Open http://<pi-ip>:8080 in any browser
 """
 

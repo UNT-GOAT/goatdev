@@ -49,15 +49,15 @@ BOGUS_TEMP_C = 85.0     # DS18B20 power-on default — filter this out
 CAMERAS = {
     'camera1': {
         'sensor': '/sys/bus/w1/devices/28-0000006d3eba/temperature',
-        'heater_pin': 17,
+        'heater_pin': 5,
     },
     'camera2': {
         'sensor': '/sys/bus/w1/devices/28-0000007047ea/temperature',
-        'heater_pin': 5,
+        'heater_pin': 6,
     },
     'camera3': {
         'sensor': '/sys/bus/w1/devices/28-0000007193ed/temperature',
-        'heater_pin': 6,
+        'heater_pin': 17,
     },
 }
 

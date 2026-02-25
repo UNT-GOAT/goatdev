@@ -50,9 +50,9 @@ SENSOR_IDS = {    # TODO: reconfirm sensor id's to physical markers on sensors
 }
 
 HEATER_PINS = {
-    'camera1': 17,
-    'camera2': 5,
-    'camera3': 6,
+    'camera1': 5,
+    'camera2': 6,
+    'camera3': 17,
 }
 
 CAMERAS = {
@@ -414,20 +414,36 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             draw_dot(draw, SCREEN_W - 26, y + 18, temp_color)
             if heater_status['any_failsafe']:
                 fs = [k for k, v in heater_status['details'].items() if v.get('failsafe')]
-                draw.text((14, y + 34), "FAILSAFE: " + ", ".join(fs), font=font_xs, fill=RED)
+                line = "FAILSAFE: " + ", ".join(fs)
+                if draw.textlength(line, font=font_xs) > SCREEN_W - 28:
+                    draw.text((14, y + 34), "FAILSAFE:", font=font_xs, fill=RED)
+                    draw.text((14, y + 46), ", ".join(fs), font=font_xs, fill=RED)
+                else:
+                    draw.text((14, y + 34), line, font=font_xs, fill=RED)
             elif heater_status['any_override']:
                 ov = [k for k, v in heater_status['details'].items() if v.get('override') != 'auto']
-                draw.text((14, y + 34), "OVERRIDE: " + ", ".join(ov), font=font_xs, fill=ORANGE)
+                line = "OVERRIDE: " + ", ".join(ov)
+                if draw.textlength(line, font=font_xs) > SCREEN_W - 28:
+                    draw.text((14, y + 34), "OVERRIDE:", font=font_xs, fill=ORANGE)
+                    draw.text((14, y + 46), ", ".join(ov), font=font_xs, fill=ORANGE)
+                else:
+                    draw.text((14, y + 34), line, font=font_xs, fill=ORANGE)
             elif heater_status['any_on']:
                 draw.text((14, y + 34), "HEATERS ON", font=font_xs, fill=ORANGE)
             elif not temps_all_ok:
                 missing = [k for k, v in temps.items() if v is None]
-                draw.text((14, y + 34), "ERR: " + ", ".join(missing), font=font_xs, fill=RED)
+                line = "ERR: " + ", ".join(missing)
+                if draw.textlength(line, font=font_xs) > SCREEN_W - 28:
+                    mid = len(missing) // 2 + 1
+                    draw.text((14, y + 34), "ERR: " + ", ".join(missing[:mid]), font=font_xs, fill=RED)
+                    draw.text((14, y + 46), ", ".join(missing[mid:]), font=font_xs, fill=RED)
+                else:
+                    draw.text((14, y + 34), line, font=font_xs, fill=RED)
             else:
                 draw.text((14, y + 34), "ALL OK", font=font_xs, fill=GREEN)
 
             # --- Camera temps ---
-            temp_y = 220
+            temp_y = 235
             cam_labels = ['CAM 1', 'CAM 2', 'CAM 3']
             cam_keys = ['sensor1', 'sensor2', 'sensor3']
 
