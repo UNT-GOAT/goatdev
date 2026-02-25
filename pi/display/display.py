@@ -315,8 +315,8 @@ def show_boot(disp):
 # === STATUS SCREEN ===
 def draw_status(disp, font_big, font_med, font_sm, font_xs):
     """Main status loop."""
-    slow_interval = 10
-    fast_interval = 1
+    slow_interval = 5
+    fast_interval = 0.25
     last_slow = 0
     last_fast = 0
     frame_count = 0
@@ -331,7 +331,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
     while True:
         now = time.time()
 
-        # Fast checks every 1 second
+        # Fast checks every .25 second
         if now - last_fast >= fast_interval:
             cam_status = check_cameras()
             heater_status = check_heater_status()
@@ -339,7 +339,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
                 temps[name] = read_temp_f(sid)
             last_fast = now
 
-        # Slow checks every 10 seconds
+        # Slow checks every 5 seconds
         if now - last_slow >= slow_interval:
             wifi = check_network()
             server_status = check_servers()
