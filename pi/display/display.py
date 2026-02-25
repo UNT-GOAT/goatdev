@@ -443,7 +443,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
                 draw.text((14, y + 34), "ALL OK", font=font_xs, fill=GREEN)
 
             # --- Camera temps ---
-            temp_y = 230
+            temp_y = 235
             cam_labels = ['CAM 1', 'CAM 2', 'CAM 3']
             cam_keys = ['sensor1', 'sensor2', 'sensor3']
 
