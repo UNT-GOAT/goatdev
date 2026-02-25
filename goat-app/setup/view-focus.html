@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <title>View Focus | HerdSync</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.19.0/js/md5.min.js"></script>
+    <script src="config.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #1a1a2e;
+        color: white;
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding: 20px;
+      }
+      #login {
+        text-align: center;
+        padding: 20px;
+        margin-top: 20vh;
+      }
+      #login h1 {
+        font-size: 24px;
+        margin-bottom: 8px;
+        color: #eee;
+      }
+      #login .subtitle {
+        font-size: 13px;
+        color: #555;
+        margin-bottom: 30px;
+      }
+      #login input {
+        padding: 15px 20px;
+        font-size: 18px;
+        border: none;
+        border-radius: 10px;
+        width: 250px;
+        margin-bottom: 15px;
+      }
+      #login button {
+        padding: 15px 40px;
+        font-size: 18px;
+        background: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+      #login button:hover {
+        background: #45a049;
+      }
+      .nav {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 20px;
+        background: #0d0d1a;
+        z-index: 100;
+        border-bottom: 1px solid #222;
+      }
+      .nav-left {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+      .nav-brand {
+        font-size: 15px;
+        font-weight: 700;
+        color: #4caf50;
+        letter-spacing: 0.5px;
+      }
+      .nav-links {
+        display: flex;
+        gap: 4px;
+      }
+      .nav-links a {
+        color: #666;
+        text-decoration: none;
+        font-size: 13px;
+        padding: 6px 12px;
+        border-radius: 6px;
+        transition: all 0.2s;
+      }
+      .nav-links a:hover {
+        color: #ccc;
+        background: #1a1a2e;
+      }
+      .nav-links a.active {
+        color: #4caf50;
+        background: #1a1a2e;
+      }
+      .nav-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .connection {
+        font-size: 11px;
+        color: #555;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .connection .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #555;
+      }
+      .connection .dot.ok {
+        background: #4caf50;
+      }
+      .connection .dot.err {
+        background: #e53935;
+      }
+      .logout-btn {
+        background: none;
+        border: 1px solid #333;
+        color: #666;
+        padding: 6px 14px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .logout-btn:hover {
+        border-color: #666;
+        color: #888;
+      }
+      #app {
+        display: none;
+        width: 100%;
+        max-width: 1100px;
+        margin-top: 60px;
+      }
+      .page-title {
+        font-size: 12px;
+        color: #555;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        margin-bottom: 20px;
+      }
+      .focus-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 16px;
+        margin-bottom: 20px;
+      }
+      .focus-card {
+        background: #0d0d1a;
+        border-radius: 12px;
+        padding: 16px;
+        border: 1px solid #222;
+      }
+      .focus-card.connected {
+        border-color: #4caf50;
+      }
+      .focus-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      .focus-card-name {
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .focus-card-status {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        padding: 3px 10px;
+        border-radius: 20px;
+      }
+      .focus-card-status.ok {
+        color: #4caf50;
+        background: rgba(76, 175, 80, 0.1);
+      }
+      .focus-card-status.err {
+        color: #e53935;
+        background: rgba(229, 57, 53, 0.1);
+      }
+      .focus-card-status.loading {
+        color: #ff9800;
+        background: rgba(255, 152, 0, 0.1);
+      }
+      .stream-container {
+        width: 100%;
+        aspect-ratio: 4/3;
+        background: #000;
+        border-radius: 8px;
+        overflow: hidden;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .stream-container img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+      .stream-container .placeholder {
+        color: #333;
+        font-size: 14px;
+      }
+      .focus-controls {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .af-buttons {
+        display: flex;
+        gap: 8px;
+      }
+      .af-btn {
+        flex: 1;
+        padding: 8px 0;
+        border: 1px solid #333;
+        border-radius: 6px;
+        background: none;
+        color: #888;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-transform: uppercase;
+      }
+      .af-btn:hover {
+        border-color: #666;
+        color: #ccc;
+      }
+      .af-btn.active {
+        background: rgba(76, 175, 80, 0.15);
+        border-color: #4caf50;
+        color: #4caf50;
+      }
+      .slider-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .slider-label {
+        font-size: 11px;
+        color: #555;
+        text-transform: uppercase;
+        flex-shrink: 0;
+      }
+      .slider-val {
+        font-family: monospace;
+        font-size: 14px;
+        color: #4caf50;
+        width: 40px;
+        text-align: right;
+        flex-shrink: 0;
+      }
+      input[type="range"] {
+        flex: 1;
+        height: 4px;
+        -webkit-appearance: none;
+        appearance: none;
+        background: #333;
+        border-radius: 2px;
+        outline: none;
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #4caf50;
+        cursor: pointer;
+      }
+      .focus-status {
+        font-size: 11px;
+        color: #444;
+        min-height: 16px;
+        margin-top: 4px;
+      }
+      .action-bar {
+        background: #0d0d1a;
+        border-radius: 10px;
+        padding: 14px 20px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .action-btn {
+        padding: 10px 20px;
+        border: 1px solid #333;
+        border-radius: 6px;
+        background: none;
+        color: #888;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .action-btn:hover {
+        border-color: #666;
+        color: #ccc;
+      }
+      .action-btn.save {
+        background: rgba(76, 175, 80, 0.15);
+        border-color: #4caf50;
+        color: #4caf50;
+      }
+      .action-btn.save:hover {
+        background: rgba(76, 175, 80, 0.25);
+      }
+      .action-btn.load {
+        background: rgba(33, 150, 243, 0.15);
+        border-color: #2196f3;
+        color: #2196f3;
+      }
+      .action-btn.load:hover {
+        background: rgba(33, 150, 243, 0.25);
+      }
+      .action-btn.capture {
+        background: rgba(156, 39, 176, 0.15);
+        border-color: #9c27b0;
+        color: #9c27b0;
+      }
+      .action-btn.capture:hover {
+        background: rgba(156, 39, 176, 0.25);
+      }
+      .action-btn.af-all {
+        background: rgba(255, 152, 0, 0.15);
+        border-color: #ff9800;
+        color: #ff9800;
+      }
+      .action-btn.af-all:hover {
+        background: rgba(255, 152, 0, 0.25);
+      }
+      .action-status {
+        font-size: 13px;
+        color: #4caf50;
+        margin-left: auto;
+      }
+      @media (max-width: 600px) {
+        .focus-grid {
+          grid-template-columns: 1fr;
+        }
+        .action-bar {
+          flex-direction: column;
+        }
+        .action-status {
+          margin-left: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="login">
+      <h1>HerdSync</h1>
+      <div class="subtitle">Setup &amp; Capture</div>
+      <input
+        type="password"
+        id="pw"
+        placeholder="Password"
+        onkeypress="if (event.key === 'Enter') checkPw();"
+      />
+      <br /><button onclick="checkPw()">Enter</button>
+    </div>
+    <div id="app">
+      <nav class="nav">
+        <div class="nav-left">
+          <span class="nav-brand">HerdSync</span>
+          <div class="nav-links">
+            <a href="index.html">Capture</a>
+            <a href="heater.html">Heaters</a>
+            <a href="view-focus.html" class="active">View Focus</a>
+          </div>
+        </div>
+        <div class="nav-right">
+          <div class="connection">
+            <div class="dot" id="connDot"></div>
+            <span id="connLabel">Connecting...</span>
+          </div>
+          <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
+      </nav>
+      <div class="page-title">Camera View Focus Tool</div>
+      <div class="focus-grid" id="focusGrid"></div>
+      <div class="action-bar">
+        <button class="action-btn af-all" onclick="allAFOff()">
+          All AF OFF
+        </button>
+        <button class="action-btn save" onclick="saveSettings()">
+          Save Settings
+        </button>
+        <button class="action-btn load" onclick="loadSettings()">
+          Load Saved
+        </button>
+        <button class="action-btn capture" onclick="captureAll()">
+          Capture Test Shots
+        </button>
+        <span class="action-status" id="actionStatus"></span>
+      </div>
+    </div>
+    <script>
+      const CAMERAS = ["side", "top", "front"];
+      let afState = { side: false, top: false, front: false };
+
+      function checkPw() {
+        if (md5(document.getElementById("pw").value) === CONFIG.PASS_HASH) {
+          localStorage.setItem("auth", "true");
+          showApp();
+        } else {
+          alert("Wrong password");
+        }
+      }
+      function logout() {
+        localStorage.removeItem("auth");
+        location.reload();
+      }
+      function showApp() {
+        document.getElementById("login").style.display = "none";
+        document.getElementById("app").style.display = "block";
+        buildGrid();
+        checkConnection();
+        loadSettings();
+        setInterval(checkConnection, 5000);
+      }
+      function buildGrid() {
+        const grid = document.getElementById("focusGrid");
+        grid.innerHTML = "";
+        CAMERAS.forEach((cam) => {
+          const card = document.createElement("div");
+          card.className = "focus-card";
+          card.id = "fcard-" + cam;
+          card.innerHTML = `
+            <div class="focus-card-header">
+              <span class="focus-card-name">${cam.toUpperCase()}</span>
+              <span class="focus-card-status loading" id="fstatus-${cam}">Connecting</span>
+            </div>
+            <div class="stream-container">
+              <img id="fimg-${cam}" src="${CONFIG.FOCUS_API}/stream/${cam}"
+                onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"
+                onload="this.style.display='block'; this.nextElementSibling.style.display='none';">
+              <span class="placeholder" id="fph-${cam}">No stream</span>
+            </div>
+            <div class="focus-controls">
+              <div class="af-buttons">
+                <button class="af-btn" id="af-on-${cam}" onclick="setAF('${cam}', true)">AF On</button>
+                <button class="af-btn" id="af-off-${cam}" onclick="setAF('${cam}', false)">AF Off</button>
+              </div>
+              <div class="slider-row">
+                <span class="slider-label">Focus</span>
+                <input type="range" id="fslider-${cam}" min="1" max="1023" value="200"
+                  oninput="setFocus('${cam}', this.value)">
+                <span class="slider-val" id="fval-${cam}">200</span>
+              </div>
+              <div class="focus-status" id="fmsg-${cam}"></div>
+            </div>`;
+          grid.appendChild(card);
+        });
+      }
+      async function checkConnection() {
+        const dot = document.getElementById("connDot");
+        const label = document.getElementById("connLabel");
+        try {
+          const res = await fetch(CONFIG.FOCUS_API + "/settings", {
+            mode: "cors",
+          });
+          if (res.ok) {
+            dot.className = "dot ok";
+            label.textContent = "Connected";
+            CAMERAS.forEach((cam) => {
+              const st = document.getElementById("fstatus-" + cam);
+              const img = document.getElementById("fimg-" + cam);
+              if (img.naturalWidth > 0) {
+                st.className = "focus-card-status ok";
+                st.textContent = "Streaming";
+                document
+                  .getElementById("fcard-" + cam)
+                  .classList.add("connected");
+              }
+            });
+          } else {
+            throw new Error();
+          }
+        } catch (err) {
+          dot.className = "dot err";
+          label.textContent = "Disconnected";
+          CAMERAS.forEach((cam) => {
+            document.getElementById("fstatus-" + cam).className =
+              "focus-card-status err";
+            document.getElementById("fstatus-" + cam).textContent = "Offline";
+            document
+              .getElementById("fcard-" + cam)
+              .classList.remove("connected");
+          });
+        }
+      }
+      async function setFocus(cam, val) {
+        document.getElementById("fval-" + cam).textContent = val;
+        try {
+          const res = await fetch(`${CONFIG.FOCUS_API}/focus/${cam}/${val}`);
+          document.getElementById("fmsg-" + cam).textContent = await res.text();
+        } catch (err) {
+          document.getElementById("fmsg-" + cam).textContent =
+            "Error setting focus";
+        }
+      }
+      async function setAF(cam, on) {
+        try {
+          const res = await fetch(
+            `${CONFIG.FOCUS_API}/autofocus/${cam}/${on ? 1 : 0}`,
+          );
+          document.getElementById("fmsg-" + cam).textContent = await res.text();
+          afState[cam] = on;
+          document.getElementById("af-on-" + cam).className =
+            "af-btn" + (on ? " active" : "");
+          document.getElementById("af-off-" + cam).className =
+            "af-btn" + (!on ? " active" : "");
+        } catch (err) {
+          document.getElementById("fmsg-" + cam).textContent =
+            "Error setting AF";
+        }
+      }
+      function allAFOff() {
+        CAMERAS.forEach((cam) => setAF(cam, false));
+      }
+      async function saveSettings() {
+        const settings = {};
+        CAMERAS.forEach((cam) => {
+          settings[cam] = parseInt(
+            document.getElementById("fslider-" + cam).value,
+          );
+        });
+        try {
+          await fetch(CONFIG.FOCUS_API + "/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(settings),
+          });
+          showAction("Settings saved");
+        } catch (err) {
+          showAction("Failed to save");
+        }
+      }
+      async function loadSettings() {
+        try {
+          const res = await fetch(CONFIG.FOCUS_API + "/settings");
+          const settings = await res.json();
+          CAMERAS.forEach((cam) => {
+            if (settings[cam] !== undefined) {
+              document.getElementById("fslider-" + cam).value = settings[cam];
+              document.getElementById("fval-" + cam).textContent =
+                settings[cam];
+              setFocus(cam, settings[cam]);
+            }
+          });
+          showAction("Settings loaded");
+        } catch (err) {
+          showAction("Could not load settings");
+        }
+      }
+      async function captureAll() {
+        showAction("Capturing...");
+        try {
+          const res = await fetch(CONFIG.FOCUS_API + "/capture");
+          showAction(await res.text());
+        } catch (err) {
+          showAction("Capture failed");
+        }
+      }
+      function showAction(msg) {
+        const el = document.getElementById("actionStatus");
+        el.textContent = msg;
+        setTimeout(() => {
+          el.textContent = "";
+        }, 5000);
+      }
+      if (localStorage.getItem("auth") === "true") showApp();
+    </script>
+  </body>
+</html>
