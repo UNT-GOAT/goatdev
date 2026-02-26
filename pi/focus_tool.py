@@ -7,6 +7,7 @@ Open http://<pi-ip>:8080 in any browser
 """
 
 from flask import Flask, Response, request
+from flask_cors import CORS
 import subprocess
 import cv2
 import threading
@@ -14,6 +15,7 @@ import json
 import os
 
 app = Flask(__name__)
+CORS(app)
 
 CAMERAS = {
     'side': '/dev/camera_side',
