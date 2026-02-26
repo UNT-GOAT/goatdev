@@ -38,6 +38,7 @@ systemctl enable goat-prod.service
 systemctl enable goat-training.service
 systemctl enable goat-display.service
 systemctl enable view-focus.service
+systemctl enable setup-proxy.service
 systemctl enable git-sync-on-boot.service
 
 echo "=== Deploy complete ==="
