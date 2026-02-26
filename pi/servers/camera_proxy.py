@@ -262,7 +262,7 @@ class CameraReader:
                 fps_window_count = 0
 
             # Yield to other cameras
-            time.sleep(0.1)
+            time.sleep(0.3)
 
     def _preview_loop(self):
         """
