@@ -3,7 +3,7 @@ Description=Camera View Focus Tool
 After=network.target git-sync-on-boot.service
 
 [Service]
-ExecStart=/home/pi/venv/bin/python3 /home/pi/goatdev/pi/view_focus.py
+ExecStart=/home/pi/venv/bin/python3 /home/pi/goatdev/pi/servers/view_focus.py
 WorkingDirectory=/home/pi/goatdev/pi
 User=root
 Restart=always

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Multi-camera focus adjustment tool
+Multi-camera view focus adjustment tool
 
-run sudo /home/pi/venv/bin/python3 /home/pi/goatdev/pi/focus_tool.py on pi
-Open http://<pi-ip>:8080 in any browser
+Runs as systemd service (view-focus.service) on port 8080.
+Open via Tailscale Funnel: https://goat-pi.tail184479.ts.net:8080
 """
 
 from flask import Flask, Response, request
@@ -158,9 +158,9 @@ HTML = '''
 '''
 
 def run_v4l2(device, ctrl, value):
-    """Run v4l2-ctl with sudo"""
+    """Run v4l2-ctl (no sudo needed, service runs as root)"""
     result = subprocess.run(
-        ['sudo', 'v4l2-ctl', '-d', device, '--set-ctrl', f'{ctrl}={value}'],
+        ['v4l2-ctl', '-d', device, '--set-ctrl', f'{ctrl}={value}'],
         capture_output=True, text=True
     )
     return result
@@ -267,8 +267,7 @@ def apply_saved_settings():
 
 if __name__ == '__main__':
     print("Focus Tool starting...")
-    print("Open http://<pi-ip>:8080 in your browser")
-    print(f"Cameras: {list(CAMERAS.keys())}")
+    print("Cameras:", list(CAMERAS.keys()))
     
     # Disable autofocus on all connected cameras
     for name, device in CAMERAS.items():
