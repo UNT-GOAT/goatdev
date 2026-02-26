@@ -1,0 +1,14 @@
+[Unit]
+Description=Caddy Reverse Proxy for Setup Services
+After=network.target goat-prod.service goat-training.service camera-heating.service view-focus.service
+Wants=goat-prod.service goat-training.service camera-heating.service view-focus.service
+
+[Service]
+ExecStart=/usr/bin/caddy run --config /home/pi/goatdev/pi/system/Caddyfile
+WorkingDirectory=/home/pi/goatdev/pi/system
+User=pi
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

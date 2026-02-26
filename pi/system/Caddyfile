@@ -1,0 +1,17 @@
+:8443 {
+	handle_path /api/capture/* {
+		reverse_proxy 127.0.0.1:5001
+	}
+
+	handle_path /api/heater/* {
+		reverse_proxy 127.0.0.1:5002
+	}
+
+	handle_path /api/viewfocus/* {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:5001
+	}
+}

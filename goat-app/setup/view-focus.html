@@ -450,7 +450,7 @@
               <span class="focus-card-status loading" id="fstatus-${cam}">Connecting</span>
             </div>
             <div class="stream-container">
-              <img id="fimg-${cam}" src="${CONFIG.FOCUS_API}/stream/${cam}"
+              <img id="fimg-${cam}" src="${CONFIG.BASE_API}api/focus/stream/${cam}"
                 onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"
                 onload="this.style.display='block'; this.nextElementSibling.style.display='none';">
               <span class="placeholder" id="fph-${cam}">No stream</span>
@@ -475,7 +475,7 @@
         const dot = document.getElementById("connDot");
         const label = document.getElementById("connLabel");
         try {
-          const res = await fetch(CONFIG.FOCUS_API + "/settings", {
+          const res = await fetch(CONFIG.BASE_API + "api/focus/settings", {
             mode: "cors",
           });
           if (res.ok) {
@@ -511,7 +511,9 @@
       async function setFocus(cam, val) {
         document.getElementById("fval-" + cam).textContent = val;
         try {
-          const res = await fetch(`${CONFIG.FOCUS_API}/focus/${cam}/${val}`);
+          const res = await fetch(
+            `${CONFIG.BASE_API}api/focus/focus/${cam}/${val}`,
+          );
           document.getElementById("fmsg-" + cam).textContent = await res.text();
         } catch (err) {
           document.getElementById("fmsg-" + cam).textContent =
@@ -521,7 +523,7 @@
       async function setAF(cam, on) {
         try {
           const res = await fetch(
-            `${CONFIG.FOCUS_API}/autofocus/${cam}/${on ? 1 : 0}`,
+            `${CONFIG.BASE_API}api/focus/autofocus/${cam}/${on ? 1 : 0}`,
           );
           document.getElementById("fmsg-" + cam).textContent = await res.text();
           afState[cam] = on;
@@ -545,7 +547,7 @@
           );
         });
         try {
-          await fetch(CONFIG.FOCUS_API + "/save", {
+          await fetch(CONFIG.BASE_API + "api/focus/save", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(settings),
@@ -557,7 +559,7 @@
       }
       async function loadSettings() {
         try {
-          const res = await fetch(CONFIG.FOCUS_API + "/settings");
+          const res = await fetch(CONFIG.BASE_API + "api/focus/settings");
           const settings = await res.json();
           CAMERAS.forEach((cam) => {
             if (settings[cam] !== undefined) {
@@ -575,7 +577,7 @@
       async function captureAll() {
         showAction("Capturing...");
         try {
-          const res = await fetch(CONFIG.FOCUS_API + "/capture");
+          const res = await fetch(CONFIG.BASE_API + "api/focus/capture");
           showAction(await res.text());
         } catch (err) {
           showAction("Capture failed");
