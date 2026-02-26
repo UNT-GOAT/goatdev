@@ -438,7 +438,7 @@
         const dot = document.getElementById("connDot");
         const label = document.getElementById("connLabel");
         try {
-          const res = await fetch(CONFIG.HEATER_API + "/status");
+          const res = await fetch(CONFIG.BASE_API + "api/heater/status");
           const data = await res.json();
           dot.className = "dot ok";
           label.textContent = "Connected";
@@ -532,7 +532,7 @@
       }
       async function setOverride(camera, state) {
         try {
-          await fetch(CONFIG.HEATER_API + "/override", {
+          await fetch(CONFIG.BASE_API + "api/heater/override", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ camera, state }),
@@ -544,7 +544,7 @@
       }
       async function fetchHistory() {
         try {
-          const res = await fetch(CONFIG.HEATER_API + "/history");
+          const res = await fetch(CONFIG.BASE_API + "api/heater/history");
           const data = await res.json();
           renderHistory(data.history || []);
         } catch (err) {}
