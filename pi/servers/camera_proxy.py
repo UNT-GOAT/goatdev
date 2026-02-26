@@ -64,8 +64,9 @@ HEARTBEAT_INTERVAL_SEC = 300
 
 API_PORT = 8080
 
-# Shared USB lock — only one camera reads at a time
-usb_lock = threading.Lock()
+# Allow max 2 concurrent USB reads — prevents bus saturation
+# while not blocking all cameras if one is slow
+usb_semaphore = threading.Semaphore(2)
 
 
 # === CAMERA READER ===
@@ -209,7 +210,7 @@ class CameraReader:
                 fps_window_count = 0
 
             # Acquire USB lock — only one camera reads at a time
-            with usb_lock:
+            with usb_semaphore:
                 try:
                     ret, frame = self.cap.read()
                 except Exception as e:
