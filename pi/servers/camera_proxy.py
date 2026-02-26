@@ -99,29 +99,23 @@ class CameraReader:
         self.stream_clients = 0
 
         # Threads
-        self._reader_thread = None
         self._preview_thread = None
 
     def start(self):
-        """Start the reader thread."""
-        self.running = True
-        self._reader_thread = threading.Thread(
-            target=self._read_loop, daemon=True, name=f'reader-{self.name}'
-        )
-        self._reader_thread.start()
+            """Open camera and start preview thread only. Reading is done by shared loop."""
+            self._open()
 
-        self._preview_thread = threading.Thread(
-            target=self._preview_loop, daemon=True, name=f'preview-{self.name}'
-        )
-        self._preview_thread.start()
+            self._preview_thread = threading.Thread(
+                target=self._preview_loop, daemon=True, name=f'preview-{self.name}'
+            )
+            self._preview_thread.start()
+            self.running = True
 
-        log.info(f'reader:{self.name}', 'Reader started', device=self.device)
+            log.info(f'reader:{self.name}', 'Reader started', device=self.device)
 
     def stop(self):
         """Stop the reader thread and release camera."""
         self.running = False
-        if self._reader_thread:
-            self._reader_thread.join(timeout=5)
         if self._preview_thread:
             self._preview_thread.join(timeout=5)
         self._release()
@@ -182,78 +176,6 @@ class CameraReader:
                 log.warn(f'reader:{self.name}', 'Release error', error=str(e))
             self.cap = None
         self.connected = False
-
-    def _read_loop(self):
-        """Main reader loop. Reads raw MJPEG frames continuously."""
-        backoff = RECONNECT_INTERVAL_SEC
-        fps_window_start = time.time()
-        fps_window_count = 0
-
-        while self.running:
-            # Connect if needed
-            if not self.connected:
-                if not self._open():
-                    log.warn(f'reader:{self.name}', 'Reconnecting',
-                            backoff_sec=backoff,
-                            consecutive_failures=self.consecutive_failures)
-                    time.sleep(backoff)
-                    backoff = min(backoff * 1.5, RECONNECT_MAX_BACKOFF_SEC)
-                    continue
-                backoff = RECONNECT_INTERVAL_SEC
-
-            # Read frame
-            try:
-                ret, frame = self.cap.read()
-            except Exception as e:
-                self.error_count += 1
-                self.consecutive_failures += 1
-                self.last_error = f'Read exception: {e}'
-                log.error(f'reader:{self.name}', 'Read exception',
-                         error=str(e),
-                         consecutive_failures=self.consecutive_failures)
-                self._release()
-                continue
-
-            if not ret or frame is None:
-                self.error_count += 1
-                self.consecutive_failures += 1
-                self.last_error = 'Read returned empty frame'
-
-                if self.consecutive_failures == 1:
-                    log.warn(f'reader:{self.name}', 'Frame read failed')
-                elif self.consecutive_failures % 10 == 0:
-                    log.error(f'reader:{self.name}',
-                             f'{self.consecutive_failures} consecutive failures',
-                             last_error=self.last_error)
-
-                if self.consecutive_failures >= 10:
-                    log.error(f'reader:{self.name}',
-                             'Too many failures, reconnecting',
-                             consecutive_failures=self.consecutive_failures)
-                    self._release()
-                continue
-
-            # Success — store raw JPEG bytes
-            now = time.time()
-            raw_bytes = frame.tobytes()
-
-            with self.raw_lock:
-                self.raw_frame = raw_bytes
-                self.raw_timestamp = now
-
-            self.frame_count += 1
-            self.consecutive_failures = 0
-            self.last_error = None
-
-            # FPS calculation (rolling 10s window)
-            fps_window_count += 1
-            elapsed = now - fps_window_start
-            if elapsed >= 10:
-                self.fps_estimate = round(fps_window_count / elapsed, 1)
-                fps_window_start = now
-                fps_window_count = 0
-
-            time.sleep(0.3) # throttle to prevent usb bus saturation
 
     def _preview_loop(self):
         """
@@ -379,6 +301,67 @@ def init_readers():
 
     log.info('startup', 'All readers started',
             cameras=','.join(CAMERAS.keys()))
+    
+
+def shared_read_loop():
+    """
+    Single thread reads from all cameras in round-robin.
+    Guarantees equal USB access — no camera gets starved.
+    """
+    reconnect_timers = {name: 0 for name in readers}
+
+    while True:
+        for name, reader in readers.items():
+            if not reader.running:
+                continue
+
+            # Reconnect if needed
+            if not reader.connected:
+                now = time.time()
+                if now < reconnect_timers[name]:
+                    continue
+                if not reader._open():
+                    reconnect_timers[name] = now + RECONNECT_INTERVAL_SEC
+                    log.warn(f'reader:{name}', 'Reconnect failed')
+                    continue
+
+            # Read one frame
+            try:
+                ret, frame = reader.cap.read()
+            except Exception as e:
+                reader.error_count += 1
+                reader.consecutive_failures += 1
+                reader.last_error = f'Read exception: {e}'
+                log.error(f'reader:{name}', 'Read exception', error=str(e))
+                reader._release()
+                continue
+
+            if not ret or frame is None:
+                reader.error_count += 1
+                reader.consecutive_failures += 1
+                reader.last_error = 'Read returned empty frame'
+
+                if reader.consecutive_failures >= 10:
+                    log.error(f'reader:{name}',
+                             'Too many failures, reconnecting',
+                             consecutive_failures=reader.consecutive_failures)
+                    reader._release()
+                continue
+
+            # Store raw JPEG bytes
+            now = time.time()
+            raw_bytes = frame.tobytes()
+
+            with reader.raw_lock:
+                reader.raw_frame = raw_bytes
+                reader.raw_timestamp = now
+
+            reader.frame_count += 1
+            reader.consecutive_failures = 0
+            reader.last_error = None
+
+        # Small pause between full rounds to avoid busy-waiting
+        time.sleep(0.05)
 
 
 def shutdown_readers():
@@ -800,6 +783,12 @@ def run_startup_checks():
 if __name__ == '__main__':
     run_startup_checks()
     init_readers()
+
+    # Start shared reader thread (round-robin all cameras)
+    read_thread = threading.Thread(
+        target=shared_read_loop, daemon=True, name='shared-reader'
+    )
+    read_thread.start()
 
     # Start heartbeat thread
     heartbeat_thread = threading.Thread(
