@@ -1,6 +1,6 @@
 [Unit]
 Description=Production Goat Capture Server
-After=network.target git-sync-on-boot.service
+After=network.target git-sync-on-boot.service camera-proxy.service
 
 [Service]
 ExecStart=/home/pi/venv/bin/python3 /home/pi/goatdev/pi/servers/prod_server.py

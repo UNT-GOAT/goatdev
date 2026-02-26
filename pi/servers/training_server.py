@@ -1,12 +1,13 @@
 """
 Training Data Collection Server
-Captures still images from 3 cameras, uploads to S3
+Captures still images from 3 cameras via camera proxy, uploads to S3
 """
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import subprocess
 import threading
+import requests as http_requests
 import os
 import shutil
 import json
@@ -35,16 +36,17 @@ S3_TRAINING_BUCKET = os.environ.get('S3_TRAINING_BUCKET')
 
 # Capture settings
 NUM_IMAGES = 20             # Number of images to capture per camera
-CAPTURE_FPS = 1             # 1 picture per second (1 second apart)
-CAMERA_NATIVE_FPS = 10      # Camera's native FPS at capture resolution
+CAPTURE_INTERVAL_SEC = 1.0  # 1 image per second
 IMAGE_WIDTH = 4656
 IMAGE_HEIGHT = 3496
+
+# Camera proxy
+PROXY_URL = "http://127.0.0.1:8080"
+PROXY_TIMEOUT_SEC = 10
 
 # Thresholds
 MIN_DISK_MB = 1000          # Require 1GB free
 MIN_IMAGE_BYTES = 50000     # 50KB minimum valid image
-FFMPEG_TIMEOUT_SEC = 30     # Kill individual ffmpeg after this
-CAPTURE_TOTAL_TIMEOUT_SEC = 60  # Max time for full capture sequence per camera
 MAX_GOAT_ID_LEN = 50        # Prevent path traversal
 
 # ============================================================
@@ -159,52 +161,52 @@ def check_disk_space() -> tuple[bool, int]:
 
 
 def check_camera(name: str, path: str) -> dict:
-    """Check a single camera's status."""
+    """Check camera health via proxy."""
     result = {
         'name': name,
         'path': path,
-        'exists': os.path.exists(path),
+        'exists': False,
         'readable': False,
         'in_use': False,
         'error': None,
         'fix': None
     }
 
-    if not result['exists']:
-        result['error'] = 'Camera not connected'
-        result['fix'] = f'Check USB connection for {name} camera'
-        return result
-
-    result['readable'] = os.access(path, os.R_OK)
-    if not result['readable']:
-        result['error'] = 'Camera not readable (permission denied)'
-        result['fix'] = f'Run: sudo chmod 666 {path}'
-        return result
-
-    # Check if in use
     try:
-        fuser = subprocess.run(['fuser', path], capture_output=True, text=True, timeout=5)
-        if fuser.stdout.strip():
-            result['in_use'] = True
-            result['error'] = f'Camera in use by PID {fuser.stdout.strip()}'
-            result['fix'] = f'Run: sudo kill -9 {fuser.stdout.strip()}'
-    except:
-        pass  # fuser check is optional
+        resp = http_requests.get(f'{PROXY_URL}/status', timeout=5)
+        if resp.status_code != 200:
+            result['error'] = 'Camera proxy returned error'
+            result['fix'] = 'Run: sudo systemctl restart camera-proxy'
+            return result
+
+        data = resp.json()
+        cam_health = data.get('cameras', {}).get(name)
+
+        if not cam_health:
+            result['error'] = 'Camera not found in proxy'
+            return result
+
+        result['exists'] = cam_health.get('device_exists', False)
+        result['readable'] = cam_health.get('connected', False)
+
+        if not result['exists']:
+            result['error'] = 'Camera not connected'
+            result['fix'] = f'Check USB connection for {name} camera'
+        elif not result['readable']:
+            result['error'] = cam_health.get('last_error', 'Camera not ready')
+            result['fix'] = 'Check camera proxy logs'
+        elif cam_health.get('stale', False):
+            result['error'] = f"Frame stale ({cam_health.get('frame_age_sec')}s old)"
+            result['fix'] = 'Camera may be frozen. Check USB connection.'
+
+    except http_requests.exceptions.ConnectionError:
+        result['error'] = 'Camera proxy not running'
+        result['fix'] = 'Run: sudo systemctl restart camera-proxy'
+
+    except Exception as e:
+        result['error'] = f'Proxy check failed: {e}'
 
     return result
-
-
-def kill_stale_ffmpeg():
-    """Kill any orphaned ffmpeg processes from previous runs."""
-    try:
-        result = subprocess.run(['pgrep', '-f', 'ffmpeg.*v4l2'], capture_output=True, text=True)
-        if result.stdout.strip():
-            pids = result.stdout.strip().split('\n')
-            log.warn('cleanup', f'Killing {len(pids)} stale ffmpeg processes', pids=','.join(pids))
-            subprocess.run(['pkill', '-9', '-f', 'ffmpeg.*v4l2'], timeout=5)
-            time.sleep(1)  # Let cameras release
-    except Exception as e:
-        log.warn('cleanup', 'Failed to check for stale ffmpeg', error=str(e))
 
 
 def cleanup_temp_files(goat_id: str):
@@ -218,58 +220,15 @@ def cleanup_temp_files(goat_id: str):
         log.warn('cleanup', 'Temp file cleanup failed', error=str(e))
 
 
-def validate_image(filepath: str) -> tuple[bool, str]:
-    """Check if image file is valid."""
-    if not os.path.exists(filepath):
-        return False, 'File does not exist'
-
-    size = os.path.getsize(filepath)
-    if size < MIN_IMAGE_BYTES:
-        return False, f'File too small ({size} bytes)'
-
-    try:
-        result = subprocess.run([
-            'ffprobe', '-v', 'error',
-            '-select_streams', 'v:0',
-            '-show_entries', 'stream=codec_type,width,height',
-            '-of', 'json',
-            filepath
-        ], capture_output=True, text=True, timeout=10)
-
-        if result.returncode != 0:
-            return False, f'ffprobe error: {result.stderr[:100]}'
-
-        probe = json.loads(result.stdout)
-        if not probe.get('streams'):
-            return False, 'No image stream found'
-
-        stream = probe['streams'][0]
-        width = stream.get('width', 0)
-        height = stream.get('height', 0)
-        if width < IMAGE_WIDTH or height < IMAGE_HEIGHT:
-            return False, f'Resolution too low ({width}x{height}, expected {IMAGE_WIDTH}x{IMAGE_HEIGHT})'
-
-        return True, f'OK ({width}x{height}, {size} bytes)'
-
-    except subprocess.TimeoutExpired:
-        return False, 'ffprobe timeout'
-    except Exception as e:
-        return False, f'Validation error: {str(e)}'
-
-
 # ============================================================
 # CAPTURE LOGIC
 # ============================================================
 
 def capture_single_camera(name: str, path: str, goat_id: str) -> dict:
     """
-    Capture still images from a single camera. Returns result dict.
-    Runs in a thread (one per camera, all cameras in parallel).
-
-    Uses a single ffmpeg process per camera with -framerate to control timing.
-    Re-encodes with -threads 1 to limit memory (~400-500MB per process).
+    Capture NUM_IMAGES still images from a camera via the camera proxy.
+    Grabs one frame per second from the proxy's full-res buffer.
     """
-    output_pattern = f'/tmp/{goat_id}_{name}_%02d.jpg'
     result = {
         'name': name,
         'success': False,
@@ -280,112 +239,100 @@ def capture_single_camera(name: str, path: str, goat_id: str) -> dict:
         'fix': None
     }
 
-    # Camera streams at CAMERA_NATIVE_FPS (10fps). We select every Nth frame
-    # to get CAPTURE_FPS (1fps) output. This guarantees exactly 1s between frames.
-    # Skip the first second (CAMERA_NATIVE_FPS frames) for autofocus/white balance.
-    frame_interval = CAMERA_NATIVE_FPS // CAPTURE_FPS  # e.g. 10fps / 1fps = every 10th frame
-    warmup_frames = CAMERA_NATIVE_FPS  # skip first 1s of frames
+    log.info(f'camera:{name}', 'Starting capture via proxy',
+            num_images=NUM_IMAGES, interval_sec=CAPTURE_INTERVAL_SEC)
 
-    cmd = [
-        'ffmpeg', '-y',
-        '-f', 'v4l2',
-        '-input_format', 'mjpeg',
-        '-framerate', str(CAMERA_NATIVE_FPS),
-        '-video_size', f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
-        '-i', path,
-        '-vf', f'select=gt(n\\,{warmup_frames - 1})*not(mod(n\\,{frame_interval}))',
-        '-fps_mode', 'vfr',
-        '-frames:v', str(NUM_IMAGES),
-        '-threads', '1',
-        '-qmin', '1',
-        '-q:v', '1',
-        output_pattern
-    ]
+    valid_files = []
+    total_size = 0
+    last_timestamp = None
 
-    log.info(f'camera:{name}', 'Starting capture',
-            path=path, num_images=NUM_IMAGES, fps=CAPTURE_FPS,
-            resolution=f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}')
+    for i in range(1, NUM_IMAGES + 1):
+        filepath = f'/tmp/{goat_id}_{name}_{i:02d}.jpg'
 
-    try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=CAPTURE_TOTAL_TIMEOUT_SEC
-        )
+        try:
+            resp = http_requests.get(
+                f'{PROXY_URL}/capture/{name}',
+                timeout=PROXY_TIMEOUT_SEC
+            )
 
-        if proc.returncode != 0:
-            stderr = proc.stderr
-            if 'No such file or directory' in stderr:
-                result['error'] = 'Camera disconnected during capture'
-                result['fix'] = f'Check USB cable for {name} camera'
-            elif 'Device or resource busy' in stderr:
-                result['error'] = 'Camera is busy (another process using it)'
-                result['fix'] = 'Run: sudo pkill -9 ffmpeg'
-            elif 'Invalid argument' in stderr:
-                result['error'] = f'Camera does not support {IMAGE_WIDTH}x{IMAGE_HEIGHT} MJPEG'
-                result['fix'] = 'Check camera resolution support with: v4l2-ctl --list-formats-ext'
-            else:
-                result['error'] = f'ffmpeg error (code {proc.returncode})'
-                result['fix'] = f'Check logs, stderr: {stderr[:200]}'
-
-            log.error(f'camera:{name}', 'Capture failed',
-                     error=result['error'], fix=result['fix'], returncode=proc.returncode)
-            return result
-
-        # Collect and validate output files
-        valid_files = []
-        total_size = 0
-        validation_failures = []
-
-        for i in range(1, NUM_IMAGES + 1):
-            filepath = f'/tmp/{goat_id}_{name}_{i:02d}.jpg'
-            if not os.path.exists(filepath):
-                validation_failures.append(f'Image {i:02d} missing')
+            if resp.status_code == 503:
+                error_data = resp.json() if resp.headers.get('content-type', '').startswith('application/json') else {}
+                log.warn(f'camera:{name}', f'Frame {i} unavailable',
+                        status=503, error=error_data.get('error'))
+                # Wait and retry once
+                time.sleep(0.5)
                 continue
 
-            valid, msg = validate_image(filepath)
-            if not valid:
-                validation_failures.append(f'Image {i:02d}: {msg}')
-                os.remove(filepath)
+            if resp.status_code != 200:
+                log.warn(f'camera:{name}', f'Frame {i} unexpected status',
+                        status=resp.status_code)
                 continue
 
-            size = os.path.getsize(filepath)
-            total_size += size
+            # Check we got a new frame (not the same one again)
+            frame_ts = resp.headers.get('X-Frame-Timestamp')
+            if frame_ts and frame_ts == last_timestamp:
+                log.warn(f'camera:{name}', f'Frame {i} is duplicate, waiting')
+                time.sleep(0.2)
+                # Retry
+                resp = http_requests.get(
+                    f'{PROXY_URL}/capture/{name}',
+                    timeout=PROXY_TIMEOUT_SEC
+                )
+                if resp.status_code != 200:
+                    continue
+                frame_ts = resp.headers.get('X-Frame-Timestamp')
+            last_timestamp = frame_ts
+
+            # Validate size
+            if len(resp.content) < MIN_IMAGE_BYTES:
+                log.warn(f'camera:{name}', f'Frame {i} too small',
+                        size=len(resp.content), min=MIN_IMAGE_BYTES)
+                continue
+
+            with open(filepath, 'wb') as f:
+                f.write(resp.content)
+
+            file_size = os.path.getsize(filepath)
+            total_size += file_size
             valid_files.append(filepath)
 
-        if not valid_files:
-            result['error'] = f'No valid images captured. Failures: {"; ".join(validation_failures[:5])}'
-            result['fix'] = 'Camera may be malfunctioning, try unplugging and replugging'
-            log.error(f'camera:{name}', 'All images failed validation',
-                     failures=validation_failures[:5])
+        except http_requests.exceptions.ConnectionError:
+            result['error'] = 'Camera proxy not running'
+            result['fix'] = 'Run: sudo systemctl restart camera-proxy'
+            log.error(f'camera:{name}', 'Proxy connection refused')
             return result
 
-        if len(valid_files) < NUM_IMAGES:
-            log.warn(f'camera:{name}', 'Some images failed validation',
-                    valid=len(valid_files), expected=NUM_IMAGES,
-                    failures=validation_failures[:5])
+        except http_requests.exceptions.Timeout:
+            log.warn(f'camera:{name}', f'Frame {i} timeout',
+                    timeout=PROXY_TIMEOUT_SEC)
+            continue
 
-        result['success'] = True
-        result['filepaths'] = valid_files
-        result['total_size_bytes'] = total_size
-        result['image_count'] = len(valid_files)
+        except Exception as e:
+            log.warn(f'camera:{name}', f'Frame {i} error', error=str(e))
+            continue
 
-        log.info(f'camera:{name}', 'Capture complete',
-                image_count=len(valid_files), total_size_bytes=total_size)
+        # Wait for next frame interval
+        if i < NUM_IMAGES:
+            time.sleep(CAPTURE_INTERVAL_SEC)
 
-    except subprocess.TimeoutExpired:
-        result['error'] = f'Capture timed out after {CAPTURE_TOTAL_TIMEOUT_SEC}s'
-        result['fix'] = 'Camera may be frozen. Unplug USB hub, wait 5s, replug.'
-        log.error(f'camera:{name}', 'Capture timeout',
-                 timeout_sec=CAPTURE_TOTAL_TIMEOUT_SEC, fix=result['fix'])
+    if not valid_files:
+        if not result['error']:
+            result['error'] = 'No valid images captured from proxy'
+            result['fix'] = 'Check camera proxy status: curl http://127.0.0.1:8080/status'
+        log.error(f'camera:{name}', 'All frames failed')
+        return result
 
-        subprocess.run(['pkill', '-9', '-f', f'ffmpeg.*{path}'], timeout=5)
+    if len(valid_files) < NUM_IMAGES:
+        log.warn(f'camera:{name}', 'Some frames missed',
+                valid=len(valid_files), expected=NUM_IMAGES)
 
-    except Exception as e:
-        result['error'] = f'Unexpected error: {str(e)}'
-        log.exception(f'camera:{name}', 'Capture exception', error=str(e))
+    result['success'] = True
+    result['filepaths'] = valid_files
+    result['total_size_bytes'] = total_size
+    result['image_count'] = len(valid_files)
 
+    log.info(f'camera:{name}', 'Capture complete',
+            image_count=len(valid_files), total_size_bytes=total_size)
     return result
 
 
@@ -401,13 +348,7 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
     try:
         set_state(progress='capturing')
 
-        # Capture cameras in batches of 2 to stay within 4GB RAM
-        # (each ffmpeg process uses ~500MB for 4656x3496 decode/encode)
-        # Batch 1: side + top in parallel (~20s)
-        # Batch 2: front alone (~20s)
-        # Total: ~40s instead of 60s sequential
-
-        # Pre-check all cameras
+        # Pre-check all cameras via proxy
         available_cameras = {}
         for name, path in CAMERAS.items():
             check = check_camera(name, path)
@@ -423,7 +364,7 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
             else:
                 available_cameras[name] = path
 
-        # Define capture batches (max 2 concurrent to avoid OOM)
+        # Capture cameras in batches of 2 to avoid overloading proxy
         MAX_PARALLEL = 2
         camera_list = list(available_cameras.items())
         batches = [camera_list[i:i + MAX_PARALLEL] for i in range(0, len(camera_list), MAX_PARALLEL)]
@@ -441,7 +382,8 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
                 t.start()
 
             for name, t in threads.items():
-                t.join(timeout=CAPTURE_TOTAL_TIMEOUT_SEC + 5)
+                # Each camera takes ~20s (NUM_IMAGES * CAPTURE_INTERVAL_SEC)
+                t.join(timeout=(NUM_IMAGES * CAPTURE_INTERVAL_SEC) + 30)
                 if t.is_alive():
                     log.error(f'camera:{name}', 'Thread did not complete in time')
                     results[name] = {
@@ -464,7 +406,7 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
             elif r.get("success"):
                 camera_status[cam] = f"captured ({r.get('image_count', 0)} images)"
             else:
-                if r.get("error") in ("Camera not connected", "Camera not readable (permission denied)"):
+                if r.get("error") in ("Camera not connected", "Camera proxy not running"):
                     camera_status[cam] = "missing"
                 else:
                     camera_status[cam] = "failed"
@@ -640,7 +582,6 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
                     'cameras': [r['name'] for r in successful],
                     'images_per_camera': NUM_IMAGES,
                     'resolution': f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
-                    'capture_fps': CAPTURE_FPS,
                     **{k: v for k, v in goat_data.items() if v}
                 }
 
@@ -716,8 +657,22 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
 @app.route('/health')
 def health():
     """Quick health check."""
-    cameras = {name: os.path.exists(path) for name, path in CAMERAS.items()}
+    cameras = {}
     disk_ok, disk_mb = check_disk_space()
+
+    try:
+        resp = http_requests.get(f'{PROXY_URL}/status', timeout=5)
+        if resp.status_code == 200:
+            proxy_data = resp.json()
+            for name in CAMERAS:
+                cam_health = proxy_data.get('cameras', {}).get(name, {})
+                cameras[name] = cam_health.get('connected', False)
+        else:
+            for name in CAMERAS:
+                cameras[name] = False
+    except Exception:
+        for name in CAMERAS:
+            cameras[name] = False
 
     return jsonify({
         'status': 'ok' if all(cameras.values()) and disk_ok else 'degraded',
@@ -737,18 +692,29 @@ def diagnostics():
         'cameras': {},
         'disk': {},
         's3': {},
+        'proxy': {},
         'capture_config': {
             'num_images': NUM_IMAGES,
-            'capture_fps': CAPTURE_FPS,
+            'capture_interval_sec': CAPTURE_INTERVAL_SEC,
             'resolution': f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
-            'format': 'mjpeg'
+            'proxy_url': PROXY_URL,
         },
         'state': get_state()
     }
 
-    # Check each camera
+    # Check each camera via proxy
     for name, path in CAMERAS.items():
         diag['cameras'][name] = check_camera(name, path)
+
+    # Proxy health
+    try:
+        resp = http_requests.get(f'{PROXY_URL}/status', timeout=5)
+        if resp.status_code == 200:
+            diag['proxy'] = {'ok': True, 'data': resp.json()}
+        else:
+            diag['proxy'] = {'ok': False, 'status_code': resp.status_code}
+    except Exception as e:
+        diag['proxy'] = {'ok': False, 'error': str(e)}
 
     # Disk
     disk_ok, disk_mb = check_disk_space()
@@ -764,7 +730,8 @@ def diagnostics():
     log.info('diag', 'Diagnostics complete',
             cameras_ok=sum(1 for c in diag['cameras'].values() if not c.get('error')),
             disk_ok=disk_ok,
-            s3_ok=diag['s3']['ok'])
+            s3_ok=diag['s3']['ok'],
+            proxy_ok=diag['proxy']['ok'])
 
     return jsonify(diag)
 
@@ -820,7 +787,8 @@ def record():
 
     # Pre-flight checks
     log.info('capture', 'Capture requested',
-            goat_id=goat_id, num_images=NUM_IMAGES, fps=CAPTURE_FPS,
+            goat_id=goat_id, num_images=NUM_IMAGES,
+            interval_sec=CAPTURE_INTERVAL_SEC,
             resolution=f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}')
 
     # Check disk space
@@ -836,7 +804,7 @@ def record():
             'fix': 'Run: sudo rm -rf /tmp/*.jpg'
         }), 507  # Insufficient Storage
 
-    # Check cameras before starting
+    # Check cameras via proxy
     camera_checks = {}
     for name, path in CAMERAS.items():
         camera_checks[name] = check_camera(name, path)
@@ -874,9 +842,6 @@ def record():
             'message': 'No cameras connected'
         }), 503
 
-    # Kill any stale ffmpeg processes
-    kill_stale_ffmpeg()
-
     # Set state and start capture
     set_state(
         active=True,
@@ -897,7 +862,7 @@ def record():
         'status': 'capture_started',
         'goat_id': goat_id,
         'num_images': NUM_IMAGES,
-        'capture_fps': CAPTURE_FPS,
+        'capture_interval_sec': CAPTURE_INTERVAL_SEC,
         'resolution': f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
         'is_test': bool(is_test),
         'require_all_cameras': bool(require_all_cameras),
@@ -916,10 +881,8 @@ def status():
 
 @app.route('/cancel', methods=['POST'])
 def cancel():
-    """Emergency cancel - kill all ffmpeg and reset state."""
+    """Emergency cancel - reset state and clean up."""
     log.warn('cancel', 'Emergency cancel requested')
-
-    kill_stale_ffmpeg()
 
     state = get_state()
     if state['goat_id']:
@@ -945,25 +908,30 @@ if __name__ == '__main__':
     log.info('startup', 'Configuration',
             bucket=S3_TRAINING_BUCKET,
             num_images=NUM_IMAGES,
-            capture_fps=CAPTURE_FPS,
+            capture_interval_sec=CAPTURE_INTERVAL_SEC,
             resolution=f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
             min_disk_mb=MIN_DISK_MB,
-            ffmpeg_timeout=FFMPEG_TIMEOUT_SEC,
-            capture_total_timeout=CAPTURE_TOTAL_TIMEOUT_SEC)
+            proxy_url=PROXY_URL)
 
-    # Cleanup any stale state from previous run
-    kill_stale_ffmpeg()
-
-    # Check cameras
-    all_cameras_ok = True
-    for name, path in CAMERAS.items():
-        check = check_camera(name, path)
-        if check['error']:
-            log.error(f'startup:camera:{name}', 'Camera not ready',
-                     error=check['error'], fix=check['fix'])
-            all_cameras_ok = False
+    # Check proxy
+    try:
+        resp = http_requests.get(f'{PROXY_URL}/status', timeout=5)
+        if resp.status_code == 200:
+            proxy_status = resp.json()
+            for cam, health in proxy_status.get('cameras', {}).items():
+                if health.get('connected'):
+                    log.info(f'startup:camera:{cam}', 'Camera ready via proxy',
+                            fps=health.get('fps'))
+                else:
+                    log.error(f'startup:camera:{cam}', 'Not connected',
+                             error=health.get('last_error'))
         else:
-            log.info(f'startup:camera:{name}', 'Camera ready', path=path)
+            log.warn('startup:proxy', 'Proxy returned error', status=resp.status_code)
+    except http_requests.exceptions.ConnectionError:
+        log.warn('startup:proxy', 'Camera proxy not yet running',
+                fix='Will retry when capture is requested')
+    except Exception as e:
+        log.warn('startup:proxy', 'Proxy check failed', error=str(e))
 
     # Check disk
     disk_ok, disk_mb = check_disk_space()
@@ -986,7 +954,7 @@ if __name__ == '__main__':
                  fix='Check AWS credentials in ~/.aws/credentials')
 
     # Summary
-    if all_cameras_ok and disk_ok and s3_ok:
+    if disk_ok and s3_ok:
         log.info('startup', 'All systems ready')
     else:
         log.warn('startup', 'Starting with errors - some features may not work')
