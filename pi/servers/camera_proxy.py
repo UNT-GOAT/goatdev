@@ -253,7 +253,7 @@ class CameraReader:
                 fps_window_start = now
                 fps_window_count = 0
 
-            time.sleep(0.2) # throttle to prevent usb bus saturation
+            time.sleep(0.3) # throttle to prevent usb bus saturation
 
     def _preview_loop(self):
         """
