@@ -545,7 +545,7 @@
           const captureId = isMock ? "test_" + Date.now() : goatId;
           let response;
           try {
-            response = await fetch(CONFIG.API_BASE + "api/capture/record", {
+            response = await fetch(CONFIG.API_BASE + "/api/capture/record", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -625,7 +625,7 @@
           await sleep(500);
           let response;
           try {
-            response = await fetch(CONFIG.API_BASE + "api/capture/status");
+            response = await fetch(CONFIG.API_BASE + "/api/capture/status");
           } catch (networkErr) {
             log("Lost connection to Pi...", "warn");
             continue;

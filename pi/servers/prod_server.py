@@ -1,6 +1,6 @@
 """
 Pi Production Server
-Captures images from 3 cameras, sends to EC2 API for grading.
+Captures images from 3 cameras via camera proxy, sends to EC2 API for grading.
 Also provides connectivity testing and health checks.
 """
 
@@ -27,22 +27,22 @@ load_dotenv("/home/pi/goatdev/pi/.env")
 EC2_IP = os.environ.get('EC2_IP')
 EC2_API = f'http://{EC2_IP}:8000'
 
-# Camera paths (udev symlinks)
+# Camera paths (for reference / diagnostics)
 CAMERAS = {
     'side': '/dev/camera_side',
     'top': '/dev/camera_top',
     'front': '/dev/camera_front'
 }
 
+# Camera proxy
+PROXY_URL = "http://127.0.0.1:8080"
+PROXY_TIMEOUT_SEC = 10
+
 # Capture settings
-CAMERA_NATIVE_FPS = 10      # Camera's native FPS at capture resolution
 IMAGE_WIDTH = 4656
 IMAGE_HEIGHT = 3496
-WARMUP_FRAMES = 10           # Skip first N frames for autofocus/white balance (1s at 10fps)
-CAPTURE_FRAME = 15           # Which frame to keep (after warmup settles)
 
 # Timeouts
-FFMPEG_TIMEOUT_SEC = 15      # Single capture timeout
 EC2_TIMEOUT_SEC = 30         # EC2 API request timeout
 PING_TIMEOUT_SEC = 15
 REQUEST_TIMEOUT_SEC = 10
@@ -97,89 +97,56 @@ def reset_state():
 # ============================================================
 
 def check_camera(name: str, path: str) -> dict:
-    """Check a single camera's status with detailed diagnostics."""
+    """Check a single camera's status via proxy."""
     result = {
         'name': name,
         'path': path,
-        'exists': os.path.exists(path),
+        'exists': False,
         'readable': False,
         'in_use': False,
         'error': None,
         'fix': None
     }
 
-    if not result['exists']:
-        # Check if the symlink target exists
-        if os.path.islink(path):
-            target = os.readlink(path)
-            result['error'] = f'Symlink exists but target {target} missing'
-            result['fix'] = f'Camera may have disconnected. Check USB and run: ls -la {path}'
-            log.warn(f'camera:{name}', 'Dangling symlink', path=path, target=target)
-        else:
+    try:
+        resp = requests.get(f'{PROXY_URL}/status', timeout=5)
+        if resp.status_code != 200:
+            result['error'] = 'Camera proxy returned error'
+            result['fix'] = 'Run: sudo systemctl restart camera-proxy'
+            return result
+
+        data = resp.json()
+        cam_health = data.get('cameras', {}).get(name)
+
+        if not cam_health:
+            result['error'] = 'Camera not found in proxy'
+            return result
+
+        result['exists'] = cam_health.get('device_exists', False)
+        result['readable'] = cam_health.get('connected', False)
+
+        if not result['exists']:
             result['error'] = 'Camera not connected'
-            result['fix'] = f'Check USB connection for {name} camera. Verify udev rule exists.'
-        return result
+            result['fix'] = f'Check USB connection for {name} camera'
+        elif not result['readable']:
+            result['error'] = cam_health.get('last_error', 'Camera not ready')
+            result['fix'] = 'Check camera proxy logs'
+        elif cam_health.get('stale', False):
+            result['error'] = f"Frame stale ({cam_health.get('frame_age_sec')}s old)"
+            result['fix'] = 'Camera may be frozen. Check USB connection.'
 
-    result['readable'] = os.access(path, os.R_OK)
-    if not result['readable']:
-        result['error'] = 'Camera not readable (permission denied)'
-        result['fix'] = f'Run: sudo chmod 666 {path}'
-        return result
+    except requests.exceptions.ConnectionError:
+        result['error'] = 'Camera proxy not running'
+        result['fix'] = 'Run: sudo systemctl restart camera-proxy'
 
-    # Check if in use by another process
-    try:
-        fuser = subprocess.run(['fuser', path], capture_output=True, text=True, timeout=5)
-        if fuser.stdout.strip():
-            pids = fuser.stdout.strip()
-            result['in_use'] = True
-            result['error'] = f'Camera in use by PID {pids}'
-            result['fix'] = f'Run: sudo kill -9 {pids}'
-            log.warn(f'camera:{name}', 'Camera busy', pids=pids)
-    except Exception:
-        pass  # fuser check is optional
-
-    # Query camera capabilities for logging
-    try:
-        v4l2 = subprocess.run(
-            ['v4l2-ctl', '-d', path, '--list-formats-ext'],
-            capture_output=True, text=True, timeout=5
-        )
-        supports_target = f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}' in v4l2.stdout
-        if not supports_target:
-            result['error'] = f'Camera may not support {IMAGE_WIDTH}x{IMAGE_HEIGHT} MJPEG'
-            result['fix'] = f'Check: v4l2-ctl -d {path} --list-formats-ext'
-            log.warn(f'camera:{name}', 'Resolution not confirmed',
-                    target=f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}')
-    except Exception:
-        pass  # v4l2 check is optional
+    except Exception as e:
+        result['error'] = f'Proxy check failed: {e}'
 
     return result
 
 
-def kill_stale_ffmpeg():
-    """Kill any orphaned ffmpeg processes from previous runs."""
-    try:
-        result = subprocess.run(['pgrep', '-f', 'ffmpeg.*v4l2'], capture_output=True, text=True)
-        if result.stdout.strip():
-            pids = result.stdout.strip().split('\n')
-            log.warn('cleanup', f'Killing {len(pids)} stale ffmpeg processes', pids=','.join(pids))
-            subprocess.run(['pkill', '-9', '-f', 'ffmpeg.*v4l2'], timeout=5)
-            time.sleep(1)
-    except Exception as e:
-        log.warn('cleanup', 'Failed to check for stale ffmpeg', error=str(e))
-
-
 def capture_single_image(name: str, path: str, serial_id: str) -> dict:
-    """
-    Capture a single image from one camera with autofocus warmup.
-
-    Reads at the camera's native FPS (10fps), skips WARMUP_FRAMES for
-    autofocus/white balance, then keeps the next good frame.
-    Uses -threads 1 to limit memory (~500MB per process).
-
-    Returns dict with 'success', 'filepath', 'error', 'fix', and diagnostics.
-    """
-    filepath = f'/tmp/{serial_id}_{name}.jpg'
+    """Capture a single full-res image from camera proxy."""
     result = {
         'name': name,
         'success': False,
@@ -190,106 +157,67 @@ def capture_single_image(name: str, path: str, serial_id: str) -> dict:
         'capture_time_sec': None
     }
 
-    # Use select filter to skip warmup frames then grab 1 frame
-    # gt(n,WARMUP_FRAMES-1) skips first N frames
-    # not(mod(n,1)) keeps every frame after that (we only need 1)
-    frame_skip = WARMUP_FRAMES
-
-    cmd = [
-        'ffmpeg', '-y',
-        '-f', 'v4l2',
-        '-input_format', 'mjpeg',
-        '-framerate', str(CAMERA_NATIVE_FPS),
-        '-video_size', f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
-        '-i', path,
-        '-vf', f'select=gt(n\\,{frame_skip - 1})',
-        '-fps_mode', 'vfr',
-        '-frames:v', '1',
-        '-threads', '1',
-        '-qmin', '1',
-        '-q:v', '1',
-        filepath
-    ]
-
-    log.info(f'camera:{name}', 'Starting capture',
-            path=path, warmup_frames=frame_skip,
-            resolution=f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
-            native_fps=CAMERA_NATIVE_FPS)
-
+    filepath = f'/tmp/{serial_id}_{name}.jpg'
     capture_start = time.time()
 
+    log.info(f'camera:{name}', 'Requesting frame from proxy')
+
     try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=FFMPEG_TIMEOUT_SEC
+        resp = requests.get(
+            f'{PROXY_URL}/capture/{name}',
+            timeout=PROXY_TIMEOUT_SEC
         )
 
         capture_time = round(time.time() - capture_start, 2)
         result['capture_time_sec'] = capture_time
 
-        if proc.returncode != 0:
-            stderr = proc.stderr
-
-            # Parse specific errors
-            if 'No such file or directory' in stderr:
-                result['error'] = 'Camera disconnected during capture'
-                result['fix'] = f'Check USB cable for {name} camera'
-            elif 'Device or resource busy' in stderr:
-                result['error'] = 'Camera is busy (another process using it)'
-                result['fix'] = 'Run: sudo pkill -9 ffmpeg'
-            elif 'Invalid argument' in stderr:
-                result['error'] = f'Camera does not support {IMAGE_WIDTH}x{IMAGE_HEIGHT} MJPEG'
-                result['fix'] = f'Check: v4l2-ctl -d {path} --list-formats-ext'
-            elif proc.returncode == -9:
-                result['error'] = 'ffmpeg killed (likely OOM)'
-                result['fix'] = 'Check memory with: free -h'
-            else:
-                result['error'] = f'ffmpeg error (code {proc.returncode})'
-                result['fix'] = f'stderr: {stderr[:300]}'
-
-            log.error(f'camera:{name}', 'Capture failed',
-                     error=result['error'],
-                     returncode=proc.returncode,
-                     capture_time_sec=capture_time,
-                     stderr_snippet=stderr[:200] if stderr else None)
+        if resp.status_code == 503:
+            error_data = {}
+            try:
+                if resp.headers.get('content-type', '').startswith('application/json'):
+                    error_data = resp.json()
+            except Exception:
+                pass
+            result['error'] = error_data.get('error', 'Camera not available')
+            result['fix'] = 'Check camera proxy: curl http://127.0.0.1:8080/status'
+            log.error(f'camera:{name}', 'Proxy 503', error=result['error'])
             return result
 
-        # Validate output
-        if not os.path.exists(filepath):
-            result['error'] = 'No output file produced'
-            result['fix'] = 'Camera may not be streaming. Check connection.'
-            log.error(f'camera:{name}', 'No output file', filepath=filepath)
+        if resp.status_code != 200:
+            result['error'] = f'Proxy returned {resp.status_code}'
+            log.error(f'camera:{name}', 'Proxy error', status=resp.status_code)
             return result
 
-        file_size = os.path.getsize(filepath)
-        if file_size < MIN_IMAGE_BYTES:
-            result['error'] = f'Image too small ({file_size} bytes, min {MIN_IMAGE_BYTES})'
-            result['fix'] = 'Camera may be producing blank frames. Check lens cap and lighting.'
+        if len(resp.content) < MIN_IMAGE_BYTES:
+            result['error'] = f'Image too small ({len(resp.content)} bytes, min {MIN_IMAGE_BYTES})'
+            result['fix'] = 'Camera may be producing blank frames'
             log.error(f'camera:{name}', 'Image too small',
-                     size_bytes=file_size, min_bytes=MIN_IMAGE_BYTES)
-            os.remove(filepath)
+                     size=len(resp.content), min=MIN_IMAGE_BYTES)
             return result
+
+        with open(filepath, 'wb') as f:
+            f.write(resp.content)
 
         result['success'] = True
         result['filepath'] = filepath
-        result['file_size_bytes'] = file_size
+        result['file_size_bytes'] = len(resp.content)
 
         log.info(f'camera:{name}', 'Capture complete',
-                size_bytes=file_size,
-                capture_time_sec=capture_time)
+                size_bytes=len(resp.content), capture_time_sec=capture_time)
 
-    except subprocess.TimeoutExpired:
-        result['error'] = f'Capture timed out after {FFMPEG_TIMEOUT_SEC}s'
-        result['fix'] = 'Camera may be frozen. Unplug USB, wait 5s, replug.'
-        result['capture_time_sec'] = FFMPEG_TIMEOUT_SEC
-        log.error(f'camera:{name}', 'Capture timeout',
-                 timeout_sec=FFMPEG_TIMEOUT_SEC)
-        subprocess.run(['pkill', '-9', '-f', f'ffmpeg.*{path}'], timeout=5)
+    except requests.exceptions.ConnectionError:
+        result['error'] = 'Camera proxy not running'
+        result['fix'] = 'Run: sudo systemctl restart camera-proxy'
+        log.error(f'camera:{name}', 'Proxy connection refused')
+
+    except requests.exceptions.Timeout:
+        result['error'] = f'Proxy timeout after {PROXY_TIMEOUT_SEC}s'
+        result['fix'] = 'Camera proxy may be overloaded'
+        result['capture_time_sec'] = PROXY_TIMEOUT_SEC
+        log.error(f'camera:{name}', 'Proxy timeout')
 
     except Exception as e:
-        result['error'] = f'Unexpected error: {str(e)}'
+        result['error'] = f'Unexpected error: {e}'
         log.exception(f'camera:{name}', 'Capture exception', error=str(e))
 
     return result
@@ -302,7 +230,7 @@ def capture_single_image(name: str, path: str, serial_id: str) -> dict:
 def do_grade(serial_id: str, live_weight: float):
     """
     Full capture → grade workflow. Runs in background thread.
-    Captures 1 image per camera (2 parallel + 1), sends all 3 to EC2 API.
+    Captures 1 image per camera via proxy, sends all 3 to EC2 API.
     """
     start_time = time.time()
     results = {}
@@ -311,7 +239,7 @@ def do_grade(serial_id: str, live_weight: float):
         # Phase 1: Capture
         set_state(progress='capturing')
 
-        # Pre-check all cameras
+        # Pre-check all cameras via proxy
         available_cameras = {}
         for name, path in CAMERAS.items():
             check = check_camera(name, path)
@@ -346,11 +274,7 @@ def do_grade(serial_id: str, live_weight: float):
                      serial_id=serial_id, missing=','.join(missing))
             return
 
-        # Kill stale ffmpeg
-        kill_stale_ffmpeg()
-
-        # Capture in batches of 2 to stay within 4GB RAM
-        # Each ffmpeg decode/encode of 4656x3496 uses ~500MB
+        # Capture in batches of 2 to avoid overloading proxy
         MAX_PARALLEL = 2
         camera_list = list(available_cameras.items())
         batches = [camera_list[i:i + MAX_PARALLEL] for i in range(0, len(camera_list), MAX_PARALLEL)]
@@ -371,7 +295,7 @@ def do_grade(serial_id: str, live_weight: float):
                 t.start()
 
             for name, t in threads.items():
-                t.join(timeout=FFMPEG_TIMEOUT_SEC + 5)
+                t.join(timeout=PROXY_TIMEOUT_SEC + 10)
                 if t.is_alive():
                     log.error(f'camera:{name}', 'Capture thread hung',
                              serial_id=serial_id)
@@ -650,8 +574,20 @@ def get_system_info() -> dict:
 def health():
     """Quick health check with camera status."""
     cameras = {}
-    for name, path in CAMERAS.items():
-        cameras[name] = os.path.exists(path)
+
+    try:
+        resp = requests.get(f'{PROXY_URL}/status', timeout=5)
+        if resp.status_code == 200:
+            proxy_data = resp.json()
+            for name in CAMERAS:
+                cam_health = proxy_data.get('cameras', {}).get(name, {})
+                cameras[name] = cam_health.get('connected', False)
+        else:
+            for name in CAMERAS:
+                cameras[name] = False
+    except Exception:
+        for name in CAMERAS:
+            cameras[name] = False
 
     sys_info = get_system_info()
 
@@ -659,7 +595,7 @@ def health():
         'status': 'ok' if all(cameras.values()) else 'degraded',
         'timestamp': datetime.now().isoformat(),
         'cameras': cameras,
-        'ec2_target': EC2_API, # type: ignore
+        'ec2_target': EC2_API,  # type: ignore
         'mem_available_mb': sys_info.get('mem_available_mb'),
         'cpu_temp_c': sys_info.get('cpu_temp_c'),
         'capture_active': get_state()['active']
@@ -675,22 +611,29 @@ def diagnostics():
         'timestamp': datetime.now().isoformat(),
         'system': get_system_info(),
         'cameras': {},
+        'proxy': {},
         'ec2': {},
         'capture_config': {
             'image_resolution': f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
-            'native_fps': CAMERA_NATIVE_FPS,
-            'warmup_frames': WARMUP_FRAMES,
-            'capture_frame': CAPTURE_FRAME,
-            'max_parallel_captures': 2,
-            'ffmpeg_timeout_sec': FFMPEG_TIMEOUT_SEC,
+            'proxy_url': PROXY_URL,
             'ec2_timeout_sec': EC2_TIMEOUT_SEC
         },
         'state': get_state()
     }
 
-    # Check each camera in detail
+    # Check each camera via proxy
     for name, path in CAMERAS.items():
         diag['cameras'][name] = check_camera(name, path)
+
+    # Proxy health
+    try:
+        resp = requests.get(f'{PROXY_URL}/status', timeout=5)
+        if resp.status_code == 200:
+            diag['proxy'] = {'ok': True, 'data': resp.json()}
+        else:
+            diag['proxy'] = {'ok': False, 'status_code': resp.status_code}
+    except Exception as e:
+        diag['proxy'] = {'ok': False, 'error': str(e)}
 
     # Check EC2
     ec2_health = check_ec2_api()
@@ -704,6 +647,7 @@ def diagnostics():
             cameras_ok=cameras_ok,
             cameras_total=len(CAMERAS),
             ec2_ok=ec2_health.get('status') == 'ok',
+            proxy_ok=diag['proxy'].get('ok', False),
             mem_mb=diag['system'].get('mem_available_mb'),
             cpu_temp=diag['system'].get('cpu_temp_c'))
 
@@ -780,7 +724,7 @@ def grade():
             'message': 'live_weight must be a number between 0 and 500 lbs'
         }), 400
 
-    # Pre-check cameras
+    # Pre-check cameras via proxy
     camera_checks = {}
     for name, path in CAMERAS.items():
         camera_checks[name] = check_camera(name, path)
@@ -977,9 +921,8 @@ def grade_test():
 
 @app.route('/cancel', methods=['POST'])
 def cancel():
-    """Emergency cancel - kill ffmpeg and reset."""
+    """Emergency cancel - reset state and clean up."""
     log.warn('cancel', 'Cancel requested')
-    kill_stale_ffmpeg()
 
     state = get_state()
     if state['serial_id']:
@@ -1041,18 +984,44 @@ def test_connectivity():
             ec2_api['fix'] = 'Check EC2 logs in CloudWatch'
         log.error('test:ec2_api', 'Failed', error=ec2_api.get('error'))
 
-    # Test 4: Camera check
-    for name, path in CAMERAS.items():
-        check = check_camera(name, path)
-        key = f'camera_{name}'
-        if check.get('error'):
-            results['tests'][key] = {
-                'status': 'error',
-                'error': check['error'],
-                'fix': check.get('fix')
-            }
+    # Test 4: Camera proxy check
+    try:
+        resp = requests.get(f'{PROXY_URL}/status', timeout=5)
+        if resp.status_code == 200:
+            proxy_data = resp.json()
+            results['tests']['camera_proxy'] = {'status': 'ok'}
+            for name in CAMERAS:
+                cam_health = proxy_data.get('cameras', {}).get(name, {})
+                key = f'camera_{name}'
+                if cam_health.get('connected'):
+                    results['tests'][key] = {
+                        'status': 'ok',
+                        'fps': cam_health.get('fps'),
+                        'frame_age': cam_health.get('frame_age_sec')
+                    }
+                else:
+                    results['tests'][key] = {
+                        'status': 'error',
+                        'error': cam_health.get('last_error', 'Not connected'),
+                        'fix': f'Check USB connection for {name} camera'
+                    }
         else:
-            results['tests'][key] = {'status': 'ok', 'path': path}
+            results['tests']['camera_proxy'] = {
+                'status': 'error',
+                'error': f'Proxy returned {resp.status_code}',
+                'fix': 'Run: sudo systemctl restart camera-proxy'
+            }
+    except requests.exceptions.ConnectionError:
+        results['tests']['camera_proxy'] = {
+            'status': 'error',
+            'error': 'Camera proxy not running',
+            'fix': 'Run: sudo systemctl restart camera-proxy'
+        }
+    except Exception as e:
+        results['tests']['camera_proxy'] = {
+            'status': 'error',
+            'error': str(e)
+        }
 
     all_ok = all(t.get('status') == 'ok' for t in results['tests'].values())
     results['summary'] = 'ALL TESTS PASSED' if all_ok else 'SOME TESTS FAILED'
@@ -1078,8 +1047,7 @@ def run_startup_checks():
     log.info('startup', 'Configuration',
             ec2_ip=EC2_IP, ec2_api=EC2_API,
             resolution=f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
-            native_fps=CAMERA_NATIVE_FPS,
-            warmup_frames=WARMUP_FRAMES)
+            proxy_url=PROXY_URL)
 
     # System info
     sys_info = get_system_info()
@@ -1099,21 +1067,27 @@ def run_startup_checks():
     if sys_info.get('mem_available_mb') and sys_info['mem_available_mb'] < 500:
         log.warn('startup:system', 'Low memory',
                 available_mb=sys_info['mem_available_mb'],
-                fix='Restart Pi or check for memory leaks. Need ~1GB for dual capture.')
+                fix='Restart Pi or check for memory leaks')
 
-    # Kill stale ffmpeg from previous run
-    kill_stale_ffmpeg()
-
-    # Check cameras
-    all_cameras_ok = True
-    for name, path in CAMERAS.items():
-        check = check_camera(name, path)
-        if check['error']:
-            log.error(f'startup:camera:{name}', 'Camera not ready',
-                     error=check['error'], fix=check['fix'])
-            all_cameras_ok = False
+    # Check camera proxy
+    try:
+        resp = requests.get(f'{PROXY_URL}/status', timeout=5)
+        if resp.status_code == 200:
+            proxy_status = resp.json()
+            for cam, health in proxy_status.get('cameras', {}).items():
+                if health.get('connected'):
+                    log.info(f'startup:camera:{cam}', 'Camera ready via proxy',
+                            fps=health.get('fps'))
+                else:
+                    log.error(f'startup:camera:{cam}', 'Not connected',
+                             error=health.get('last_error'))
         else:
-            log.info(f'startup:camera:{name}', 'Camera ready', path=path)
+            log.warn('startup:proxy', 'Proxy returned error', status=resp.status_code)
+    except requests.exceptions.ConnectionError:
+        log.warn('startup:proxy', 'Camera proxy not yet running',
+                fix='Will retry when grade is requested')
+    except Exception as e:
+        log.warn('startup:proxy', 'Proxy check failed', error=str(e))
 
     # Check internet
     log.info('startup:network', 'Testing internet connectivity')
@@ -1144,16 +1118,11 @@ def run_startup_checks():
                 fix='May be OK if EC2 is still starting')
 
     # Summary
-    if all_cameras_ok and ec2_ok:
+    if ec2_ok:
         log.info('startup', 'All systems ready')
     else:
-        issues = []
-        if not all_cameras_ok:
-            issues.append('cameras')
-        if not ec2_ok:
-            issues.append('ec2')
         log.warn('startup', 'Starting with issues',
-                issues=','.join(issues))
+                issues='ec2')
 
     log.info('startup', 'Server listening', host='0.0.0.0', port=5000)
     log.info('startup', '=' * 50)

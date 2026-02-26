@@ -1,0 +1,15 @@
+[Unit]
+Description=Camera Proxy Service
+After=network.target goat-prod.service goat-training.service camera-heating.service camera-proxy.service
+Wants=goat-prod.service goat-training.service camera-heating.service camera-proxy.service
+
+[Service]
+ExecStart=/home/pi/venv/bin/python3 /home/pi/goatdev/pi/servers/camera_proxy.py
+WorkingDirectory=/home/pi/goatdev/pi
+User=root
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
