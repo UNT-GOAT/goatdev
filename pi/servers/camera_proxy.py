@@ -66,7 +66,7 @@ API_PORT = 8080
 
 # Allow max 2 concurrent USB reads — prevents bus saturation
 # while not blocking all cameras if one is slow
-usb_semaphore = threading.Semaphore(2)
+usb_semaphore = threading.Semaphore(1)
 
 
 # === CAMERA READER ===
