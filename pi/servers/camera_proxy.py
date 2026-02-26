@@ -64,13 +64,18 @@ HEARTBEAT_INTERVAL_SEC = 300
 
 API_PORT = 8080
 
+# Allow max 2 concurrent USB reads — prevents bus saturation
+# while not blocking all cameras if one is slow
+usb_semaphore = threading.Semaphore(2)
+
 
 # === CAMERA READER ===
 
 class CameraReader:
     """
     Owns a single camera device. Background thread reads raw MJPEG frames
-    into a shared buffer. Preview thread decodes + resizes when clients
+    into a shared buffer, coordinated via usb_lock so only one camera
+    reads at a time. Preview thread decodes + resizes when clients
     are watching.
     """
 
@@ -103,8 +108,9 @@ class CameraReader:
         self._preview_thread = None
 
     def start(self):
-        """Start the reader thread."""
+        """Start reader and preview threads."""
         self.running = True
+
         self._reader_thread = threading.Thread(
             target=self._read_loop, daemon=True, name=f'reader-{self.name}'
         )
@@ -118,7 +124,7 @@ class CameraReader:
         log.info(f'reader:{self.name}', 'Reader started', device=self.device)
 
     def stop(self):
-        """Stop the reader thread and release camera."""
+        """Stop threads and release camera."""
         self.running = False
         if self._reader_thread:
             self._reader_thread.join(timeout=5)
@@ -184,13 +190,13 @@ class CameraReader:
         self.connected = False
 
     def _read_loop(self):
-        """Main reader loop. Reads raw MJPEG frames continuously."""
+        """Read frames using shared USB lock to prevent bus saturation."""
         backoff = RECONNECT_INTERVAL_SEC
         fps_window_start = time.time()
         fps_window_count = 0
 
         while self.running:
-            # Connect if needed
+            # Reconnect if needed
             if not self.connected:
                 if not self._open():
                     log.warn(f'reader:{self.name}', 'Reconnecting',
@@ -200,19 +206,21 @@ class CameraReader:
                     backoff = min(backoff * 1.5, RECONNECT_MAX_BACKOFF_SEC)
                     continue
                 backoff = RECONNECT_INTERVAL_SEC
+                fps_window_start = time.time()
+                fps_window_count = 0
 
-            # Read frame
-            try:
-                ret, frame = self.cap.read()
-            except Exception as e:
-                self.error_count += 1
-                self.consecutive_failures += 1
-                self.last_error = f'Read exception: {e}'
-                log.error(f'reader:{self.name}', 'Read exception',
-                         error=str(e),
-                         consecutive_failures=self.consecutive_failures)
-                self._release()
-                continue
+            # Acquire USB lock — only one camera reads at a time
+            with usb_semaphore:
+                try:
+                    ret, frame = self.cap.read()
+                except Exception as e:
+                    self.error_count += 1
+                    self.consecutive_failures += 1
+                    self.last_error = f'Read exception: {e}'
+                    log.error(f'reader:{self.name}', 'Read exception',
+                             error=str(e))
+                    self._release()
+                    continue
 
             if not ret or frame is None:
                 self.error_count += 1
@@ -233,7 +241,7 @@ class CameraReader:
                     self._release()
                 continue
 
-            # Success — store raw JPEG bytes
+            # Store raw JPEG bytes
             now = time.time()
             raw_bytes = frame.tobytes()
 
@@ -253,7 +261,8 @@ class CameraReader:
                 fps_window_start = now
                 fps_window_count = 0
 
-            time.sleep(0.2) # throttle to prevent usb bus saturation
+            # Yield to other cameras
+            time.sleep(0.3)
 
     def _preview_loop(self):
         """
