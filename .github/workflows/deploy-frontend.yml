@@ -18,17 +18,15 @@ jobs:
           fetch-depth: 2
 
       - name: Generate config
-        run: |
-          cat > goat-app/setup/config.js << EOF
-          const CONFIG = {
-            PASS_HASH: "${{ secrets.PASS_HASH }}",
-            CAPTURE_API: "https://${{ secrets.TAILSCALE_HOST }}",
-            HEATER_API: "https://${{ secrets.TAILSCALE_HOST }}:5002",
-            FOCUS_API: "https://${{ secrets.TAILSCALE_HOST }}:8080",
-            S3_BUCKET: "${{ secrets.S3_TRAINING_BUCKET }}",
-            S3_REGION: "us-east-2",
-          };
-          EOF
+              run: |
+                cat > goat-app/setup/config.js << EOF
+                const CONFIG = {
+                  PASS_HASH: "${{ secrets.PASS_HASH }}",
+                  API_BASE: "https://${{ secrets.TAILSCALE_HOST }}",
+                  S3_BUCKET: "${{ secrets.S3_TRAINING_BUCKET }}",
+                  S3_REGION: "us-east-2",
+                };
+                EOF
 
       - name: Check for setup page changes
         id: check
