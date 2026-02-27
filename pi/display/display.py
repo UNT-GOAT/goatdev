@@ -314,6 +314,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
     last_slow = 0
     last_fast = 0
     frame_count = 0
+    temps_last_good_time = {k: 0 for k in SENSOR_IDS}
 
     # Cached state
     wifi = 0
@@ -330,8 +331,12 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             cam_status = check_cameras()
             heater_status = check_heater_status()
             for name, sid in SENSOR_IDS.items():
-                temps[name] = read_temp_f(sid)
-            last_fast = now
+                reading = read_temp_f(sid)
+                if reading is not None:
+                    temps[name] = reading
+                    temps_last_good_time[name] = now
+                elif now - temps_last_good_time.get(name, 0) > 3:
+                    temps[name] = None
 
         # Slow checks every 5 seconds
         if now - last_slow >= slow_interval:
