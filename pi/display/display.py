@@ -383,7 +383,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             if not all_servers:
                 down = [k for k, v in server_status.items() if not v]
                 # Use shorter names for display
-                display_names = {'CAM_PROXY': 'CAM_PRXY'}
+                display_names = {'CAM_PROXY': 'CAM_PROXY'}
                 down_display = [display_names.get(k, k) for k in down]
                 line = "DOWN: " + ", ".join(down_display)
                 if draw.textlength(line, font=font_xs) > SCREEN_W - 28:
