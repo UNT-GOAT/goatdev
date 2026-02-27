@@ -7,6 +7,8 @@ FastAPI application for analyzing goat images and calculating grades.
 import cv2
 import numpy as np
 import time
+import os
+import shutil
 import psutil
 from io import BytesIO
 from datetime import datetime
@@ -29,6 +31,13 @@ from .models import (
 from .grader import grader
 from .storage import storage
 from .grade_calculator import calculate_grade
+
+
+# FIX #13: Maximum number of serial_id debug directories to keep.
+# Once exceeded, oldest directories (by mtime) are pruned after each
+# new analysis. Prevents /app/data/debug/ from growing unbounded.
+DEBUG_DIR_BASE = '/app/data/debug'
+MAX_DEBUG_SERIAL_IDS = 100
 
 
 # =============================================================================
@@ -240,6 +249,60 @@ def sanitize_serial_id(serial_id: str) -> tuple[Optional[str], Optional[dict]]:
     return sanitized, None
 
 
+def _cleanup_old_debug_dirs():
+    """
+    FIX #13: Remove oldest debug directories when count exceeds MAX_DEBUG_SERIAL_IDS.
+
+    Previously debug images accumulated forever with no cleanup policy.
+    On a busy system doing 50+ grades/day, this would fill the disk within
+    weeks. Now we keep only the most recent MAX_DEBUG_SERIAL_IDS serial IDs
+    worth of debug images, pruning the oldest (by directory mtime) after
+    each new analysis.
+
+    This runs synchronously after saving debug images — it's fast since
+    it only does a listdir + stat on the debug base dir, and only removes
+    directories when we're over the limit.
+    """
+    try:
+        if not os.path.isdir(DEBUG_DIR_BASE):
+            return
+
+        entries = []
+        for name in os.listdir(DEBUG_DIR_BASE):
+            full_path = os.path.join(DEBUG_DIR_BASE, name)
+            if os.path.isdir(full_path):
+                try:
+                    mtime = os.path.getmtime(full_path)
+                    entries.append((mtime, full_path, name))
+                except OSError:
+                    continue
+
+        if len(entries) <= MAX_DEBUG_SERIAL_IDS:
+            return
+
+        # Sort by mtime ascending (oldest first)
+        entries.sort(key=lambda x: x[0])
+        to_remove = len(entries) - MAX_DEBUG_SERIAL_IDS
+
+        for i in range(to_remove):
+            _, dir_path, dir_name = entries[i]
+            try:
+                shutil.rmtree(dir_path)
+                log.info('debug_cleanup', 'Removed old debug dir',
+                        serial_id=dir_name)
+            except Exception as e:
+                log.warn('debug_cleanup', 'Failed to remove debug dir',
+                        serial_id=dir_name, error=str(e))
+
+        log.info('debug_cleanup', 'Cleanup complete',
+                removed=to_remove,
+                remaining=MAX_DEBUG_SERIAL_IDS)
+
+    except Exception as e:
+        # Never let cleanup failure affect the grading response
+        log.warn('debug_cleanup', 'Cleanup error (non-fatal)', error=str(e))
+
+
 # =============================================================================
 # ENDPOINTS
 # =============================================================================
@@ -369,8 +432,7 @@ async def analyze(
     # Save debug images if generated
     debug_image_paths = {}
     if grader_result.get('debug_images'):
-        import os
-        debug_dir = f'/app/data/debug/{serial_id}'
+        debug_dir = f'{DEBUG_DIR_BASE}/{serial_id}'
         os.makedirs(debug_dir, exist_ok=True)
         
         for view_name, debug_img in grader_result['debug_images'].items():
@@ -384,6 +446,9 @@ async def analyze(
                 except Exception as e:
                     log.error('analyze', f'Failed to save debug image',
                              serial_id=serial_id, view=view_name, error=str(e))
+        
+        # FIX #13: Prune old debug directories after saving new ones.
+        _cleanup_old_debug_dirs()
     
     # Calculate grade
     grade = None
@@ -530,7 +595,6 @@ async def get_debug_image(serial_id: str, view: str):
         JPEG image with measurement overlays
     """
     from fastapi.responses import FileResponse
-    import os
     
     # Validate view
     if view not in ['side', 'top', 'front']:
@@ -549,7 +613,7 @@ async def get_debug_image(serial_id: str, view: str):
         raise HTTPException(status_code=400, detail=error)
     
     # Check if debug image exists
-    debug_path = f'/app/data/debug/{serial_id}/{view}_debug.jpg'
+    debug_path = f'{DEBUG_DIR_BASE}/{serial_id}/{view}_debug.jpg'
     
     if not os.path.exists(debug_path):
         raise HTTPException(
@@ -576,14 +640,12 @@ async def list_debug_images(serial_id: str):
     Returns:
         List of available views with URLs
     """
-    import os
-    
     # Sanitize serial_id
     serial_id, error = sanitize_serial_id(serial_id)
     if error:
         raise HTTPException(status_code=400, detail=error)
     
-    debug_dir = f'/app/data/debug/{serial_id}'
+    debug_dir = f'{DEBUG_DIR_BASE}/{serial_id}'
     
     if not os.path.exists(debug_dir):
         raise HTTPException(
