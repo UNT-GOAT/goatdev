@@ -529,6 +529,10 @@ def capture(camera):
         'X-Frame-Size-Bytes': str(len(raw)),
     })
 
+@app.route('/capture', methods=['GET', 'POST'])
+def capture_default():
+    return capture_all_cameras()
+
 
 @app.route('/capture/all', methods=['POST'])
 def capture_all_cameras():
