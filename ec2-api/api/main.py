@@ -33,7 +33,7 @@ from .storage import storage
 from .grade_calculator import calculate_grade
 
 
-# FIX #13: Maximum number of serial_id debug directories to keep.
+# Maximum number of serial_id debug directories to keep.
 # Once exceeded, oldest directories (by mtime) are pruned after each
 # new analysis. Prevents /app/data/debug/ from growing unbounded.
 DEBUG_DIR_BASE = '/app/data/debug'
@@ -251,7 +251,7 @@ def sanitize_serial_id(serial_id: str) -> tuple[Optional[str], Optional[dict]]:
 
 def _cleanup_old_debug_dirs():
     """
-    FIX #13: Remove oldest debug directories when count exceeds MAX_DEBUG_SERIAL_IDS.
+    Remove oldest debug directories when count exceeds MAX_DEBUG_SERIAL_IDS.
 
     Previously debug images accumulated forever with no cleanup policy.
     On a busy system doing 50+ grades/day, this would fill the disk within
@@ -447,7 +447,7 @@ async def analyze(
                     log.error('analyze', f'Failed to save debug image',
                              serial_id=serial_id, view=view_name, error=str(e))
         
-        # FIX #13: Prune old debug directories after saving new ones.
+        # Prune old debug directories after saving new ones.
         _cleanup_old_debug_dirs()
     
     # Calculate grade
