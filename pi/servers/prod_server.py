@@ -51,6 +51,10 @@ REQUEST_TIMEOUT_SEC = 10
 MIN_IMAGE_BYTES = 50000      # 50KB minimum valid image
 MAX_SERIAL_ID_LEN = 50
 
+# S3 bucket for archiving captured images (prod grading flow).
+# Previously prod captures were deleted after EC2 response with no archive.
+S3_CAPTURES_BUCKET = os.environ.get('S3_CAPTURES_BUCKET')
+
 # ============================================================
 # LOGGING
 # ============================================================
@@ -91,6 +95,20 @@ def reset_state():
             'started_at': None,
             'progress': None
         })
+
+# ============================================================
+# S3 HELPER
+# ============================================================
+
+_s3_client = None
+
+def get_s3():
+    """Lazy-init S3 client for image archival."""
+    global _s3_client
+    if _s3_client is None:
+        import boto3
+        _s3_client = boto3.client('s3')
+    return _s3_client
 
 # ============================================================
 # CAMERA HELPERS
@@ -234,6 +252,10 @@ def do_grade(serial_id: str, live_weight: float):
     """
     start_time = time.time()
     results = {}
+    # Lock for thread-safe writes to the shared results dict.
+    # Previously threads called results.update({n: ...}) without sync,
+    # which is not guaranteed atomic and can corrupt on ARM / with gevent.
+    results_lock = threading.Lock()
 
     try:
         # Phase 1: Capture
@@ -244,13 +266,14 @@ def do_grade(serial_id: str, live_weight: float):
         for name, path in CAMERAS.items():
             check = check_camera(name, path)
             if check['error']:
-                results[name] = {
-                    'name': name,
-                    'success': False,
-                    'filepath': None,
-                    'error': check['error'],
-                    'fix': check['fix']
-                }
+                with results_lock:
+                    results[name] = {
+                        'name': name,
+                        'success': False,
+                        'filepath': None,
+                        'error': check['error'],
+                        'fix': check['fix']
+                    }
                 log.error(f'camera:{name}', 'Pre-check failed',
                          error=check['error'], fix=check['fix'])
             else:
@@ -286,11 +309,13 @@ def do_grade(serial_id: str, live_weight: float):
 
             threads = {}
             for name, path in batch:
-                t = threading.Thread(
-                    target=lambda n=name, p=path: results.update(
-                        {n: capture_single_image(n, p, serial_id)}
-                    )
-                )
+                # Thread-safe write to results dict via lock.
+                def _capture_and_store(n=name, p=path):
+                    result = capture_single_image(n, p, serial_id)
+                    with results_lock:
+                        results[n] = result
+
+                t = threading.Thread(target=_capture_and_store)
                 threads[name] = t
                 t.start()
 
@@ -299,13 +324,14 @@ def do_grade(serial_id: str, live_weight: float):
                 if t.is_alive():
                     log.error(f'camera:{name}', 'Capture thread hung',
                              serial_id=serial_id)
-                    results[name] = {
-                        'name': name,
-                        'success': False,
-                        'filepath': None,
-                        'error': 'Capture thread hung',
-                        'fix': 'Restart service: sudo systemctl restart goat-prod'
-                    }
+                    with results_lock:
+                        results[name] = {
+                            'name': name,
+                            'success': False,
+                            'filepath': None,
+                            'error': 'Capture thread hung',
+                            'fix': 'Restart service: sudo systemctl restart goat-prod'
+                        }
 
         # Check all captures succeeded
         failed = [n for n, r in results.items() if not r.get('success')]
@@ -373,6 +399,25 @@ def do_grade(serial_id: str, live_weight: float):
             if response.status_code == 200:
                 grade_result = response.json()
                 total_time = round(time.time() - start_time, 2)
+
+                # Upload captured images to S3 before deleting them.
+                # This mirrors what training_server does, provides a debug
+                # archive so we can review what the grading model saw.
+                if S3_CAPTURES_BUCKET:
+                    set_state(progress='archiving')
+                    for cam_name, r in results.items():
+                        fp = r.get('filepath')
+                        if fp and os.path.exists(fp):
+                            s3_key = f'{serial_id}/{cam_name}.jpg'
+                            try:
+                                get_s3().upload_file(fp, S3_CAPTURES_BUCKET, s3_key)
+                                log.info(f's3:{cam_name}', 'Archived to S3',
+                                        key=s3_key,
+                                        size_bytes=r.get('file_size_bytes'))
+                            except Exception as e:
+                                # Don't fail the grade if S3 upload fails
+                                log.warn(f's3:{cam_name}', 'S3 archive failed (non-fatal)',
+                                        key=s3_key, error=str(e))
 
                 set_state(
                     last_error=None,
@@ -664,6 +709,10 @@ def grade():
         "serial_id": "GOAT001",
         "live_weight": 85.5
     }
+
+    Now checks EC2 reachability BEFORE starting the capture.
+    Previously the entire 10s+ capture would complete only to discover
+    EC2 was down, wasting time and camera resources.
     """
     state = get_state()
     if state['active']:
@@ -723,6 +772,24 @@ def grade():
             'error_code': 'INVALID_WEIGHT',
             'message': 'live_weight must be a number between 0 and 500 lbs'
         }), 400
+
+    # Check EC2 reachability BEFORE capturing images.
+    # This avoids wasting 10s+ on a full 3-camera capture cycle only to
+    # discover EC2 is down when we try to submit. Fail fast instead.
+    ec2_check = check_ec2_api()
+    if ec2_check['status'] != 'ok':
+        log.error('grade', 'EC2 not reachable, aborting before capture',
+                 serial_id=sanitized,
+                 ec2_api=EC2_API,
+                 error=ec2_check.get('error'))
+        return jsonify({
+            'status': 'error',
+            'error_code': 'EC2_UNREACHABLE',
+            'message': 'EC2 API not reachable, aborting before capture',
+            'ec2_api': EC2_API,
+            'ec2_error': ec2_check.get('error'),
+            'fix': 'Check EC2 is running and port 8000 is open'
+        }), 503
 
     # Pre-check cameras via proxy
     camera_checks = {}
@@ -1047,7 +1114,8 @@ def run_startup_checks():
     log.info('startup', 'Configuration',
             ec2_ip=EC2_IP, ec2_api=EC2_API,
             resolution=f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
-            proxy_url=PROXY_URL)
+            proxy_url=PROXY_URL,
+            s3_captures_bucket=S3_CAPTURES_BUCKET or '(not set)')
 
     # System info
     sys_info = get_system_info()
