@@ -64,7 +64,7 @@ SETTINGS_FILE = '/home/pi/camera_focus_settings.json'
 
 # Reader settings
 FRAMES_PER_PAIR = 5         # Frames to read per pair before rotating
-TARGET_FPS = 10              # Target FPS per camera (sleep to throttle)
+TARGET_FPS = 30              # Target FPS per camera (sleep to throttle)
 CAMERA_PAIRS = [
     ('side', 'top'),
     ('side', 'front'),
