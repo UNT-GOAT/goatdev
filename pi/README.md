@@ -1,398 +1,297 @@
 # Raspberry Pi Capture System
 
-## Architecture Overview
+Raspberry Pi 4 running 6 services for goat image capture, (sending off to ec2)-grading, training data collection, camera management, environmental monitoring, and system health display. All services accessible remotely via Tailscale VPN and Caddy HTTPS proxy.
 
-<img src="../readme_assets/pi1.png" alt="Raspberry Pi" width="50%"/>
-
-<img src="../readme_assets/pi2.png" alt="Raspberry Pi with case" width="50%"/>
-
-The Pi runs two Flask services for goat image capture, both accessible remotely via Tailscale VPN.
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Raspberry Pi 5 (4GB)                   │
-│                                                             │
-│  ┌─────────────────────┐    ┌──────────────────────┐        │
-│  │   goat-prod.service │    │ goat-training.service│        │
-│  │       Port 5000     │    │       Port 5001      │        │
-│  │                     │    │                      │        │
-│  │  Single-shot capture│    │  20-image capture    │        │
-│  │  + EC2 grading      │    │  + S3 upload         │        │
-│  └──────────┬──────────┘    └──────────┬───────────┘        │
-│             │                          │                    │
-│             ▼                          ▼                    │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │              3x USB Cameras (udev symlinks)          │   │
-│  │ /dev/camera_side  /dev/camera_top  /dev/camera_front |   │
-│  └──────────────────────────────────────────────────────┘   │
-│                                                             │
-│  ┌─────────────────────┐    ┌─────────────────────┐         │
-│  │  CloudWatch Logger  │    │  Heartbeat Cron     │         │
-│  │  (all services)     │    │  (every 2 min)      │         │
-│  └─────────────────────┘    └─────────────────────┘         │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                        Raspberry Pi 4 (4GB)                          │
+│                                                                      │
+│  ┌───────────────┐  ┌───────────────┐  ┌───────────────────────────┐ │
+│  │  Prod Server  │  │ Training Srvr │  │     Camera Proxy          │ │
+│  │   Port 5000   │  │   Port 5001   │  │      Port 8080            │ │
+│  │               │  │               │  │                           │ │
+│  │  Capture +    │  │  20-img burst │  │  Owns all 3 USB cameras   │ │
+│  │  EC2 grading  │  │  + S3 upload  │  │  Pair rotation (2 at a    │ │
+│  │               │  │               │  │  time), ~8fps per cam     │ │
+│  └──────┬────────┘  └──────┬────────┘  │  MJPEG streams + capture  │ │
+│         │                  │           └─────────┬─────────────────┘ │
+│         └──────────────────┴─────────────────────┘                   │
+│                          HTTP to proxy                               │
+│                                                                      │
+│  ┌──────────────┐  ┌───────────────┐  ┌───────────────────────────┐  │
+│  │ Heater Ctrl  │  │ Status Display│  │     Caddy Proxy           │  │
+│  │  Port 5002   │  │  SPI LCD      │  │      Port 8443            │  │
+│  │              │  │               │  │                           │  │
+│  │  DS18B20     │  │  Server/cam/  │  │  HTTPS consolidation      │  │
+│  │  thermostat  │  │  temp status  │  │  for Tailscale Funnel     │  │
+│  │  + failsafe  │  │  + boot logo  │  │  → mobile browser         │  │
+│  └──────────────┘  └───────────────┘  └───────────────────────────┘  │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │              3x Arducam 16MP USB Cameras (udev)              │    │
+│  │  /dev/camera_side    /dev/camera_top    /dev/camera_front    │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  ┌──────────────┐  ┌───────────────┐                                 │
+│  │  CloudWatch  │  │  Heartbeat    │                                 │
+│  │  Logger      │  │  Cron (2min)  │                                 │
+│  └──────────────┘  └───────────────┘                                 │
+└──────────────────────────────────────────────────────────────────────┘
                               │
                               │ Tailscale VPN
                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                         Remote Access                           │
-│                                                                 │
-│   Developer Machine ──────► ssh pi@100.xxx.xxx.xxx              │
-│                      ──────► curl http://100.xxx.xxx.xxx:5000   │
-│                                                                 │
-│   EC2 API Server ◄────────── Pi sends images for grading        │
-│   S3 Buckets     ◄────────── Pi uploads training data           │
-└─────────────────────────────────────────────────────────────────┘
+                ┌──────────────────────────┐
+                │      Remote Access       │
+                │                          │
+                │  SSH, curl, browser      │
+                │  EC2 API ◄── grading     │
+                │  S3      ◄── training    │
+                └──────────────────────────┘
 ```
 
 ## Services
 
-### Production Service (`goat-prod.service`) - Port 5000
+### Camera Proxy — Port 8080
 
-Single-shot capture for live grading. Captures one image per camera, sends all three to EC2 API, returns grade.
+Single process that owns all 3 USB cameras. The Pi 4's USB controller can't handle 3 concurrent full-resolution reads, so the proxy keeps all 3 cameras open but only reads from 2 at a time in rotating pairs. This yields ~8fps per camera at full 4656×3496 resolution with zero open/close overhead.
 
-**Workflow:**
+All other services (prod, training) get camera frames via HTTP from the proxy instead of touching USB devices directly. This eliminates all "device busy" conflicts.
 
-1. Receive POST with `serial_id` and `live_weight`
-2. Capture 1 image from each camera (batched 2+1 to avoid OOM)
-3. POST images to EC2 `/analyze` endpoint
-4. Return grade result
+Runs under gunicorn with gevent for concurrent MJPEG streaming to multiple clients.
 
-**Key Endpoints:**
+| Endpoint                   | Method   | Description                       |
+| -------------------------- | -------- | --------------------------------- |
+| `/stream/<camera>`         | GET      | MJPEG preview stream (640×480)    |
+| `/capture/<camera>`        | GET      | Latest full-res JPEG              |
+| `/capture`                 | GET/POST | Capture all 3, save to /tmp       |
+| `/status`                  | GET      | Per-camera health, FPS, frame age |
+| `/focus/<camera>/<val>`    | GET      | Set manual focus                  |
+| `/autofocus/<camera>/<on>` | GET      | Toggle autofocus                  |
+| `/save`                    | POST     | Persist focus settings            |
+| `/settings`                | GET      | Load saved focus settings         |
 
-| Endpoint       | Method | Description                               |
-| -------------- | ------ | ----------------------------------------- |
-| `/health`      | GET    | Quick status check                        |
-| `/diagnostics` | GET    | Detailed system info                      |
-| `/grade`       | POST   | Capture + grade workflow                  |
-| `/grade/test`  | POST   | Grade with uploaded images (skip capture) |
-| `/test`        | GET    | Full connectivity test                    |
-| `/status`      | GET    | Current capture state                     |
-| `/cancel`      | POST   | Emergency stop                            |
+### Production Server — Port 5000
 
-### Training Service (`goat-training.service`) - Port 5001
+Single-shot capture for live grading. Captures one image per camera from the proxy, sends all three to the EC2 API, returns a grade result.
 
-Multi-image capture for model training. Captures 20 images per camera at 1fps, uploads to S3 as tarballs.
+| Endpoint       | Method | Description                                        |
+| -------------- | ------ | -------------------------------------------------- |
+| `/health`      | GET    | Quick status check                                 |
+| `/diagnostics` | GET    | Detailed system info                               |
+| `/grade`       | POST   | Capture + grade (body: `serial_id`, `live_weight`) |
+| `/grade/test`  | POST   | Grade with uploaded images (skip capture)          |
+| `/test`        | GET    | Full connectivity test                             |
+| `/status`      | GET    | Current capture state                              |
+| `/cancel`      | POST   | Emergency stop                                     |
 
-**Workflow:**
+### Training Server — Port 5001
 
-1. Receive POST with `goat_id` and optional metadata
-2. Capture 20 images per camera (1 second apart)
-3. Tar images per camera, upload to S3
-4. Upload metadata JSON
+Multi-image capture for model training. Captures 20 images per camera at 1fps from the proxy, tars per camera, uploads to S3 with metadata.
 
-**Key Endpoints:**
+| Endpoint       | Method | Description                                             |
+| -------------- | ------ | ------------------------------------------------------- |
+| `/health`      | GET    | Quick status check                                      |
+| `/diagnostics` | GET    | Detailed system info                                    |
+| `/record`      | POST   | Start capture (body: `goat_id`, `goat_data`, `is_test`) |
+| `/status`      | GET    | Current capture state                                   |
+| `/cancel`      | POST   | Emergency stop                                          |
 
-| Endpoint       | Method | Description           |
-| -------------- | ------ | --------------------- |
-| `/health`      | GET    | Quick status check    |
-| `/diagnostics` | GET    | Detailed system info  |
-| `/record`      | POST   | Start capture session |
-| `/status`      | GET    | Current capture state |
-| `/cancel`      | POST   | Emergency stop        |
+### Heater Control — Port 5002
 
-## Tailscale Setup
+Thermostat for 3 MOSFET-driven heater circuits inside the camera enclosures. Reads DS18B20 temperature sensors every 2 seconds, heats below 40°F, stops above 70°F.
 
-Tailscale provides secure remote access to the Pi without port forwarding or exposing it to the public internet.
+Includes EMI noise filtering (spike rejection, bogus 85°C detection, physically impossible value rejection) and smart failsafe that only heats on sensor failure if the last known temperature was actually cold. Sensor wires are also wrapped in EMI protection tape at the physcial camera enclosure wire entrance where they're all pinched together.
 
-### Network Topology
+| Endpoint    | Method | Description                                        |
+| ----------- | ------ | -------------------------------------------------- |
+| `/status`   | GET    | All heater/sensor states                           |
+| `/override` | POST   | Force heater on/off/auto (body: `camera`, `state`) |
+| `/history`  | GET    | Recent state changes                               |
 
-```
-┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│  Developer Mac   │     │   Raspberry Pi   │     │   EC2 Instance   │
-│  100.xxx.xxx.1   │◄───►│  100.xxx.xxx.126 │◄───►│  (public IP)     │
-└──────────────────┘     └──────────────────┘     └──────────────────┘
-         │                        │                        │
-         └────────────────────────┴────────────────────────┘
-                         Tailscale Mesh VPN
-```
+### Status Display
 
-### Access Methods
+2.4" ILI9341 SPI LCD showing real-time system health. Boot sequence shows logo with fade-in, then transitions to status screen showing server health (including camera proxy), camera device status, temperature readings per enclosure, heater state, WiFi strength, and time.
 
-**SSH to Pi:**
+### Caddy Proxy — Port 8443
 
-```bash
-ssh pi@100.xxx.xxx.xxx
-```
+Reverse proxy that consolidates all services behind a single HTTPS endpoint for Tailscale Funnel access from mobile browsers.
 
-**Test services:**
+| Path               | Routes to              |
+| ------------------ | ---------------------- |
+| `/api/capture/*`   | Training server (5001) |
+| `/api/heater/*`    | Heater control (5002)  |
+| `/api/viewfocus/*` | Camera proxy (8080)    |
+| Default            | Training server (5001) |
 
-```bash
-# Production health
-curl http://100.xxx.xxx.xxx:5000/health
-
-# Training health
-curl http://100.xxx.xxx.xxx:5001/health
-
-# Full diagnostics
-curl http://100.xxx.xxx.xxx:5000/diagnostics | jq
-```
-
-### Tailscale Admin
-
-- Dashboard: https://login.tailscale.com/admin/machines
-- Pi appears as `goat-pi` in the machine list
-- Can enable/disable access, view connection status, manage ACLs
-
-## Camera Configuration
-
-Cameras are mapped to stable device paths via udev rules:
-
-| View  | Symlink             | USB Port |
-| ----- | ------------------- | -------- |
-| Side  | `/dev/camera_side`  | 1.2      |
-| Top   | `/dev/camera_top`   | 1.3      |
-| Front | `/dev/camera_front` | 1.4      |
-
-**Capture Settings:**
-
-- Resolution: 4656 × 3496 (16MP)
-- Format: MJPEG
-- Native FPS: 10
-- Warmup: 10 frames skipped for autofocus and white balance
-
-## Logging
-
-All services log to AWS CloudWatch under the `/goatdev` log group:
-
-| Stream         | Source             |
-| -------------- | ------------------ |
-| `pi/prod`      | Production service |
-| `pi/training`  | Training service   |
-| `pi/heartbeat` | Health monitoring  |
-
-## Heartbeat Monitoring
-
-A cron job runs every 2 minutes checking service health:
-
-- Verifies `goat-prod` service is active
-- Verifies port 5000 is listening
-- Logs errors to CloudWatch only when unhealthy
-- Logs single "recovered" message when health restored
-
-## System Configuration
-
-All Pi system config lives in `pi/system/` and is deployed via the CI pipeline. This means systemd services, udev rules, and cron jobs can be updated with a git push, no SSH needed.
-
-### Repo Structure
+## Directory Structure
 
 ```
 pi/
-├── prod_server.py           # Production service
-├── training_server.py       # Training service
-├── focus_tool.py            # Camera focus adjustment
-├── requirements.txt         # Python dependencies
+├── servers/
+│   ├── camera_proxy.py        # Camera proxy service
+│   ├── prod_server.py         # Production grading service
+│   ├── training_server.py     # Training capture service
+│   └── camera_heating.py      # Heater thermostat service
+├── display/
+│   ├── display.py             # LCD status display
+│   └── boot_logo.png          # Boot screen logo
 ├── logger/
-│   ├── pi_cloudwatch.py     # Shared CloudWatch logging module
-│   └── pi_heartbeat_cron.py # Heartbeat cron script
-└── system/
-    ├── goat-prod.service    # Systemd unit for production
-    ├── goat-training.service# Systemd unit for training
-    ├── 99-cameras.rules     # Udev rules for camera symlinks
-    └── goat-heartbeat.cron  # Cron job for health monitoring
+│   ├── pi_cloudwatch.py       # Shared CloudWatch logging module
+│   └── pi_heartbeat_cron.py   # Heartbeat health check (cron)
+├── system/
+│   ├── camera-proxy.service   # Systemd unit (gunicorn + gevent)
+│   ├── goat-prod.service      # Systemd unit
+│   ├── goat-training.service  # Systemd unit
+│   ├── camera-heating.service # Systemd unit
+│   ├── goat-display.service   # Systemd unit
+│   ├── setup-proxy.service    # Caddy systemd unit
+│   ├── Caddyfile              # Caddy reverse proxy config
+│   ├── 99-cameras.rules       # udev rules for camera symlinks
+│   ├── deploy.sh              # Copies services/rules, enables units
+│   ├── sync-on-boot.sh        # Git pull + deploy on boot
+│   ├── git-sync-on-boot.service
+│   └── goat-heartbeat.cron    # Cron schedule for heartbeat
+├── .env                       # Environment variables (EC2_IP, etc.)
+└── requirements.txt           # Python dependencies
 ```
 
-## Quick Reference
+## `/servers`
 
-| Task               | Command                                |
-| ------------------ | -------------------------------------- |
-| SSH to Pi          | `ssh pi@100.xxx.xxx.xxx`               |
-| Restart production | `sudo systemctl restart goat-prod`     |
-| Restart training   | `sudo systemctl restart goat-training` |
-| View prod logs     | `journalctl -u goat-prod -f`           |
-| View training logs | `journalctl -u goat-training -f`       |
-| Check cameras      | `ls -la /dev/camera_*`                 |
-| Kill stuck ffmpeg  | `sudo pkill -9 ffmpeg`                 |
-| Check memory       | `free -h`                              |
-| Check disk         | `df -h /tmp`                           |
-| Tailscale status   | `tailscale status`                     |
+All servers use Flask and talk to cameras exclusively through the camera proxy at `http://127.0.0.1:8080`. None of them open USB devices directly.
 
----
+**camera_proxy.py** is the only process that touches `/dev/camera_*`. It opens all 3 cameras once at startup, reads from 2 at a time in rotating pairs (side+top → side+front → top+front), and stores raw JPEG frames in thread-safe buffers. Other services fetch frames via HTTP. Runs under gunicorn with a single gevent worker for concurrent MJPEG streaming.
 
-## Training Capture System
+**prod_server.py** handles the live grading workflow. On a `/grade` POST, it fetches one frame per camera from the proxy, validates image sizes, sends all three to the EC2 API's `/analyze` endpoint, and returns the grade.
 
-Captures training images from 3 USB cameras and uploads them to S3 for YOLO model training.
+**training_server.py** handles burst captures for training data. On a `/record` POST, it pulls 20 frames per camera at 1-second intervals from the proxy, tars each camera's images, and uploads to S3. Supports test mode (capture but don't upload) and real mode (all 3 cameras required, uploads to S3).
 
-### Overview
+**camera_heating.py** runs a thermostat loop reading DS18B20 sensors every 2 seconds. Filters out EMI noise (85°C power-on default, physically impossible values, sudden spikes) and requires 3 consecutive confirming reads before acting on suspicious temperature changes. Failsafe engages after 30 consecutive read failures but only turns heaters on if the last known temp was below 50°F. Exposes an override API for manual control.
 
-The training service (`training_server.py`) exposes a REST API on port 5001. A web UI at `herd-sync.com/training` connects to the API to trigger captures. Each capture session photographs a single goat from three angles (side, top, front), producing 20 images per camera, 60 total, with exactly 1-second spacing between frames.
+## `/display`
 
-Images are tarred per camera and uploaded to S3. An optional metadata JSON file records goat data (description, weight, grade) alongside the images.
+**display.py** drives a 2.4" ILI9341 SPI LCD (240×320) connected via GPIO. On boot it shows `boot_logo.png` (a sweet unt logo) with a fade-in animation and holds until services are healthy (up to 20 seconds). Then transitions to a status dashboard that updates every second.
 
-### How Capture Works
+The status screen monitors:
 
-1. Client POSTs to `/record` with goat_id, goat_data, and capture mode
-2. Server pre-checks: disk space, camera availability, stale processes
-3. Cameras capture in **batches of 2** to stay within RAM limits:
-   - Batch 1: side + top in parallel (~21s)
-   - Batch 2: front alone (~21s)
-   - Total: ~42s per goat
-4. Each camera runs a single ffmpeg process that:
-   - Opens the V4L2 device at native 10fps MJPEG
-   - Skips the first 1 second (10 frames) for autofocus/white balance warmup
-   - Selects every 10th frame thereafter → 1 frame per second
-   - Decodes and re-encodes with `-threads 1` to limit memory (~500MB per process)
-   - Writes 20 individual JPEG files to `/tmp`
-5. Images are validated (minimum size check)
-6. Per-camera images are tarred (`images.tar.gz`) and uploaded to S3
-7. Metadata JSON uploaded alongside if goat_data was provided
-8. Temp files cleaned up
+- **Servers** — PROD, CAM_PROXY, EC2 health checks (green/red dot)
+- **Cameras** — device existence and readability, plus proxy liveness
+- **Temps** — per-enclosure temperature with heater state (on/failsafe/override)
+- **WiFi** — signal strength bars
+- **Time** — current time with heartbeat indicator
 
-#### Why Not All 3 Cameras in Parallel?
+Pin wiring: VCC→3.3V, GND→Pin30, DIN→GPIO10 (MOSI), CLK→GPIO11 (SCLK), CS→GPIO8 (CE0), DC→GPIO18, RST→GPIO27, BL→GPIO25.
 
-Each ffmpeg process decoding 4656×3496 frames uses ~500MB RAM. Three simultaneous processes exceed 4GB and trigger the OOM killer. The 2+1 batching keeps peak memory at ~1GB for ffmpeg.
+## `/logger`
 
-#### Why Not `-codec:v copy`?
+**pi_cloudwatch.py** provides a structured `Logger` class used by all services. Logs to both CloudWatch (under `/goatdev` log group) and console. Format: `[LEVEL] [component] message | key=value`. Thread-safe with a lock around all log calls.
 
-Raw MJPEG passthrough (`-codec:v copy`) uses almost no RAM, but ffmpeg can't apply the `select` filter without decoding. The select filter is required to get correct 1-second frame spacing since the cameras only support 10fps minimum at this resolution.
+| CloudWatch Stream | Source            |
+| ----------------- | ----------------- |
+| `camera-proxy`    | Camera proxy      |
+| `pi/prod`         | Production server |
+| `pi/training`     | Training server   |
+| `heating`         | Heater control    |
+| `pi/heartbeat`    | Heartbeat cron    |
 
-### S3 Structure
+**pi_heartbeat_cron.py** runs every 2 minutes via cron. Checks that `goat-prod` is active and port 5000 is listening. Only logs to CloudWatch when unhealthy, plus a single "recovered" message when health returns. Uses a state file at `/tmp/heartbeat_unhealthy` to track transitions.
+
+## `/system`
+
+All systemd services, udev rules, and deployment scripts. Everything here gets installed to the system by `deploy.sh` and can be updated via git push (the CI pipeline SSHes in and runs deploy).
+
+### Service Dependency Order
 
 ```
-s3://training-********/
-├── 1/
-│   ├── side/images.tar.gz      # 20 JPEGs
-│   ├── top/images.tar.gz       # 20 JPEGs
-│   ├── front/images.tar.gz     # 20 JPEGs
-│   └── goat_data.json          # metadata
-├── 2/
-│   ├── side/images.tar.gz
-│   ├── top/images.tar.gz
-│   ├── front/images.tar.gz
-│   └── goat_data.json
-└── ...
+network.target
+    └── camera-proxy.service     (must start first — owns cameras)
+         ├── goat-prod.service   (After=camera-proxy)
+         ├── goat-training.service (After=camera-proxy)
+         └── setup-proxy.service (Caddy, after all services)
+    └── camera-heating.service   (independent, reads sensors directly)
+    └── goat-display.service     (starts at sysinit, before network)
 ```
 
-Each tar contains files named `{goat_id}_{camera}_{01-20}.jpg`.
+### Boot Sequence
 
-#### goat_data.json
+1. `goat-display.service` starts immediately at sysinit (shows boot logo)
+2. `git-sync-on-boot.service` runs `sync-on-boot.sh` — pulls latest code, installs deps, runs `deploy.sh`
+3. `camera-proxy.service` starts (opens cameras, begins reading)
+4. `goat-prod.service` and `goat-training.service` start (depend on proxy)
+5. `camera-heating.service` starts (reads sensors, controls heaters)
+6. `setup-proxy.service` starts Caddy (reverse proxy for Tailscale Funnel)
 
-```json
-{
-  "goat_id": "17",
-  "timestamp": "2026-02-10T18:30:00.000000",
-  "cameras": ["side", "top", "front"],
-  "images_per_camera": 20,
-  "resolution": "4656x3496",
-  "capture_fps": 1,
-  "description": "meat",
-  "live_weight": "85 lbs",
-  "grade": "choice"
-}
+### udev Rules
+
+`99-cameras.rules` maps USB cameras to stable symlinks by vendor ID and kernel USB path:
+
+| Symlink             | USB Path | Physical Port |
+| ------------------- | -------- | ------------- |
+| `/dev/camera_side`  | `*1.1*`  | Port 1        |
+| `/dev/camera_top`   | `*1.3*`  | Port 3        |
+| `/dev/camera_front` | `*1.4*`  | Port 4        |
+
+### deploy.sh
+
+Copies all `.service` files to `/etc/systemd/system/`, installs udev rules, sets up cron, enables all services, and reloads systemd. Run automatically on boot via `sync-on-boot.sh` or manually via `sudo bash deploy.sh`.
+
+## Hardware
+
+### Cameras
+
+3x Arducam 16MP (IMX298) USB 2.0 cameras. Resolution: 4656×3496 MJPEG. All three share the Pi 4's VL805 USB controller — only 2 can be read concurrently at full resolution without triggering `select()` timeouts.
+
+### Temperature Sensors
+
+3x DS18B20 one-wire sensors, one per camera enclosure. Connected to the Pi's 1-Wire bus with a 4.7kΩ pullup resistor.
+
+| Sensor ID         | Assignment |
+| ----------------- | ---------- |
+| `28-0000006d3eba` | Camera 1   |
+| `28-0000007047ea` | Camera 2   |
+| `28-0000007193ed` | Camera 3   |
+
+### Heater MOSFETs
+
+3x N-channel MOSFETs driven by GPIO pins, one per enclosure heater, but everything soldered together on a small perfboard on the main compute enclosure.
+
+| Camera  | GPIO Pin | Physical Pin |
+| ------- | -------- | ------------ |
+| camera1 | GPIO 5   | Pin 29       |
+| camera2 | GPIO 6   | Pin 31       |
+| camera3 | GPIO 17  | Pin 11       |
+
+## Remote Access
+
+### Tailscale
+
+All services accessible over Tailscale mesh VPN. The Pi appears as `goat-pi` at `100.xxx.xxx.xxx`.
+
+```bash
+ssh pi@100.xxx.xxx.xxx
+curl http://100.xxx.xxx.xxx:5000/health
+curl http://100.xxx.xxx.xxx:8080/status
 ```
 
-### Training API Endpoints
+### Tailscale Funnel
 
-#### `GET /health`
+Caddy on port 8443 provides HTTPS for mobile browser access via Tailscale Funnel. The frontend at `herd-sync.com` connects to the Pi through this endpoint.
 
-Quick health check. Returns camera availability, disk space, and capture state.
+### Quick Reference
 
-```json
-{
-  "status": "ok",
-  "cameras": { "side": true, "top": true, "front": true },
-  "disk_free_mb": 2500,
-  "recording_active": false
-}
-```
-
-#### `GET /diagnostics`
-
-Detailed diagnostics including per-camera device checks, S3 connectivity, and current capture config.
-
-#### `POST /record`
-
-Start a capture session.
-
-**Request body:**
-
-```json
-{
-  "goat_id": "17",
-  "goat_data": {
-    "description": "meat",
-    "live_weight": "85 lbs",
-    "grade": "choice"
-  },
-  "is_test": false,
-  "require_all_cameras": true
-}
-```
-
-**Modes:**
-
-- **Real** (`is_test: false`): All 3 cameras must succeed. Images uploaded to S3. Any camera failure aborts the entire batch.
-- **Test** (`is_test: true`): Captures with whatever cameras are available. Checks S3 access but does not upload. Files are cleaned up immediately.
-
-**Error codes:** `CAPTURE_IN_PROGRESS`, `INVALID_GOAT_ID`, `LOW_DISK_SPACE`, `MISSING_CAMERAS`, `NO_CAMERAS`
-
-#### `GET /status`
-
-Poll capture progress. Used by the web UI during capture.
-
-```json
-{
-  "active": true,
-  "goat_id": "17",
-  "started_at": "2026-02-10T18:30:00.000000",
-  "progress": "capturing",
-  "last_error": null,
-  "last_result": null
-}
-```
-
-Progress stages: `starting` → `capturing` → `uploading` → (done)
-
-For test mode: `starting` → `capturing` → `checking_s3` → (done)
-
-#### `POST /cancel`
-
-Emergency stop. Kills all ffmpeg processes, cleans up temp files, resets state.
-
-### Training Web UI
-
-![Training Capture Interface](../readme_assets/training_interface.png)
-
-Hosted at `herd-sync.com/training` — a single-page app that connects to the Pi server over Tailscale.
-
-Features:
-
-- Password-protected login
-- Auto-incrementing goat counter (synced from S3 bucket listing)
-- Goat data form (description, weight, grade)
-- Big red CAPTURE button (real mode) and smaller TEST button
-- Activity log showing capture progress in real-time
-- Polls `/status` every 500ms, deduplicates status messages
-
-### Training Configuration
-
-All config is at the top of `training_server.py`:
-
-| Setting                     | Default             | Description                                       |
-| --------------------------- | ------------------- | ------------------------------------------------- |
-| `NUM_IMAGES`                | 20                  | Images per camera per capture                     |
-| `CAPTURE_FPS`               | 1                   | Target frames per second (spacing between images) |
-| `CAMERA_NATIVE_FPS`         | 10                  | Camera's actual FPS at capture resolution         |
-| `IMAGE_WIDTH`               | 4656                | Capture width in pixels                           |
-| `IMAGE_HEIGHT`              | 3496                | Capture height in pixels                          |
-| `MIN_DISK_MB`               | 1000                | Minimum free disk space to start capture          |
-| `MIN_IMAGE_BYTES`           | 50000               | Minimum valid image size (50KB)                   |
-| `FFMPEG_TIMEOUT_SEC`        | 30                  | Per-ffmpeg process timeout                        |
-| `CAPTURE_TOTAL_TIMEOUT_SEC` | 60                  | Total timeout for one camera's full capture       |
-| `S3_TRAINING_BUCKET`        | `training-********` | S3 bucket (overridable via env var)               |
-
-### Training Troubleshooting
-
-**OOM / ffmpeg killed (code -9):** The `MAX_PARALLEL = 2` batching should prevent this. If it still happens, reduce to `MAX_PARALLEL = 1` (sequential capture, ~63s per goat).
-
-**Blurry/pink first images:** The 1-second warmup skip should handle this. If images are still blurry, increase `warmup_frames` in `capture_single_camera`.
-
-**"Camera does not support resolution":** Check supported formats with `v4l2-ctl -d /dev/camera_side --list-formats-ext`. The camera may not support 4656×3496 MJPEG.
-
-**S3 403 / InvalidSignature:** Check that the Pi's clock is synced (`timedatectl status`) and AWS credentials are valid (`aws sts get-caller-identity`).
-
-**Capture timeout on client:** The web UI polls for 2 minutes (240 × 500ms). If captures + upload consistently exceed this, increase `maxAttempts` in the training `index.html`.
-
-**Camera "Device or resource busy":** A previous ffmpeg process didn't exit cleanly. Run `sudo pkill -9 ffmpeg` or hit the `/cancel` endpoint.
-
-**Stale ffmpeg processes:** The server kills orphaned ffmpeg processes on startup and before each capture. If cameras seem stuck, restart the service: `sudo systemctl restart goat-training`.
+| Task                 | Command                                 |
+| -------------------- | --------------------------------------- |
+| SSH to Pi            | `ssh pi@100.xxx.xxx.xxx`                |
+| Camera proxy status  | `curl http://localhost:8080/status`     |
+| Restart camera proxy | `sudo systemctl restart camera-proxy`   |
+| Restart prod         | `sudo systemctl restart goat-prod`      |
+| Restart training     | `sudo systemctl restart goat-training`  |
+| Restart heater       | `sudo systemctl restart camera-heating` |
+| View proxy logs      | `journalctl -u camera-proxy -f`         |
+| View prod logs       | `journalctl -u goat-prod -f`            |
+| View heater logs     | `journalctl -u camera-heating -f`       |
+| Check cameras        | `ls -la /dev/camera_*`                  |
+| Check memory         | `free -h`                               |
+| Check disk           | `df -h /tmp`                            |
+| Tailscale status     | `tailscale status`                      |
