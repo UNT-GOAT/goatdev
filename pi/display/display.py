@@ -338,6 +338,11 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
                 elif now - temps_last_good_time.get(name, 0) > 3:
                     temps[name] = None
 
+            # Update last_fast so the interval actually works.
+            # Previously this was never set, so fast checks ran every
+            # loop iteration (~1s from sleep at bottom) instead of 0.25s.
+            last_fast = now
+
         # Slow checks every 5 seconds
         if now - last_slow >= slow_interval:
             wifi = check_network()
