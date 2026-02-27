@@ -2,9 +2,13 @@
 """
 Camera Proxy Service
 
-Single process owns all 3 USB cameras. Pi 4's USB controller cannot handle
-3 simultaneous full-res MJPEG streams, so we rotate pairs: only 2 cameras
-are open at a time, cycling (side,top) → (side,front) → (top,front).
+Single process owns all 3 USB cameras. All 3 stay open at full resolution
+but we only read from 2 at a time (rotating pairs) to avoid USB controller
+select() timeouts. This gives ~5fps per camera with zero open/close overhead.
+
+Key insight: Pi 4's VL805 USB controller chokes on 3 concurrent reads but
+handles 2 fine. Keeping the 3rd camera open (but not reading) avoids the
+1.2s sensor warmup penalty that would come from closing/reopening.
 
 Raw buffer: ~647KB-1.1MB per frame (no decode), used for captures
 Preview buffer: decoded + resized to 640x480, used for MJPEG streams
@@ -58,16 +62,18 @@ PREVIEW_JPEG_QUALITY = 70
 
 SETTINGS_FILE = '/home/pi/camera_focus_settings.json'
 
-# Pair rotation settings
-FRAMES_PER_PAIR = 10        # Frames to read per camera pair before swapping
-CAMERA_PAIRS = [            # Rotate through these pairs
+# Reader settings
+FRAMES_PER_PAIR = 5         # Frames to read per pair before rotating
+TARGET_FPS = 5              # Target FPS per camera (sleep to throttle)
+CAMERA_PAIRS = [
     ('side', 'top'),
     ('side', 'front'),
     ('top', 'front'),
 ]
 
-STALE_FRAME_THRESHOLD_SEC = 5
+STALE_FRAME_THRESHOLD_SEC = 3
 HEARTBEAT_INTERVAL_SEC = 300
+RECONNECT_INTERVAL_SEC = 5
 
 API_PORT = 8080
 
@@ -88,12 +94,16 @@ class FrameBuffer:
 
         # Preview buffer (640x480 JPEG bytes)
         self.preview_frame = None
+        self.preview_timestamp = 0
         self.preview_lock = threading.Lock()
 
         # Stats
         self.frame_count = 0
         self.error_count = 0
         self.last_error = None
+        self.fps_estimate = 0.0
+        self._fps_window_start = time.time()
+        self._fps_window_count = 0
 
         # Stream client tracking
         self.stream_clients = 0
@@ -107,26 +117,36 @@ class FrameBuffer:
         self.frame_count += 1
         self.last_error = None
 
+        # FPS calculation (rolling 10s window)
+        self._fps_window_count += 1
+        elapsed = now - self._fps_window_start
+        if elapsed >= 10:
+            self.fps_estimate = round(self._fps_window_count / elapsed, 1)
+            self._fps_window_start = now
+            self._fps_window_count = 0
+
     def record_error(self, error_msg):
         """Record a read error."""
         self.error_count += 1
         self.last_error = error_msg
 
     def get_raw_frame(self):
-        """Get latest raw JPEG bytes and timestamp. Returns (bytes, timestamp) or (None, 0)."""
+        """Get latest raw JPEG bytes and timestamp."""
         with self.raw_lock:
             return self.raw_frame, self.raw_timestamp
 
     def get_preview_frame(self):
-        """Get latest preview JPEG bytes. Returns bytes or None."""
+        """Get latest preview JPEG bytes."""
         with self.preview_lock:
             return self.preview_frame
 
     def update_preview(self):
-        """Decode raw frame, resize, and store as preview JPEG."""
+        """Decode raw frame, resize, store as preview JPEG."""
         with self.raw_lock:
             raw = self.raw_frame
-        if raw is None:
+            ts = self.raw_timestamp
+
+        if raw is None or ts == self.preview_timestamp:
             return
 
         try:
@@ -141,6 +161,7 @@ class FrameBuffer:
             )
             with self.preview_lock:
                 self.preview_frame = jpeg.tobytes()
+                self.preview_timestamp = ts
         except Exception as e:
             log.warn(f'preview:{self.name}', 'Preview encode error', error=str(e))
 
@@ -177,6 +198,7 @@ class FrameBuffer:
             'device': self.device,
             'device_exists': os.path.exists(self.device),
             'frame_count': self.frame_count,
+            'fps': self.fps_estimate,
             'frame_age_sec': frame_age,
             'raw_buffer_bytes': raw_size,
             'stream_clients': self.stream_clients,
@@ -189,6 +211,7 @@ class FrameBuffer:
 # === GLOBAL STATE ===
 
 buffers = {}
+caps = {}          # Open VideoCapture handles, keyed by camera name
 
 
 def init_buffers():
@@ -201,14 +224,16 @@ def init_buffers():
 
 # === CAMERA OPEN/CLOSE HELPERS ===
 
-def open_camera(device):
+def open_camera(name, device):
     """Open a camera device in raw MJPEG mode. Returns cap or None."""
     if not os.path.exists(device):
+        log.error(f'camera:{name}', 'Device not found', device=device)
         return None
 
     try:
         cap = cv2.VideoCapture(device, cv2.CAP_V4L2)
         if not cap.isOpened():
+            log.error(f'camera:{name}', 'Failed to open', device=device)
             return None
 
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
@@ -216,82 +241,129 @@ def open_camera(device):
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FULL_RES_HEIGHT)
         cap.set(cv2.CAP_PROP_CONVERT_RGB, 0)  # Raw MJPEG, no decode
 
+        # Warmup read — first frame takes ~1.2s due to sensor init
+        ret, _ = cap.read()
+        if not ret:
+            log.warn(f'camera:{name}', 'Warmup read failed, retrying')
+            ret, _ = cap.read()
+
+        if ret:
+            log.info(f'camera:{name}', 'Opened and warmed up', device=device)
+        else:
+            log.warn(f'camera:{name}', 'Opened but warmup failed', device=device)
+
         return cap
+
     except Exception as e:
-        log.error('camera', 'Open failed', device=device, error=str(e))
+        log.error(f'camera:{name}', 'Open exception', device=device, error=str(e))
         return None
 
 
-def close_camera(cap):
-    """Safely release a camera."""
-    if cap:
+def open_all_cameras():
+    """Open all cameras at startup. All stay open for the lifetime of the process."""
+    for name, device in CAMERAS.items():
+        cap = open_camera(name, device)
+        if cap:
+            caps[name] = cap
+        else:
+            buffers[name].record_error(f'Failed to open {device}')
+
+    opened = [n for n, c in caps.items() if c is not None]
+    failed = [n for n in CAMERAS if n not in caps]
+
+    log.info('startup', 'Cameras opened',
+            opened=','.join(opened) or 'none',
+            failed=','.join(failed) or 'none')
+
+
+def reconnect_camera(name):
+    """Try to reconnect a failed camera."""
+    device = CAMERAS[name]
+
+    # Close existing handle if any
+    if name in caps:
         try:
-            cap.release()
+            caps[name].release()
         except Exception:
             pass
+        del caps[name]
+
+    cap = open_camera(name, device)
+    if cap:
+        caps[name] = cap
+        log.info(f'camera:{name}', 'Reconnected', device=device)
+        return True
+    return False
 
 
-# === PAIR ROTATION READER ===
+# === MAIN READER LOOP ===
 
-def pair_rotation_loop():
+def reader_loop():
     """
-    Main reader loop. Only 2 cameras open at a time.
-    Cycles through pairs: (side,top) → (side,front) → (top,front) → repeat.
-    Reads FRAMES_PER_PAIR frames from each pair before swapping.
+    Main reader loop. All 3 cameras stay open at full resolution.
+    Only reads from 2 at a time (rotating pairs) to stay within
+    USB controller bandwidth. Single thread, no contention.
 
-    Pi 4 USB controller cannot handle 3 simultaneous full-res MJPEG streams.
-    With 2 open + pair rotation, each camera gets ~1.8fps equally.
+    Pi 4's VL805 USB controller gets select() timeouts when 3
+    cameras do concurrent reads, but handles 2 fine. Keeping
+    the 3rd open but idle avoids the 1.2s warmup penalty on swap.
     """
     pair_index = 0
+    throttle_interval = 1.0 / TARGET_FPS
 
     while True:
+        # Skip if no cameras open
+        if not caps:
+            time.sleep(RECONNECT_INTERVAL_SEC)
+            for name in CAMERAS:
+                if name not in caps:
+                    reconnect_camera(name)
+            continue
+
         a_name, b_name = CAMERA_PAIRS[pair_index % len(CAMERA_PAIRS)]
-        a_buf = buffers[a_name]
-        b_buf = buffers[b_name]
 
-        # Open both cameras
-        cap_a = open_camera(a_buf.device)
-        cap_b = open_camera(b_buf.device)
-
-        if not cap_a:
-            a_buf.record_error(f'Failed to open {a_buf.device}')
-            log.warn(f'reader:{a_name}', 'Failed to open', device=a_buf.device)
-        if not cap_b:
-            b_buf.record_error(f'Failed to open {b_buf.device}')
-            log.warn(f'reader:{b_name}', 'Failed to open', device=b_buf.device)
-
-        # Read frames from this pair
+        # Read FRAMES_PER_PAIR from this pair
         for _ in range(FRAMES_PER_PAIR):
-            if cap_a:
+            read_start = time.time()
+
+            if a_name in caps:
                 try:
-                    ret, frame = cap_a.read()
+                    ret, frame = caps[a_name].read()
                     if ret and frame is not None:
-                        a_buf.store_raw(frame.tobytes())
+                        buffers[a_name].store_raw(frame.tobytes())
                     else:
-                        a_buf.record_error('Read returned empty frame')
+                        buffers[a_name].record_error('Read returned empty frame')
                 except Exception as e:
-                    a_buf.record_error(f'Read exception: {e}')
+                    buffers[a_name].record_error(f'Read exception: {e}')
+                    log.error(f'reader:{a_name}', 'Read exception', error=str(e))
 
-            if cap_b:
+            if b_name in caps:
                 try:
-                    ret, frame = cap_b.read()
+                    ret, frame = caps[b_name].read()
                     if ret and frame is not None:
-                        b_buf.store_raw(frame.tobytes())
+                        buffers[b_name].store_raw(frame.tobytes())
                     else:
-                        b_buf.record_error('Read returned empty frame')
+                        buffers[b_name].record_error('Read returned empty frame')
                 except Exception as e:
-                    b_buf.record_error(f'Read exception: {e}')
+                    buffers[b_name].record_error(f'Read exception: {e}')
+                    log.error(f'reader:{b_name}', 'Read exception', error=str(e))
 
-        # Close both before opening next pair
-        close_camera(cap_a)
-        close_camera(cap_b)
-
-        # Update previews for cameras that have stream clients
-        for name, buf in buffers.items():
-            if buf.stream_clients > 0:
-                buf.update_preview()
+            # Throttle to target FPS
+            read_elapsed = time.time() - read_start
+            sleep_time = throttle_interval - read_elapsed
+            if sleep_time > 0:
+                time.sleep(sleep_time)
 
         pair_index += 1
+
+        # Periodic reconnection check for missing cameras
+        for name in CAMERAS:
+            buf = buffers[name]
+            if name not in caps and buf.error_count > 0:
+                if buf.error_count % 10 == 0:
+                    log.info(f'reader:{name}', 'Attempting reconnect',
+                            errors=buf.error_count)
+                    reconnect_camera(name)
 
 
 # === PREVIEW LOOP ===
@@ -299,29 +371,20 @@ def pair_rotation_loop():
 def preview_loop():
     """
     Background thread that updates preview frames for cameras
-    with active stream clients. Runs independently of pair rotation
-    so previews update even when a camera isn't in the active pair.
+    with active stream clients.
     """
-    last_timestamps = {name: 0 for name in buffers}
-
     while True:
         any_clients = False
         for name, buf in buffers.items():
             if buf.stream_clients <= 0:
                 continue
             any_clients = True
-
-            # Check if we have a new raw frame
-            with buf.raw_lock:
-                ts = buf.raw_timestamp
-            if ts > last_timestamps[name]:
-                buf.update_preview()
-                last_timestamps[name] = ts
+            buf.update_preview()
 
         if not any_clients:
             time.sleep(0.5)
         else:
-            time.sleep(0.1)
+            time.sleep(0.05)
 
 
 # === V4L2 HELPERS ===
@@ -359,8 +422,7 @@ def apply_saved_settings():
             if device and os.path.exists(device):
                 run_v4l2(device, 'focus_automatic_continuous', 0)
                 run_v4l2(device, 'focus_absolute', focus_val)
-                log.info(f'startup:{camera}', 'Focus applied',
-                        focus=focus_val)
+                log.info(f'startup:{camera}', 'Focus applied', focus=focus_val)
             else:
                 log.warn(f'startup:{camera}', 'Device not found, skipping focus',
                         device=device)
@@ -380,6 +442,7 @@ def heartbeat_loop():
             h = buf.get_health()
             healths[name] = {
                 'connected': h['connected'],
+                'fps': h['fps'],
                 'frame_age': h['frame_age_sec'],
                 'frames': h['frame_count'],
                 'errors': h['error_count'],
@@ -390,7 +453,6 @@ def heartbeat_loop():
         total_clients = sum(h['clients'] for h in healths.values())
         all_connected = all(h['connected'] for h in healths.values())
 
-        # Memory info
         mem_mb = None
         try:
             with open('/proc/meminfo', 'r') as f:
@@ -662,8 +724,8 @@ def run_startup_checks():
     log.info('startup', 'Configuration',
             full_res=f'{FULL_RES_WIDTH}x{FULL_RES_HEIGHT}',
             preview_res=f'{PREVIEW_WIDTH}x{PREVIEW_HEIGHT}',
+            target_fps=TARGET_FPS,
             frames_per_pair=FRAMES_PER_PAIR,
-            pairs=str(CAMERA_PAIRS),
             stale_threshold=STALE_FRAME_THRESHOLD_SEC,
             heartbeat_interval=HEARTBEAT_INTERVAL_SEC)
 
@@ -700,7 +762,7 @@ def run_startup_checks():
                      device=device, fix='Check USB connection')
             all_ok = False
 
-    # Disable autofocus on all cameras before readers start
+    # Disable autofocus on all cameras before opening
     for name, device in CAMERAS.items():
         if os.path.exists(device):
             run_v4l2(device, 'focus_automatic_continuous', 0)
@@ -714,7 +776,7 @@ def run_startup_checks():
     else:
         log.warn('startup', 'Some cameras not ready — starting anyway')
 
-    log.info('startup', 'Strategy: pair rotation (2 cameras open at a time)')
+    log.info('startup', 'Strategy: all 3 open, read 2 at a time (pair rotation)')
     log.info('startup', 'Server listening', host='0.0.0.0', port=API_PORT)
     log.info('startup', '=' * 50)
 
@@ -724,10 +786,11 @@ def run_startup_checks():
 if __name__ == '__main__':
     run_startup_checks()
     init_buffers()
+    open_all_cameras()
 
-    # Start pair rotation reader thread
+    # Start reader thread (pair rotation, single thread)
     reader_thread = threading.Thread(
-        target=pair_rotation_loop, daemon=True, name='pair-reader'
+        target=reader_loop, daemon=True, name='pair-reader'
     )
     reader_thread.start()
 
@@ -747,3 +810,10 @@ if __name__ == '__main__':
         app.run(host='0.0.0.0', port=API_PORT, threaded=True)
     except KeyboardInterrupt:
         log.info('shutdown', 'Shutting down')
+    finally:
+        for name, cap in caps.items():
+            try:
+                cap.release()
+            except Exception:
+                pass
+        log.info('shutdown', 'All cameras released')
