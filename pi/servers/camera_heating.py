@@ -5,8 +5,15 @@ Controls 3 MOSFET-driven heater circuits based on DS18B20 temperature readings.
 Logs all state changes and heartbeats to CloudWatch under /goatdev -> heating.
 
 Thresholds: ON below 40°F, OFF above 70°F
-Fail-safe: If sensor fails 10 consecutive reads, heater forced ON
+Fail-safe: If sensor fails 30 consecutive reads, heater forced ON only if last
+           known temp was below safety threshold (otherwise stays off).
 Safety: If forced-on for 2+ hours with no sensor recovery, logs CRITICAL
+
+Sensor filtering:
+  - Rejects DS18B20 85°C power-on default
+  - Rejects temps outside -20°F to 150°F (physically impossible in enclosure)
+  - Rejects spikes >10°F change per read cycle (EMI noise)
+  - Requires 3 consecutive agreeing reads before acting on large changes
 
 Remote Override API:
   GET  http://pi-ip:5002/status        - All heater/sensor states
@@ -43,9 +50,18 @@ TURN_ON_BELOW = 40      # °F — heater ON when temp drops below
 TURN_OFF_ABOVE = 70     # °F — heater OFF when temp rises above
 CHECK_INTERVAL = 2      # Seconds between sensor reads
 HEARTBEAT_INTERVAL = 300 # Seconds between heartbeat logs (5 min)
-FAIL_THRESHOLD = 10     # Consecutive failures before fail-safe ON
+FAIL_THRESHOLD = 30     # Consecutive failures before fail-safe (60 seconds at 2s interval)
 FAILSAFE_MAX_HOURS = 2  # Log CRITICAL if forced-on this long
 BOGUS_TEMP_C = 85.0     # DS18B20 power-on default — filter this out
+
+# Sensor sanity filtering
+TEMP_MIN_F = -20.0      # Reject anything below (physically impossible in enclosure)
+TEMP_MAX_F = 150.0      # Reject anything above (physically impossible in enclosure)
+SPIKE_THRESHOLD_F = 10.0 # Max °F change per read cycle (real temp can't jump this fast)
+CONFIRM_READS = 3        # Consecutive agreeing reads required after a rejected spike
+
+# Failsafe behavior
+FAILSAFE_COLD_THRESHOLD = 50.0  # Only failsafe-ON if last known temp was below this
 
 CAMERAS = {
     'camera1': {
@@ -82,6 +98,10 @@ def init_state():
             'failsafe_since': None,
             'override': 'auto',
             'last_change': None,
+            # Spike detection state
+            'spike_confirm_count': 0,
+            'spike_candidate': None,
+            'rejected_spike_count': 0,
         }
 
 
@@ -97,8 +117,8 @@ def log_history(camera, event, **kwargs):
 
 
 # === SENSOR READING ===
-def read_temp_f(sensor_path):
-    """Read DS18B20 sensor. Returns °F or None on failure."""
+def read_temp_raw(sensor_path):
+    """Read DS18B20 sensor. Returns °F or None on hardware failure."""
     try:
         with open(sensor_path, 'r') as f:
             raw = f.read().strip()
@@ -110,9 +130,72 @@ def read_temp_f(sensor_path):
             if abs(temp_c - BOGUS_TEMP_C) < 0.5:
                 return None
 
-            return round(temp_c * 9.0 / 5.0 + 32.0, 1)
+            temp_f = round(temp_c * 9.0 / 5.0 + 32.0, 1)
+
+            # Reject physically impossible values
+            if temp_f < TEMP_MIN_F or temp_f > TEMP_MAX_F:
+                return None
+
+            return temp_f
     except Exception:
         return None
+
+
+def filter_temp(name, raw_temp):
+    """Apply spike detection filter. Returns accepted temp or None.
+
+    If a reading jumps more than SPIKE_THRESHOLD_F from the last known good
+    temp, it's likely EMI noise. We reject it and require CONFIRM_READS
+    consecutive readings near the new value before accepting it.
+    This prevents single-read glitches from triggering heater changes.
+    """
+    s = state[name]
+
+    if raw_temp is None:
+        # Hardware failure — reset spike tracking
+        s['spike_confirm_count'] = 0
+        s['spike_candidate'] = None
+        return None
+
+    last = s['last_good_temp']
+
+    # First reading ever — accept it
+    if last is None:
+        return raw_temp
+
+    delta = abs(raw_temp - last)
+
+    if delta <= SPIKE_THRESHOLD_F:
+        # Normal reading, within expected range
+        s['spike_confirm_count'] = 0
+        s['spike_candidate'] = None
+        return raw_temp
+    else:
+        # Suspicious jump — could be EMI or real temp change
+        if s['spike_candidate'] is not None and abs(raw_temp - s['spike_candidate']) <= SPIKE_THRESHOLD_F:
+            # Consistent with previous spike candidate
+            s['spike_confirm_count'] += 1
+            if s['spike_confirm_count'] >= CONFIRM_READS:
+                # Confirmed — this is a real temp change, not noise
+                s['spike_confirm_count'] = 0
+                s['spike_candidate'] = None
+                log.info(f'sensor:{name}',
+                         f'Large temp change confirmed after {CONFIRM_READS} reads',
+                         old_temp=last, new_temp=raw_temp)
+                return raw_temp
+            else:
+                # Still confirming
+                return None
+        else:
+            # New spike candidate
+            s['spike_candidate'] = raw_temp
+            s['spike_confirm_count'] = 1
+            s['rejected_spike_count'] += 1
+            if s['rejected_spike_count'] % 10 == 0:
+                log.warn(f'sensor:{name}',
+                         f'Rejected {s["rejected_spike_count"]} spikes total',
+                         last_good=last, spike_value=raw_temp)
+            return None
 
 
 # === HEATER CONTROL ===
@@ -141,7 +224,8 @@ def control_loop():
 
         for name, cfg in CAMERAS.items():
             s = state[name]
-            temp = read_temp_f(cfg['sensor'])
+            raw_temp = read_temp_raw(cfg['sensor'])
+            temp = filter_temp(name, raw_temp)
 
             # --- Handle override ---
             if s['override'] != 'auto':
@@ -188,21 +272,36 @@ def control_loop():
                     log_history(name, 'heater_off', temp=temp)
 
             else:
-                # Sensor failed
+                # Sensor failed or reading was filtered out
                 s['temp_f'] = None
                 s['fail_count'] += 1
 
                 if s['fail_count'] == FAIL_THRESHOLD:
-                    # Engage fail-safe: force heater ON
-                    log.error(f'failsafe:{name}',
-                              f'Sensor failed {FAIL_THRESHOLD} consecutive reads, forcing heater ON',
-                              last_good_temp=s['last_good_temp'],
-                              fail_count=s['fail_count'])
-                    log_history(name, 'failsafe_on',
-                                last_good_temp=s['last_good_temp'])
-                    set_heater(name, True)
-                    s['failsafe_on'] = True
-                    s['failsafe_since'] = datetime.now()
+                    # Engage fail-safe — but only heat if it was actually cold
+                    last_temp = s['last_good_temp']
+
+                    if last_temp is not None and last_temp >= FAILSAFE_COLD_THRESHOLD:
+                        # Last known temp was warm — no need to heat
+                        log.warn(f'failsafe:{name}',
+                                 f'Sensor failed {FAIL_THRESHOLD} reads but last temp was warm, heater stays OFF',
+                                 last_good_temp=last_temp,
+                                 threshold=FAILSAFE_COLD_THRESHOLD)
+                        log_history(name, 'failsafe_warm_skip',
+                                    last_good_temp=last_temp)
+                        s['failsafe_on'] = True
+                        s['failsafe_since'] = datetime.now()
+                        # Don't turn heater on
+                    else:
+                        # Last known temp was cold (or unknown) — heat to be safe
+                        log.error(f'failsafe:{name}',
+                                  f'Sensor failed {FAIL_THRESHOLD} reads, last temp was cold, forcing heater ON',
+                                  last_good_temp=last_temp,
+                                  fail_count=s['fail_count'])
+                        log_history(name, 'failsafe_on',
+                                    last_good_temp=last_temp)
+                        set_heater(name, True)
+                        s['failsafe_on'] = True
+                        s['failsafe_since'] = datetime.now()
 
                 elif s['fail_count'] > FAIL_THRESHOLD and s['failsafe_on']:
                     # Check if forced-on too long
@@ -210,8 +309,9 @@ def control_loop():
                     if minutes > FAILSAFE_MAX_HOURS * 60:
                         if s['fail_count'] % 30 == 0:  # Don't spam
                             log.critical(f'failsafe:{name}',
-                                         f'Sensor dead for {minutes:.0f} min, heater still forced ON',
-                                         last_good_temp=s['last_good_temp'])
+                                         f'Sensor dead for {minutes:.0f} min, heater still in failsafe',
+                                         last_good_temp=s['last_good_temp'],
+                                         heater_on=s['heater_on'])
 
                 elif s['fail_count'] % 10 == 0 and s['fail_count'] > 0:
                     log.warn(f'sensor:{name}',
@@ -224,12 +324,14 @@ def control_loop():
             heaters = {n: 'ON' if s['heater_on'] else 'OFF' for n, s in state.items()}
             overrides = {n: s['override'] for n, s in state.items() if s['override'] != 'auto'}
             failsafes = {n: True for n, s in state.items() if s['failsafe_on']}
+            spikes = {n: s['rejected_spike_count'] for n, s in state.items() if s['rejected_spike_count'] > 0}
 
             log.info('heartbeat', 'Status check',
                      temps=json.dumps(temps),
                      heaters=json.dumps(heaters),
                      overrides=json.dumps(overrides) if overrides else None,
-                     failsafes=json.dumps(failsafes) if failsafes else None)
+                     failsafes=json.dumps(failsafes) if failsafes else None,
+                     rejected_spikes=json.dumps(spikes) if spikes else None)
             last_heartbeat = now
 
         time.sleep(CHECK_INTERVAL)
@@ -261,6 +363,7 @@ def start_api():
                 'fail_count': s['fail_count'],
                 'last_good_temp': s['last_good_temp'],
                 'last_change': s['last_change'],
+                'rejected_spikes': s['rejected_spike_count'],
             }
         return jsonify({
             'status': 'ok',
@@ -304,12 +407,15 @@ def startup_check():
     """Verify all sensors and GPIOs at startup."""
     log.info('startup', 'Heater control starting',
              on_below=TURN_ON_BELOW, off_above=TURN_OFF_ABOVE,
-             check_interval=CHECK_INTERVAL)
+             check_interval=CHECK_INTERVAL,
+             fail_threshold=FAIL_THRESHOLD,
+             spike_threshold=SPIKE_THRESHOLD_F,
+             failsafe_cold_threshold=FAILSAFE_COLD_THRESHOLD)
 
     all_ok = True
     for name, cfg in CAMERAS.items():
-        # Test sensor
-        temp = read_temp_f(cfg['sensor'])
+        # Test sensor — use raw read for startup (no spike filter yet)
+        temp = read_temp_raw(cfg['sensor'])
         if temp is not None:
             state[name]['temp_f'] = temp
             state[name]['last_good_temp'] = temp
