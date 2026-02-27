@@ -3,7 +3,7 @@ Description=Camera Proxy Service
 After=network.target
 
 [Service]
-ExecStart=/home/pi/venv/bin/python3 /home/pi/goatdev/pi/servers/camera_proxy.py
+ExecStart=/home/pi/venv/bin/gunicorn -w 1 -k gevent --bind 0.0.0.0:8080 --timeout 300 servers.camera_proxy:app
 WorkingDirectory=/home/pi/goatdev/pi
 User=root
 Restart=always
