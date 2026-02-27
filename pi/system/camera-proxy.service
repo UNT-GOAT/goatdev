@@ -1,4 +1,3 @@
-sudo tee /etc/systemd/system/camera-proxy.service << 'EOF'
 [Unit]
 Description=Camera Proxy Service
 After=network.target
