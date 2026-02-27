@@ -115,7 +115,9 @@ def read_temp_f(sensor_id):
 
 
 def check_cameras():
-    """Return dict of camera name -> status string."""
+    """Return dict of camera name -> status string.
+    Only checks device existence/permissions. The camera proxy
+    owns all camera handles — no more BUSY state needed."""
     result = {}
     for name, dev in CAMERAS.items():
         if not os.path.exists(dev):
@@ -126,16 +128,7 @@ def check_cameras():
         elif not os.access(dev, os.R_OK):
             result[name] = 'NO_PERM'
         else:
-            try:
-                fuser = subprocess.run(
-                    ['fuser', dev], capture_output=True, text=True, timeout=2
-                )
-                if fuser.stdout.strip():
-                    result[name] = 'BUSY'
-                else:
-                    result[name] = 'OK'
-            except Exception:
-                result[name] = 'OK'
+            result[name] = 'OK'
     return result
 
 
@@ -172,6 +165,7 @@ def check_servers():
     """Return dict of server name -> True/False."""
     return {
         'PROD': _curl_ok('http://localhost:5000/health'),
+        'CAM_PROXY': _curl_ok('http://localhost:8080/status'),
         'EC2': _curl_ok(f'{EC2_API}/health', timeout=6),
     }
 
@@ -323,7 +317,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
 
     # Cached state
     wifi = 0
-    server_status = {'PROD': False, 'EC2': False}
+    server_status = {'PROD': False, 'CAM_PROXY': False, 'EC2': False}
     cam_status = {name: 'MISSING' for name in CAMERAS}
     heater_status = {'any_on': False, 'any_failsafe': False, 'any_override': False, 'details': {}}
     temps = {k: None for k in SENSOR_IDS}
@@ -349,9 +343,15 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
         all_servers = all(server_status.values())
         server_color = GREEN if all_servers else RED
 
+        cam_proxy_up = server_status.get('CAM_PROXY', False)
+
         all_cams = all(v == 'OK' for v in cam_status.values())
         some_cams = any(v == 'OK' for v in cam_status.values())
-        if all_cams:
+
+        # If CAM_PROXY is down, cameras are effectively unusable -> treat as DOWN
+        if not cam_proxy_up:
+            camera_color = RED
+        elif all_cams:
             camera_color = GREEN
         elif some_cams:
             camera_color = ORANGE
@@ -388,7 +388,13 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             draw_dot(draw, SCREEN_W - 26, y + 18, server_color)
             if not all_servers:
                 down = [k for k, v in server_status.items() if not v]
-                draw.text((14, y + 34), "DOWN: " + ", ".join(down), font=font_xs, fill=RED)
+                down_display = [k for k in down]
+                line = "DOWN: " + ", ".join(down_display)
+                if draw.textlength(line, font=font_xs) > SCREEN_W - 28:
+                    draw.text((14, y + 34), "DOWN:", font=font_xs, fill=RED)
+                    draw.text((14, y + 46), ", ".join(down_display), font=font_xs, fill=RED)
+                else:
+                    draw.text((14, y + 34), line, font=font_xs, fill=RED)
             else:
                 draw.text((14, y + 34), "ALL OK", font=font_xs, fill=GREEN)
 
@@ -396,7 +402,20 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             y = 100
             draw.text((12, y), "CAMERAS", font=font_big, fill=WHITE)
             draw_dot(draw, SCREEN_W - 26, y + 18, camera_color)
-            if not all_cams:
+
+            cam_proxy_up = server_status.get('CAM_PROXY', False)
+
+            if not cam_proxy_up:
+                # Same style as SERVERS when something is down
+                down_display = ["CAM_PROXY"]
+                line = "DOWN: " + ", ".join(down_display)
+                if draw.textlength(line, font=font_xs) > SCREEN_W - 28:
+                    draw.text((14, y + 34), "DOWN:", font=font_xs, fill=RED)
+                    draw.text((14, y + 46), ", ".join(down_display), font=font_xs, fill=RED)
+                else:
+                    draw.text((14, y + 34), line, font=font_xs, fill=RED)
+
+            elif not all_cams:
                 issues = [f"{k}:{v}" for k, v in cam_status.items() if v != 'OK']
                 line = " ".join(issues)
                 if draw.textlength(line, font=font_xs) > SCREEN_W - 28:
