@@ -1,7 +1,7 @@
+sudo tee /etc/systemd/system/camera-proxy.service << 'EOF'
 [Unit]
 Description=Camera Proxy Service
-After=network.target goat-prod.service goat-training.service camera-heating.service camera-proxy.service
-Wants=goat-prod.service goat-training.service camera-heating.service camera-proxy.service
+After=network.target
 
 [Service]
 ExecStart=/home/pi/venv/bin/python3 /home/pi/goatdev/pi/servers/camera_proxy.py
@@ -13,3 +13,8 @@ Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl restart camera-proxy
+systemctl status camera-proxy
