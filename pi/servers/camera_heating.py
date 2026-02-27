@@ -152,9 +152,9 @@ def filter_temp(name, raw_temp):
     s = state[name]
 
     if raw_temp is None:
-        # Hardware failure — reset spike tracking
-        s['spike_confirm_count'] = 0
-        s['spike_candidate'] = None
+        # Do NOT reset spike tracking on transient read failures.
+        # Just report no valid reading; spike confirmation will continue
+        # on the next successful read.
         return None
 
     last = s['last_good_temp']
@@ -166,7 +166,7 @@ def filter_temp(name, raw_temp):
     delta = abs(raw_temp - last)
 
     if delta <= SPIKE_THRESHOLD_F:
-        # Normal reading, within expected range
+        # Normal reading, within expected range — reset spike tracking
         s['spike_confirm_count'] = 0
         s['spike_candidate'] = None
         return raw_temp
