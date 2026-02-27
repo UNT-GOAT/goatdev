@@ -344,6 +344,8 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
     """
     start_time = time.time()
     results = {}
+    # Lock for thread-safe writes to the shared results dict.
+    results_lock = threading.Lock()
 
     try:
         set_state(progress='capturing')
@@ -353,14 +355,15 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
         for name, path in CAMERAS.items():
             check = check_camera(name, path)
             if check['error']:
-                results[name] = {
-                    'name': name,
-                    'success': False,
-                    'filepaths': [],
-                    'image_count': 0,
-                    'error': check['error'],
-                    'fix': check['fix']
-                }
+                with results_lock:
+                    results[name] = {
+                        'name': name,
+                        'success': False,
+                        'filepaths': [],
+                        'image_count': 0,
+                        'error': check['error'],
+                        'fix': check['fix']
+                    }
             else:
                 available_cameras[name] = path
 
@@ -375,9 +378,14 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
 
             threads = {}
             for name, path in batch:
-                t = threading.Thread(
-                    target=lambda n=name, p=path: results.update({n: capture_single_camera(n, p, goat_id)})
-                )
+                # Thread-safe write to results dict via lock.
+                # Was: target=lambda n=name, p=path: results.update({n: capture_single_camera(n, p, goat_id)})
+                def _capture_and_store(n=name, p=path):
+                    result = capture_single_camera(n, p, goat_id)
+                    with results_lock:
+                        results[n] = result
+
+                t = threading.Thread(target=_capture_and_store)
                 threads[name] = t
                 t.start()
 
@@ -386,14 +394,15 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
                 t.join(timeout=(NUM_IMAGES * CAPTURE_INTERVAL_SEC) + 30)
                 if t.is_alive():
                     log.error(f'camera:{name}', 'Thread did not complete in time')
-                    results[name] = {
-                        'name': name,
-                        'success': False,
-                        'filepaths': [],
-                        'image_count': 0,
-                        'error': 'Capture thread hung',
-                        'fix': 'Restart the service: sudo systemctl restart goat-training'
-                    }
+                    with results_lock:
+                        results[name] = {
+                            'name': name,
+                            'success': False,
+                            'filepaths': [],
+                            'image_count': 0,
+                            'error': 'Capture thread hung',
+                            'fix': 'Restart the service: sudo systemctl restart goat-training'
+                        }
 
         successful = [r for r in results.values() if r.get('success')]
         failed = [r for r in results.values() if not r.get('success')]
