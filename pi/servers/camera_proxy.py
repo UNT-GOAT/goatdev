@@ -4,7 +4,7 @@ Camera Proxy Service
 
 Single process owns all 3 USB cameras. All 3 stay open at full resolution
 but we only read from 2 at a time (rotating pairs) to avoid USB controller
-select() timeouts. This gives ~5fps per camera with zero open/close overhead.
+select() timeouts. This gives ~8fps per camera with zero open/close overhead.
 
 Key insight: Pi 4's VL805 USB controller chokes on 3 concurrent reads but
 handles 2 fine. Keeping the 3rd camera open (but not reading) avoids the
@@ -16,9 +16,16 @@ Preview buffer: decoded + resized to 640x480, used for MJPEG streams
 Port: 8080
 Replaces: view_focus.py
 
+Run directly:
+  python3 camera_proxy.py
+
+Run with gunicorn (recommended for multiple stream clients):
+  gunicorn -w 1 -k gevent --bind 0.0.0.0:8080 --timeout 300 servers.camera_proxy:app
+
 Endpoints:
   GET  /stream/<camera>            - MJPEG preview stream (640x480)
   GET  /capture/<camera>           - Latest full-res JPEG
+  GET  /capture                    - Alias for /capture/all
   POST /capture/all                - All 3 cameras, saved to /tmp, returns paths
   GET  /status                     - Per-camera health + system info
   GET  /focus/<camera>/<val>       - Set focus_absolute via v4l2-ctl
@@ -530,6 +537,12 @@ def capture(camera):
     })
 
 
+@app.route('/capture', methods=['GET', 'POST'])
+def capture_default():
+    """Alias for /capture/all."""
+    return capture_all_cameras()
+
+
 @app.route('/capture/all', methods=['POST'])
 def capture_all_cameras():
     """Capture from all 3 cameras, save to /tmp, return file paths."""
@@ -781,31 +794,47 @@ def run_startup_checks():
     log.info('startup', '=' * 50)
 
 
-# === MAIN ===
-
-if __name__ == '__main__':
-    run_startup_checks()
-    init_buffers()
-    open_all_cameras()
-
-    # Start reader thread (pair rotation, single thread)
+def start_background_threads():
+    """Start reader, preview, and heartbeat threads."""
     reader_thread = threading.Thread(
         target=reader_loop, daemon=True, name='pair-reader'
     )
     reader_thread.start()
 
-    # Start preview thread
     preview_thread = threading.Thread(
         target=preview_loop, daemon=True, name='preview'
     )
     preview_thread.start()
 
-    # Start heartbeat thread
     heartbeat_thread = threading.Thread(
         target=heartbeat_loop, daemon=True, name='heartbeat'
     )
     heartbeat_thread.start()
 
+
+# === MODULE-LEVEL INIT (runs on import for gunicorn) ===
+
+_initialized = False
+
+def ensure_initialized():
+    """Initialize once, whether run directly or imported by gunicorn."""
+    global _initialized
+    if _initialized:
+        return
+    _initialized = True
+
+    run_startup_checks()
+    init_buffers()
+    open_all_cameras()
+    start_background_threads()
+
+# Initialize when module is loaded (covers gunicorn import)
+ensure_initialized()
+
+
+# === MAIN (direct execution fallback) ===
+
+if __name__ == '__main__':
     try:
         app.run(host='0.0.0.0', port=API_PORT, threaded=True)
     except KeyboardInterrupt:
