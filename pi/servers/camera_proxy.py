@@ -10,6 +10,11 @@ Key insight: Pi 4's VL805 USB controller chokes on 3 concurrent reads but
 handles 2 fine. Keeping the 3rd camera open (but not reading) avoids the
 1.2s sensor warmup penalty that would come from closing/reopening.
 
+Idle mode: When no stream clients are connected and no capture is pending,
+the reader loop sleeps instead of reading. Cameras stay open (no warmup
+penalty on resume) but USB controller and MJPEG encoder are idle, reducing
+wear. First frame after waking is available in ~100-200ms.
+
 Raw buffer: ~647KB-1.1MB per frame (no decode), used for captures
 Preview buffer: decoded + resized to 640x480, used for MJPEG streams
 
@@ -82,7 +87,17 @@ STALE_FRAME_THRESHOLD_SEC = 3
 HEARTBEAT_INTERVAL_SEC = 300
 RECONNECT_INTERVAL_SEC = 5
 
+# Idle mode settings
+IDLE_CHECK_INTERVAL_SEC = 0.5   # How often to check for wake conditions while idle
+CAPTURE_WAKE_TIMEOUT_SEC = 2.0  # Max time to wait for fresh frame after wake
+
 API_PORT = 8080
+
+
+# === IDLE MODE STATE ===
+
+_capture_requested = threading.Event()  # Set by capture endpoints to wake reader
+_reader_idle = False                     # True when reader loop is sleeping
 
 
 # === FRAME BUFFERS ===
@@ -303,6 +318,35 @@ def reconnect_camera(name):
     return False
 
 
+# === IDLE MODE HELPERS ===
+
+def _has_active_demand():
+    """Check if any stream clients are connected or a capture is pending."""
+    if _capture_requested.is_set():
+        return True
+    return any(buf.stream_clients > 0 for buf in buffers.values())
+
+
+def _wait_for_fresh_frame(camera_name, timeout=CAPTURE_WAKE_TIMEOUT_SEC):
+    """Wait for a fresh frame after waking from idle. Returns True if got one."""
+    buf = buffers.get(camera_name)
+    if not buf:
+        return False
+
+    start = time.time()
+    initial_count = buf.frame_count
+
+    # Signal the reader to wake up
+    _capture_requested.set()
+
+    while time.time() - start < timeout:
+        if buf.frame_count > initial_count:
+            return True
+        time.sleep(0.05)
+
+    return False
+
+
 # === MAIN READER LOOP ===
 
 def reader_loop():
@@ -311,10 +355,16 @@ def reader_loop():
     Only reads from 2 at a time (rotating pairs) to stay within
     USB controller bandwidth. Single thread, no contention.
 
+    When no stream clients are connected and no capture is pending,
+    the reader enters idle mode — cameras stay open but no reads
+    occur. This reduces USB controller wear and CPU usage.
+
     Pi 4's VL805 USB controller gets select() timeouts when 3
     cameras do concurrent reads, but handles 2 fine. Keeping
     the 3rd open but idle avoids the 1.2s warmup penalty on swap.
     """
+    global _reader_idle
+
     pair_index = 0
     throttle_interval = 1.0 / TARGET_FPS
 
@@ -326,6 +376,24 @@ def reader_loop():
                 if name not in caps:
                     reconnect_camera(name)
             continue
+
+        # === IDLE CHECK ===
+        if not _has_active_demand():
+            if not _reader_idle:
+                log.info('reader', 'Entering idle mode (no clients, no captures)')
+                _reader_idle = True
+
+            # Sleep until something needs us
+            _capture_requested.wait(timeout=IDLE_CHECK_INTERVAL_SEC)
+            continue
+
+        # === WAKING FROM IDLE ===
+        if _reader_idle:
+            log.info('reader', 'Waking from idle')
+            _reader_idle = False
+
+        # Clear capture request flag (reader is now active)
+        _capture_requested.clear()
 
         a_name, b_name = CAMERA_PAIRS[pair_index % len(CAMERA_PAIRS)]
 
@@ -473,6 +541,7 @@ def heartbeat_loop():
         log.info('heartbeat', 'Status',
                 all_connected=all_connected,
                 total_stream_clients=total_clients,
+                reader_idle=_reader_idle,
                 mem_available_mb=mem_mb,
                 cameras=json.dumps(healths))
 
@@ -481,16 +550,23 @@ def heartbeat_loop():
 
 @app.route('/stream/<camera>')
 def stream(camera):
-    """MJPEG preview stream (640x480). Multiple clients supported."""
+    """MJPEG preview stream (640x480). Multiple clients supported.
+    Wakes reader from idle if needed — first frame may take ~100-200ms."""
     buf = buffers.get(camera)
     if not buf:
         return jsonify({'error': f'Unknown camera: {camera}'}), 404
 
+    # Wake reader if idle (stream_clients increment will keep it awake)
+    if _reader_idle:
+        _capture_requested.set()
+
     if buf.raw_frame is None:
-        return jsonify({
-            'error': f'Camera {camera} not yet available',
-            'last_error': buf.last_error
-        }), 503
+        # If we just woke from idle, give reader a moment to get a frame
+        if not _wait_for_fresh_frame(camera, timeout=3.0):
+            return jsonify({
+                'error': f'Camera {camera} not yet available',
+                'last_error': buf.last_error
+            }), 503
 
     return Response(
         buf.generate_stream(),
@@ -500,16 +576,30 @@ def stream(camera):
 
 @app.route('/capture/<camera>')
 def capture(camera):
-    """Return latest full-res raw JPEG for a single camera."""
+    """Return latest full-res raw JPEG for a single camera.
+    Wakes reader from idle if needed."""
     buf = buffers.get(camera)
     if not buf:
         return jsonify({'error': f'Unknown camera: {camera}'}), 404
 
+    # If reader is idle or frame is stale, wake and wait for fresh frame
     raw, timestamp = buf.get_raw_frame()
+    frame_age = (time.time() - timestamp) if timestamp > 0 else float('inf')
+
+    if raw is None or frame_age > STALE_FRAME_THRESHOLD_SEC:
+        if not _wait_for_fresh_frame(camera):
+            if raw is None:
+                log.warn(f'capture:{camera}', 'No frame available after wake',
+                        last_error=buf.last_error)
+                return jsonify({
+                    'error': f'No frame available for {camera}',
+                    'last_error': buf.last_error
+                }), 503
+
+        # Re-read after wake
+        raw, timestamp = buf.get_raw_frame()
 
     if raw is None:
-        log.warn(f'capture:{camera}', 'No frame available',
-                last_error=buf.last_error)
         return jsonify({
             'error': f'No frame available for {camera}',
             'last_error': buf.last_error
@@ -545,15 +635,27 @@ def capture_default():
 
 @app.route('/capture/all', methods=['POST'])
 def capture_all_cameras():
-    """Capture from all 3 cameras, save to /tmp, return file paths."""
+    """Capture from all 3 cameras, save to /tmp, return file paths.
+    Wakes reader from idle if needed."""
     data = request.get_json(silent=True) or {}
     prefix = data.get('prefix', 'capture')
+
+    # Wake reader and wait for fresh frames if idle
+    if _reader_idle:
+        _capture_requested.set()
+        # Give reader time to cycle through at least one full pair rotation
+        time.sleep(0.5)
 
     results = {}
     all_ok = True
 
     for name, buf in buffers.items():
         raw, timestamp = buf.get_raw_frame()
+
+        # If stale, wait for a fresh frame
+        if raw is not None and (time.time() - timestamp) > STALE_FRAME_THRESHOLD_SEC:
+            _wait_for_fresh_frame(name)
+            raw, timestamp = buf.get_raw_frame()
 
         if raw is None:
             results[name] = {
@@ -628,8 +730,12 @@ def status():
     else:
         overall = 'error'
 
+    total_clients = sum(c['stream_clients'] for c in cameras.values())
+
     return jsonify({
         'status': overall,
+        'reader_idle': _reader_idle,
+        'active_stream_clients': total_clients,
         'cameras': cameras,
         'timestamp': time.time(),
     })
@@ -704,6 +810,11 @@ def get_settings():
 @app.route('/capture/test')
 def capture_test():
     """Capture test shots from all cameras (legacy compat)."""
+    # Wake reader if idle
+    if _reader_idle:
+        _capture_requested.set()
+        time.sleep(0.5)
+
     results = []
     for name, buf in buffers.items():
         raw, timestamp = buf.get_raw_frame()
@@ -740,7 +851,8 @@ def run_startup_checks():
             target_fps=TARGET_FPS,
             frames_per_pair=FRAMES_PER_PAIR,
             stale_threshold=STALE_FRAME_THRESHOLD_SEC,
-            heartbeat_interval=HEARTBEAT_INTERVAL_SEC)
+            heartbeat_interval=HEARTBEAT_INTERVAL_SEC,
+            idle_mode='enabled')
 
     # System info
     try:
@@ -789,7 +901,7 @@ def run_startup_checks():
     else:
         log.warn('startup', 'Some cameras not ready — starting anyway')
 
-    log.info('startup', 'Strategy: all 3 open, read 2 at a time (pair rotation)')
+    log.info('startup', 'Strategy: all 3 open, read 2 at a time (pair rotation), idle when no clients')
     log.info('startup', 'Server listening', host='0.0.0.0', port=API_PORT)
     log.info('startup', '=' * 50)
 
