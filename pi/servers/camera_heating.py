@@ -15,7 +15,15 @@ Sensor filtering:
   - Rejects spikes >10°F change per read cycle (EMI noise)
   - Requires 3 consecutive agreeing reads before acting on large changes
 
-Remote Override API:
+Shared state file:
+  The control loop writes a JSON snapshot to /tmp/heater_state.json after every
+  iteration. This is the primary interface for local consumers like the status
+  display — a simple file read on tmpfs is sub-millisecond, avoids 1-wire bus
+  contention from multiple processes reading sensors, and avoids spawning curl
+  subprocesses for HTTP. The write is atomic (temp file + os.replace) so readers
+  never see a partial file.
+
+Remote Override API (for remote/network consumers):
   GET  http://pi-ip:5002/status        - All heater/sensor states
   POST http://pi-ip:5002/override      - Force heater on/off
        Body: {"camera": "camera1", "state": "on"|"off"|"auto"}
@@ -37,6 +45,7 @@ import time
 import sys
 import os
 import json
+import tempfile
 import threading
 from datetime import datetime, timedelta
 from collections import deque
@@ -62,6 +71,11 @@ CONFIRM_READS = 3        # Consecutive agreeing reads required after a rejected 
 
 # Failsafe behavior
 FAILSAFE_COLD_THRESHOLD = 50.0  # Only failsafe-ON if last known temp was below this
+
+# Shared state file path. Written atomically each control loop iteration so
+# local consumers (display, diagnostics) can read heater state and filtered
+# temps without HTTP or direct sensor access. Lives on tmpfs so it's RAM-backed.
+SHARED_STATE_FILE = '/tmp/heater_state.json'
 
 CAMERAS = {
     'camera1': {
@@ -148,13 +162,16 @@ def filter_temp(name, raw_temp):
     temp, it's likely EMI noise. We reject it and require CONFIRM_READS
     consecutive readings near the new value before accepting it.
     This prevents single-read glitches from triggering heater changes.
+
+    A transient None (hardware read failure) does not reset spike tracking.
+    This lets a sensor with intermittent failures still confirm legitimate
+    large temperature changes without starting over each time.
     """
     s = state[name]
 
     if raw_temp is None:
-        # Do NOT reset spike tracking on transient read failures.
-        # Just report no valid reading; spike confirmation will continue
-        # on the next successful read.
+        # Don't reset spike tracking on transient read failures.
+        # Spike confirmation will continue on the next successful read.
         return None
 
     last = s['last_good_temp']
@@ -196,6 +213,61 @@ def filter_temp(name, raw_temp):
                          f'Rejected {s["rejected_spike_count"]} spikes total',
                          last_good=last, spike_value=raw_temp)
             return None
+
+
+# === SHARED STATE FILE ===
+
+def write_shared_state():
+    """Write current heater/temp state to a JSON file on tmpfs.
+
+    This is the primary data source for the status display and any other
+    local process that needs heater state or filtered temps. By reading
+    this file instead of the 1-wire bus or the Flask API, consumers get:
+
+      - Sub-millisecond reads (just open + read on tmpfs)
+      - Filtered, validated temps (spike-rejected, bogus-read-rejected)
+      - No 1-wire bus contention (only this service touches the sensors)
+      - No subprocess overhead (no fork+exec for curl)
+
+    The write is atomic: json.dump to a temp file in /tmp, then os.replace()
+    to the final path. Since both are on tmpfs (same filesystem), the replace
+    is a single inode swap — readers never see partial or empty content.
+
+    Includes a unix timestamp so consumers can detect staleness if this
+    service dies or hangs.
+    """
+    snapshot = {
+        'timestamp': time.time(),
+        'thresholds': {
+            'on_below': TURN_ON_BELOW,
+            'off_above': TURN_OFF_ABOVE,
+        },
+        'cameras': {},
+    }
+
+    for name, s in state.items():
+        snapshot['cameras'][name] = {
+            'temp_f': s['temp_f'],
+            'last_good_temp': s['last_good_temp'],
+            'heater_on': s['heater_on'],
+            'failsafe': s['failsafe_on'],
+            'override': s['override'],
+            'fail_count': s['fail_count'],
+        }
+
+    tmp_path = None
+    try:
+        tmp_fd, tmp_path = tempfile.mkstemp(dir='/tmp', suffix='.json', prefix='.heater_')
+        with os.fdopen(tmp_fd, 'w') as f:
+            json.dump(snapshot, f)
+        os.replace(tmp_path, SHARED_STATE_FILE)
+    except Exception as e:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        log.warn('shared_state', 'Failed to write state file', error=str(e))
 
 
 # === HEATER CONTROL ===
@@ -290,7 +362,7 @@ def control_loop():
                                     last_good_temp=last_temp)
                         s['failsafe_on'] = True
                         s['failsafe_since'] = datetime.now()
-                        # Don't turn heater on
+
                     else:
                         # Last known temp was cold (or unknown) — heat to be safe
                         log.error(f'failsafe:{name}',
@@ -317,6 +389,11 @@ def control_loop():
                     log.warn(f'sensor:{name}',
                              f'Sensor read failed ({s["fail_count"]} consecutive)',
                              last_good_temp=s['last_good_temp'])
+
+        # Publish state snapshot for local consumers (display, diagnostics).
+        # This is the only place state leaves this process locally — everything
+        # else goes through the Flask API for remote consumers.
+        write_shared_state()
 
         # --- Heartbeat ---
         if now - last_heartbeat >= HEARTBEAT_INTERVAL:
@@ -346,7 +423,12 @@ def _failsafe_minutes(s):
 
 # === OVERRIDE API ===
 def start_api():
-    """Simple Flask API for remote heater control."""
+    """Flask API for remote heater control.
+
+    This API is for remote/network consumers (dashboards, CLI tools, etc).
+    Local consumers on the Pi should read SHARED_STATE_FILE instead — it's
+    faster, has no HTTP overhead, and doesn't require the API to be healthy.
+    """
     from flask import Flask, jsonify, request
     app = Flask(__name__)
     CORS(app)
@@ -410,7 +492,8 @@ def startup_check():
              check_interval=CHECK_INTERVAL,
              fail_threshold=FAIL_THRESHOLD,
              spike_threshold=SPIKE_THRESHOLD_F,
-             failsafe_cold_threshold=FAILSAFE_COLD_THRESHOLD)
+             failsafe_cold_threshold=FAILSAFE_COLD_THRESHOLD,
+             shared_state_file=SHARED_STATE_FILE)
 
     all_ok = True
     for name, cfg in CAMERAS.items():
@@ -447,6 +530,9 @@ def startup_check():
         log.warn('startup', 'Some systems failed — starting anyway')
 
     log_history('system', 'startup', all_ok=all_ok)
+
+    # Write initial state so the display has data immediately on boot
+    write_shared_state()
 
 
 # === MAIN ===
