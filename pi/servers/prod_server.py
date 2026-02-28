@@ -1103,6 +1103,144 @@ def test_connectivity():
     return jsonify(results)
 
 
+"""
+Add these routes to prod_server.py (in the ROUTES section, before STARTUP).
+
+Proxies debug images from EC2 so the frontend doesn't need direct EC2 access.
+"""
+
+
+@app.route('/debug/<serial_id>/<view>')
+def proxy_debug_image(serial_id, view):
+    """
+    Proxy a debug image from EC2.
+    
+    The EC2 API stores debug images (measurement overlays) after grading.
+    Frontend can't reach EC2 directly, so this fetches and passes through.
+    
+    GET /debug/{serial_id}/{view}  ->  EC2 GET /debug/{serial_id}/{view}
+    
+    Returns: JPEG image or error JSON
+    """
+    if view not in ('side', 'top', 'front'):
+        return jsonify({
+            'status': 'error',
+            'error_code': 'INVALID_VIEW',
+            'message': 'view must be one of: side, top, front'
+        }), 400
+
+    # Sanitize serial_id same as /grade does
+    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', serial_id.strip())
+    if not sanitized or len(sanitized) > MAX_SERIAL_ID_LEN:
+        return jsonify({
+            'status': 'error',
+            'error_code': 'INVALID_SERIAL_ID',
+            'message': 'serial_id must be alphanumeric, max 50 chars'
+        }), 400
+
+    try:
+        resp = requests.get(
+            f'{EC2_API}/debug/{sanitized}/{view}',
+            timeout=REQUEST_TIMEOUT_SEC
+        )
+
+        if resp.status_code == 200:
+            from flask import Response
+            return Response(
+                resp.content,
+                mimetype='image/jpeg',
+                headers={'Content-Disposition': f'inline; filename={sanitized}_{view}_debug.jpg'}
+            )
+        elif resp.status_code == 404:
+            return jsonify({
+                'status': 'error',
+                'error_code': 'NOT_FOUND',
+                'message': f'No debug image for {sanitized}/{view}'
+            }), 404
+        else:
+            return jsonify({
+                'status': 'error',
+                'error_code': 'EC2_ERROR',
+                'message': f'EC2 returned {resp.status_code}'
+            }), 502
+
+    except requests.exceptions.ConnectionError:
+        return jsonify({
+            'status': 'error',
+            'error_code': 'EC2_UNREACHABLE',
+            'message': 'Cannot reach EC2 API',
+            'fix': 'Check EC2 container is running'
+        }), 502
+
+    except Exception as e:
+        log.exception('debug_proxy', 'Failed to fetch debug image',
+                     serial_id=sanitized, view=view, error=str(e))
+        return jsonify({
+            'status': 'error',
+            'error_code': 'INTERNAL_ERROR',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/debug/<serial_id>')
+def proxy_debug_list(serial_id):
+    """
+    Proxy the debug image listing from EC2.
+    
+    GET /debug/{serial_id}  ->  EC2 GET /debug/{serial_id}
+    
+    Returns: { serial_id, debug_images: [{view, url, filename}], count }
+    """
+    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', serial_id.strip())
+    if not sanitized or len(sanitized) > MAX_SERIAL_ID_LEN:
+        return jsonify({
+            'status': 'error',
+            'error_code': 'INVALID_SERIAL_ID',
+            'message': 'serial_id must be alphanumeric, max 50 chars'
+        }), 400
+
+    try:
+        resp = requests.get(
+            f'{EC2_API}/debug/{sanitized}',
+            timeout=REQUEST_TIMEOUT_SEC
+        )
+
+        if resp.status_code == 200:
+            data = resp.json()
+            # Rewrite URLs to point at this Pi proxy instead of EC2
+            for img in data.get('debug_images', []):
+                img['url'] = f'/debug/{sanitized}/{img["view"]}'
+            return jsonify(data)
+        elif resp.status_code == 404:
+            return jsonify({
+                'status': 'error',
+                'error_code': 'NOT_FOUND',
+                'message': f'No debug images for {sanitized}'
+            }), 404
+        else:
+            return jsonify({
+                'status': 'error',
+                'error_code': 'EC2_ERROR',
+                'message': f'EC2 returned {resp.status_code}'
+            }), 502
+
+    except requests.exceptions.ConnectionError:
+        return jsonify({
+            'status': 'error',
+            'error_code': 'EC2_UNREACHABLE',
+            'message': 'Cannot reach EC2 API'
+        }), 502
+
+    except Exception as e:
+        log.exception('debug_proxy', 'Failed to list debug images',
+                     serial_id=sanitized, error=str(e))
+        return jsonify({
+            'status': 'error',
+            'error_code': 'INTERNAL_ERROR',
+            'message': str(e)
+        }), 500
+
+
 # ============================================================
 # STARTUP
 # ============================================================

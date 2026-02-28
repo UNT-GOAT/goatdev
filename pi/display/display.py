@@ -2,6 +2,15 @@
 GOAT-PI Status Display
 2.4" ILI9341 SPI LCD (240x320)
 
+Reads heater state and filtered temps from the shared state file written by
+camera_heating.py (/tmp/heater_state.json). This avoids HTTP overhead, curl
+subprocess spawning, and 1-wire bus contention that caused spurious sensor
+errors on the display.
+
+Server health checks (prod, proxy, EC2) still use HTTP since those are
+genuine "is this service alive" checks where a network round-trip is the
+point.
+
 Pin wiring:
   VCC  -> Pin 17 (3.3V)
   GND  -> Pin 30 (Ground)
@@ -43,22 +52,27 @@ ROTATION = 0  # 0=portrait, 90/180/270 to rotate
 LOGO_PATH = "/home/pi/goatdev/pi/display/boot_logo.png"
 EC2_API = os.environ.get('EC2_API')
 
-SENSOR_IDS = {    # TODO: reconfirm sensor id's to physical markers on sensors
-    'sensor1': '28-0000006d3eba',
-    'sensor2': '28-0000007047ea',
-    'sensor3': '28-0000007193ed'
-}
+# Path to the shared state file written by camera_heating.py every 2s.
+# Contains filtered temps, heater on/off, failsafe state, overrides.
+HEATER_STATE_FILE = '/tmp/heater_state.json'
 
-HEATER_PINS = {
-    'camera1': 5,
-    'camera2': 6,
-    'camera3': 17,
-}
+# If the shared state file hasn't been updated in this many seconds,
+# consider it stale (heating service may be dead).
+HEATER_STATE_STALE_SEC = 10
 
 CAMERAS = {
     'SIDE': '/dev/camera_side',
     'TOP': '/dev/camera_top',
     'FRONT': '/dev/camera_front',
+}
+
+# Mapping from heating service camera names to display sensor keys.
+# The heating service uses camera1/camera2/camera3; the display shows
+# these as sensor1/sensor2/sensor3 in the temp readout section.
+CAM_TO_SENSOR = {
+    'camera1': 'sensor1',
+    'camera2': 'sensor2',
+    'camera3': 'sensor3',
 }
 
 # === COLORS ===
@@ -104,14 +118,76 @@ def load_font(size):
 
 
 # === SYSTEM CHECKS ===
-def read_temp_f(sensor_id):
-    path = f'/sys/bus/w1/devices/{sensor_id}/temperature'
+
+def read_heater_state():
+    """Read heater state and filtered temps from the shared state file.
+
+    The heating service writes this file atomically every 2 seconds with
+    all camera temps (spike-filtered, bogus-read-rejected), heater on/off
+    states, failsafe states, and overrides.
+
+    Returns a dict with:
+      - 'ok': True if the file was read and is fresh
+      - 'stale': True if the file exists but hasn't been updated recently
+      - 'temps': {sensor_key: temp_f_int or None}
+      - 'any_on', 'any_failsafe', 'any_override': summary booleans
+      - 'details': {camera_name: {on, failsafe, override}} for status text
+
+    If the file doesn't exist or can't be read, returns a default dict
+    with all-unknown state so the display degrades gracefully.
+    """
+    default = {
+        'ok': False,
+        'stale': False,
+        'temps': {s: None for s in CAM_TO_SENSOR.values()},
+        'any_on': False,
+        'any_failsafe': False,
+        'any_override': False,
+        'details': {},
+    }
+
     try:
-        with open(path, 'r') as f:
-            temp_c = int(f.read().strip()) / 1000.0
-            return round(temp_c * 9.0 / 5.0 + 32.0)
-    except Exception:
-        return None
+        with open(HEATER_STATE_FILE, 'r') as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return default
+
+    # Check freshness — if the heating service is dead, the file goes stale
+    file_age = time.time() - data.get('timestamp', 0)
+    is_stale = file_age > HEATER_STATE_STALE_SEC
+
+    cameras = data.get('cameras', {})
+
+    # Extract filtered temps, falling back to last_good_temp so the display
+    # doesn't flash errors during transient sensor hiccups
+    temps = {}
+    for cam_name, sensor_key in CAM_TO_SENSOR.items():
+        cam = cameras.get(cam_name, {})
+        temp = cam.get('temp_f')
+        if temp is not None:
+            temps[sensor_key] = round(temp)
+        else:
+            fallback = cam.get('last_good_temp')
+            temps[sensor_key] = round(fallback) if fallback is not None else None
+
+    # Build detail dict for status text rendering
+    details = {}
+    for cam_name, cam in cameras.items():
+        details[cam_name] = {
+            'on': cam.get('heater_on', False),
+            'failsafe': cam.get('failsafe', False),
+            'override': cam.get('override', 'auto'),
+        }
+
+    return {
+        'ok': not is_stale,
+        'stale': is_stale,
+        'temps': temps,
+        'any_on': any(c.get('heater_on') for c in cameras.values()),
+        'any_failsafe': any(c.get('failsafe') for c in cameras.values()),
+        'any_override': any(c.get('override') != 'auto' for c in cameras.values()),
+        'details': details,
+    }
 
 
 def check_cameras():
@@ -168,41 +244,6 @@ def check_servers():
         'CAM_PROXY': _curl_ok('http://localhost:8080/status'),
         'EC2': _curl_ok(f'{EC2_API}/health', timeout=6),
     }
-
-
-def check_heater_status():
-    """Check heater API for detailed state. Falls back to GPIO check."""
-    try:
-        result = subprocess.run(
-            ['curl', '-sf', '-m', '2', 'http://localhost:5002/status'],
-            capture_output=True, text=True, timeout=5
-        )
-        if result.returncode == 0:
-            data = json.loads(result.stdout)
-            cameras = data.get('cameras', {})
-            return {
-                'any_on': any(c.get('heater_on') for c in cameras.values()),
-                'any_failsafe': any(c.get('failsafe') for c in cameras.values()),
-                'any_override': any(c.get('override') != 'auto' for c in cameras.values()),
-                'details': {name: {
-                    'on': c.get('heater_on', False),
-                    'failsafe': c.get('failsafe', False),
-                    'override': c.get('override', 'auto'),
-                } for name, c in cameras.items()},
-            }
-    except Exception:
-        pass
-
-    # Fallback: direct GPIO check
-    any_on = False
-    for pin in HEATER_PINS.values():
-        try:
-            with open(f'/sys/class/gpio/gpio{pin}/value', 'r') as f:
-                if f.read().strip() == '1':
-                    any_on = True
-        except Exception:
-            pass
-    return {'any_on': any_on, 'any_failsafe': False, 'any_override': False, 'details': {}}
 
 
 # === DRAWING HELPERS ===
@@ -308,46 +349,48 @@ def show_boot(disp):
 
 # === STATUS SCREEN ===
 def draw_status(disp, font_big, font_med, font_sm, font_xs):
-    """Main status loop."""
+    """Main status loop.
+
+    Uses two check intervals:
+      - Fast (0.25s): camera device checks + heater state file read.
+        The file read is sub-millisecond on tmpfs — no network, no subprocess.
+      - Slow (5s): server health checks (HTTP), wifi signal strength.
+        These spawn curl subprocesses so we don't want them every quarter second.
+    """
     slow_interval = 5
     fast_interval = 0.25
     last_slow = 0
     last_fast = 0
     frame_count = 0
-    temps_last_good_time = {k: 0 for k in SENSOR_IDS}
 
     # Cached state
     wifi = 0
     server_status = {'PROD': False, 'CAM_PROXY': False, 'EC2': False}
     cam_status = {name: 'MISSING' for name in CAMERAS}
-    heater_status = {'any_on': False, 'any_failsafe': False, 'any_override': False, 'details': {}}
-    temps = {k: None for k in SENSOR_IDS}
+    heater_state = {
+        'ok': False, 'stale': False,
+        'temps': {s: None for s in CAM_TO_SENSOR.values()},
+        'any_on': False, 'any_failsafe': False, 'any_override': False,
+        'details': {},
+    }
 
     while True:
         now = time.time()
 
-        # Fast checks every .25 second
+        # Fast checks every .25 second — all local, no network
         if now - last_fast >= fast_interval:
             cam_status = check_cameras()
-            heater_status = check_heater_status()
-            for name, sid in SENSOR_IDS.items():
-                reading = read_temp_f(sid)
-                if reading is not None:
-                    temps[name] = reading
-                    temps_last_good_time[name] = now
-                elif now - temps_last_good_time.get(name, 0) > 3:
-                    temps[name] = None
-
-            # Update last_fast so the interval actually works.
-            # Previously this was never set, so fast checks ran every
-            # loop iteration (~1s from sleep at bottom) instead of 0.25s.
+            heater_state = read_heater_state()
             last_fast = now
 
-        # Slow checks every 5 seconds
+        # Slow checks every 5 seconds — network calls
         if now - last_slow >= slow_interval:
             wifi = check_network()
             server_status = check_servers()
             last_slow = now
+
+        # Pull temps from heater state for convenience
+        temps = heater_state['temps']
 
         # Determine colors
         all_servers = all(server_status.values())
@@ -369,11 +412,13 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             camera_color = RED
 
         temps_all_ok = all(t is not None for t in temps.values())
-        if heater_status['any_failsafe']:
+        if heater_state['stale']:
+            temp_color = RED
+        elif heater_state['any_failsafe']:
             temp_color = RED
         elif not temps_all_ok:
             temp_color = RED
-        elif heater_status['any_on']:
+        elif heater_state['any_on']:
             temp_color = ORANGE
         else:
             temp_color = GREEN
@@ -416,7 +461,6 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             cam_proxy_up = server_status.get('CAM_PROXY', False)
 
             if not cam_proxy_up:
-                # Same style as SERVERS when something is down
                 down_display = ["CAM_PROXY"]
                 line = "DOWN: " + ", ".join(down_display)
                 if draw.textlength(line, font=font_xs) > SCREEN_W - 28:
@@ -441,23 +485,27 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             y = 166
             draw.text((12, y), "TEMPS", font=font_big, fill=WHITE)
             draw_dot(draw, SCREEN_W - 26, y + 18, temp_color)
-            if heater_status['any_failsafe']:
-                fs = [k for k, v in heater_status['details'].items() if v.get('failsafe')]
+
+            if heater_state['stale']:
+                # Heating service hasn't updated the state file recently
+                draw.text((14, y + 34), "HEATER SVC STALE", font=font_xs, fill=RED)
+            elif heater_state['any_failsafe']:
+                fs = [k for k, v in heater_state['details'].items() if v.get('failsafe')]
                 line = "FAILSAFE: " + ", ".join(fs)
                 if draw.textlength(line, font=font_xs) > SCREEN_W - 28:
                     draw.text((14, y + 34), "FAILSAFE:", font=font_xs, fill=RED)
                     draw.text((14, y + 46), ", ".join(fs), font=font_xs, fill=RED)
                 else:
                     draw.text((14, y + 34), line, font=font_xs, fill=RED)
-            elif heater_status['any_override']:
-                ov = [k for k, v in heater_status['details'].items() if v.get('override') != 'auto']
+            elif heater_state['any_override']:
+                ov = [k for k, v in heater_state['details'].items() if v.get('override') != 'auto']
                 line = "OVERRIDE: " + ", ".join(ov)
                 if draw.textlength(line, font=font_xs) > SCREEN_W - 28:
                     draw.text((14, y + 34), "OVERRIDE:", font=font_xs, fill=ORANGE)
                     draw.text((14, y + 46), ", ".join(ov), font=font_xs, fill=ORANGE)
                 else:
                     draw.text((14, y + 34), line, font=font_xs, fill=ORANGE)
-            elif heater_status['any_on']:
+            elif heater_state['any_on']:
                 draw.text((14, y + 34), "HEATERS ON", font=font_xs, fill=ORANGE)
             elif not temps_all_ok:
                 missing = [k for k, v in temps.items() if v is None]
