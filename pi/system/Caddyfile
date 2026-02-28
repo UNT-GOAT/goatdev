@@ -1,17 +1,49 @@
 :8443 {
-	handle_path /api/capture/* {
-		reverse_proxy 127.0.0.1:5001
-	}
 
-	handle_path /api/heater/* {
-		reverse_proxy 127.0.0.1:5002
-	}
+    # --- Training / Capture (port 5001) ---
+    handle_path /api/capture/* {
+    	reverse_proxy 127.0.0.1:5001
+    }
 
-	handle_path /api/viewfocus/* {
-		reverse_proxy 127.0.0.1:8080
-	}
+    # --- Heater Control (port 5002) ---
+    handle_path /api/heater/* {
+    	reverse_proxy 127.0.0.1:5002
+    }
 
-	handle {
-		reverse_proxy 127.0.0.1:5001
-	}
+    # --- Camera Proxy (port 8080) ---
+    # MJPEG streams, focus control, test captures
+    handle_path /api/viewfocus/* {
+    	reverse_proxy 127.0.0.1:8080
+    }
+
+    # --- Prod Server (port 5000) ---
+    # Grading pipeline, status polling, debug image proxy.
+    #
+    # Frontend hits:
+    #   POST /api/prod/grade              → start capture + grade
+    #   GET  /api/prod/status             → poll for progress / result
+    #   GET  /api/prod/health             → quick health check
+    #   GET  /api/prod/diagnostics        → detailed system diagnostics
+    #   GET  /api/prod/debug/{id}/{view}  → debug images (proxied from EC2)
+    #   POST /api/prod/cancel             → emergency cancel
+    #   GET  /api/prod/test               → connectivity test
+    #
+    # handle_path strips "/api/prod" before forwarding, so the prod
+    # server's routes stay clean (/grade, /status, /debug/..., etc).
+    handle_path /api/prod/* {
+    	reverse_proxy 127.0.0.1:5000
+    }
+
+    # --- Fallback ---
+    # Anything that doesn't match above goes to training server.
+    # In prod, you'd change this to serve your frontend static files:
+    #   handle {
+    #       root * /home/pi/prod-frontend
+    #       try_files {path} /index.html
+    #       file_server
+    #   }
+    handle {
+    	reverse_proxy 127.0.0.1:5001
+    }
+
 }
