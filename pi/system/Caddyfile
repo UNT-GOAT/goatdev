@@ -2,8 +2,6 @@
 tls {
 get_certificate tailscale
 }
-header Access-Control-Allow-Origin "https://herd-sync.com"
-header Access-Control-Allow-Headers "Authorization, Content-Type"
 @options method OPTIONS
 handle @options {
 header Access-Control-Allow-Origin "https://herd-sync.com"
@@ -53,8 +51,6 @@ reverse_proxy 127.0.0.1:5001
 }
 
 :8444 {
-header Access-Control-Allow-Origin "https://herd-sync.com"
-header Access-Control-Allow-Headers "Authorization, Content-Type"
 @options method OPTIONS
 handle @options {
 header Access-Control-Allow-Origin "https://herd-sync.com"
