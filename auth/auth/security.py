@@ -22,8 +22,8 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 
-import jwt
-from passlib.context import CryptContext
+import jwt # type: ignore
+from passlib.context import CryptContext # type: ignore
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
