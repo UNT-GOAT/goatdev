@@ -7,8 +7,8 @@
       content="width=device-width, initial-scale=1.0, user-scalable=no"
     />
     <title>View Focus | HerdSync</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.19.0/js/md5.min.js"></script>
     <script src="/config.js"></script>
+    <script src="/auth/auth.js"></script>
     <style>
       * {
         box-sizing: border-box;
@@ -25,41 +25,6 @@
         justify-content: center;
         align-items: flex-start;
         padding: 20px;
-      }
-      #login {
-        text-align: center;
-        padding: 20px;
-        margin-top: 20vh;
-      }
-      #login h1 {
-        font-size: 24px;
-        margin-bottom: 8px;
-        color: #eee;
-      }
-      #login .subtitle {
-        font-size: 13px;
-        color: #555;
-        margin-bottom: 30px;
-      }
-      #login input {
-        padding: 15px 20px;
-        font-size: 18px;
-        border: none;
-        border-radius: 10px;
-        width: 250px;
-        margin-bottom: 15px;
-      }
-      #login button {
-        padding: 15px 40px;
-        font-size: 18px;
-        background: #4caf50;
-        color: white;
-        border: none;
-        border-radius: 10px;
-        cursor: pointer;
-      }
-      #login button:hover {
-        background: #45a049;
       }
       .nav {
         position: fixed;
@@ -109,6 +74,10 @@
         display: flex;
         align-items: center;
         gap: 12px;
+      }
+      .nav-user {
+        font-size: 11px;
+        color: #555;
       }
       .connection {
         font-size: 11px;
@@ -366,17 +335,6 @@
     </style>
   </head>
   <body>
-    <div id="login">
-      <h1>HerdSync</h1>
-      <div class="subtitle">Setup &amp; Capture</div>
-      <input
-        type="password"
-        id="pw"
-        placeholder="Password"
-        onkeypress="if (event.key === 'Enter') checkPw();"
-      />
-      <br /><button onclick="checkPw()">Enter</button>
-    </div>
     <div id="app">
       <nav class="nav">
         <div class="nav-left">
@@ -392,7 +350,8 @@
             <div class="dot" id="connDot"></div>
             <span id="connLabel">Connecting...</span>
           </div>
-          <button class="logout-btn" onclick="logout()">Logout</button>
+          <span class="nav-user" id="navUser"></span>
+          <button class="logout-btn" onclick="HerdAuth.logout()">Logout</button>
         </div>
       </nav>
       <div class="page-title">Camera View Focus Tool</div>
@@ -417,21 +376,10 @@
       const CAMERAS = ["side", "top", "front"];
       let afState = { side: false, top: false, front: false };
 
-      function checkPw() {
-        if (md5(document.getElementById("pw").value) === CONFIG.PASS_HASH) {
-          localStorage.setItem("auth", "true");
-          showApp();
-        } else {
-          alert("Wrong password");
-        }
-      }
-      function logout() {
-        localStorage.removeItem("auth");
-        location.reload();
-      }
-      function showApp() {
-        document.getElementById("login").style.display = "none";
+      function showApp(user) {
         document.getElementById("app").style.display = "block";
+        document.getElementById("navUser").textContent =
+          user.username + " (" + user.role + ")";
         buildGrid();
         checkConnection();
         loadSettings();
@@ -475,9 +423,12 @@
         const dot = document.getElementById("connDot");
         const label = document.getElementById("connLabel");
         try {
-          const res = await fetch(CONFIG.API_BASE + "/api/viewfocus/settings", {
-            mode: "cors",
-          });
+          const res = await HerdAuth.fetch(
+            CONFIG.API_BASE + "/api/viewfocus/settings",
+            {
+              mode: "cors",
+            },
+          );
           if (res.ok) {
             dot.className = "dot ok";
             label.textContent = "Connected";
@@ -511,7 +462,7 @@
       async function setFocus(cam, val) {
         document.getElementById("fval-" + cam).textContent = val;
         try {
-          const res = await fetch(
+          const res = await HerdAuth.fetch(
             `${CONFIG.API_BASE}/api/viewfocus/focus/${cam}/${val}`,
           );
           document.getElementById("fmsg-" + cam).textContent = await res.text();
@@ -522,7 +473,7 @@
       }
       async function setAF(cam, on) {
         try {
-          const res = await fetch(
+          const res = await HerdAuth.fetch(
             `${CONFIG.API_BASE}/api/viewfocus/autofocus/${cam}/${on ? 1 : 0}`,
           );
           document.getElementById("fmsg-" + cam).textContent = await res.text();
@@ -547,7 +498,7 @@
           );
         });
         try {
-          await fetch(CONFIG.API_BASE + "/api/viewfocus/save", {
+          await HerdAuth.fetch(CONFIG.API_BASE + "/api/viewfocus/save", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(settings),
@@ -559,7 +510,9 @@
       }
       async function loadSettings() {
         try {
-          const res = await fetch(CONFIG.API_BASE + "/api/viewfocus/settings");
+          const res = await HerdAuth.fetch(
+            CONFIG.API_BASE + "/api/viewfocus/settings",
+          );
           const settings = await res.json();
           CAMERAS.forEach((cam) => {
             if (settings[cam] !== undefined) {
@@ -577,7 +530,9 @@
       async function captureAll() {
         showAction("Capturing...");
         try {
-          const res = await fetch(CONFIG.API_BASE + "/api/viewfocus/capture");
+          const res = await HerdAuth.fetch(
+            CONFIG.API_BASE + "/api/viewfocus/capture",
+          );
           showAction(await res.text());
         } catch (err) {
           showAction("Capture failed");
@@ -590,7 +545,9 @@
           el.textContent = "";
         }, 5000);
       }
-      if (localStorage.getItem("auth") === "true") showApp();
+
+      // Auth gate
+      HerdAuth.requireAuth().then((user) => showApp(user));
     </script>
   </body>
 </html>
