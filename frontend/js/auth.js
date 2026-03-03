@@ -10,7 +10,7 @@
  *
  * Usage in any page:
  *
- *   <script src="../auth/auth.js"></script>
+ *   <script src="../js/auth.js"></script>
  *   <script>
  *     // At page load — checks auth, shows login if needed
  *     HerdAuth.requireAuth().then(user => {
@@ -44,7 +44,7 @@ const HerdAuth = (() => {
     // ==========================================================================
 
     // Auth API is on CloudFront (routed to EC2:8001)
-    const AUTH_BASE = 'https://dqh1843col5pu.cloudfront.net';
+    const AUTH_BASE = '';
 
     // How many seconds before expiry to trigger a refresh
     const REFRESH_BUFFER_SEC = 120; // 2 minutes before expiry
