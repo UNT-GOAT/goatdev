@@ -80,7 +80,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: us-east-2
         run: |
-          aws s3 sync frontend/ s3://goat-web-937249941844/
+          aws s3 sync frontend/prod/ s3://goat-web-937249941844/
           echo "Prod UI deployed"
 
       - name: Invalidate CloudFront
