@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prod Integration Example | HerdSync</title>
     <script src="config.js"></script>
+    <script src="/js/auth.js"></script>
     <style>
       body {
         font-family: monospace;
@@ -18,6 +19,35 @@
         color: #4caf50;
         font-size: 18px;
         margin-bottom: 4px;
+      }
+      .header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 4px;
+      }
+      .header-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .nav-user {
+        font-size: 11px;
+        color: #555;
+      }
+      .logout-btn {
+        background: none;
+        border: 1px solid #333;
+        color: #666;
+        padding: 4px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: monospace;
+        font-size: 12px;
+      }
+      .logout-btn:hover {
+        border-color: #666;
+        color: #888;
       }
       .note {
         color: #666;
@@ -203,164 +233,178 @@
         object-fit: contain;
         display: block;
       }
+
+      #app {
+        display: none;
+      }
     </style>
   </head>
   <body>
-    <h1>Prod Integration Example</h1>
-    <p class="note">
-      Reference implementation — camera streams, grade submission, status
-      polling, debug images.<br />
-      All requests go to the Pi. The Pi captures images and forwards to EC2
-      internally.<br /><br />
-      <b>Backend services on the Pi used by this page:</b><br />
-      &bull; Camera proxy (port 8080) — MJPEG streams at
-      <code>/api/viewfocus/stream/{cam}</code><br />
-      &bull; Prod server (port 5000) — <code>/api/prod/grade</code>,
-      <code>/api/prod/status</code>, <code>/api/prod/debug/{id}/{view}</code
-      ><br />
-      &bull; Caddy reverse proxy unifies both behind port 8443. It strips the
-      <code>/api/prod</code> prefix before forwarding to port 5000.<br />
-      &bull; See the included <code>Caddyfile</code> under pi/system/ for the
-      full routing config.
-    </p>
+    <div id="app">
+      <div class="header-row">
+        <h1>Prod Integration Example</h1>
+        <div class="header-right">
+          <span class="nav-user" id="navUser"></span>
+          <button class="logout-btn" onclick="HerdAuth.logout()">Logout</button>
+        </div>
+      </div>
+      <p class="note">
+        Reference implementation — camera streams, grade submission, status
+        polling, debug images.<br />
+        All requests go to the Pi. The Pi captures images and forwards to EC2
+        internally.<br /><br />
+        <b>Backend services on the Pi used by this page:</b><br />
+        &bull; Camera proxy (port 8080) — MJPEG streams at
+        <code>/api/viewfocus/stream/{cam}</code><br />
+        &bull; Prod server (port 5000) — <code>/api/prod/grade</code>,
+        <code>/api/prod/status</code>, <code>/api/prod/debug/{id}/{view}</code
+        ><br />
+        &bull; Caddy reverse proxy unifies both behind port 8443. It strips the
+        <code>/api/prod</code> prefix before forwarding to port 5000.<br />
+        &bull; See the included <code>Caddyfile</code> under pi/system/ for the
+        full routing config.
+      </p>
 
-    <!--
-  =====================================================================
-  CAMERA STREAMS
-  =====================================================================
--->
-    <h2>Camera Previews</h2>
-    <b>Probably blacked out so you cant spy on me in my apartment for now.</b>
-    <div class="streams">
-      <div class="stream-box">
-        <label>Side</label>
-        <img id="stream-side" src="" alt="side stream" />
+      <!--
+    =====================================================================
+    CAMERA STREAMS
+    =====================================================================
+  -->
+      <h2>Camera Previews</h2>
+      <b>Probably blacked out so you cant spy on me in my apartment for now.</b>
+      <div class="streams">
+        <div class="stream-box">
+          <label>Side</label>
+          <img id="stream-side" src="" alt="side stream" />
+        </div>
+        <div class="stream-box">
+          <label>Top</label>
+          <img id="stream-top" src="" alt="top stream" />
+        </div>
+        <div class="stream-box">
+          <label>Front</label>
+          <img id="stream-front" src="" alt="front stream" />
+        </div>
       </div>
-      <div class="stream-box">
-        <label>Top</label>
-        <img id="stream-top" src="" alt="top stream" />
-      </div>
-      <div class="stream-box">
-        <label>Front</label>
-        <img id="stream-front" src="" alt="front stream" />
-      </div>
-    </div>
 
-    <!--
-  =====================================================================
-  MANUAL UPLOAD (testing only)
-  =====================================================================
-  Temporary section for testing the grading pipeline without live cameras.
-  Upload a JPEG/PNG for each angle. Sends to /api/prod/grade/test which
-  forwards directly to EC2 — no camera capture, no status polling needed.
-  
-  Uses the existing /grade/test endpoint on prod_server.py which accepts
-  multipart form fields: serial_id, live_weight, side_image, top_image, front_image
--->
-    <h2>Manual Upload (Testing)</h2>
-    <div class="upload-section">
-      <div class="upload-note">
-        Upload images manually while cameras aren't setup in MN without actual
-        pics to take. This bypasses the Pi's camera capture and sends your
-        images straight to EC2 for grading. Just using the OG test images for
-        now.
+      <!--
+    =====================================================================
+    MANUAL UPLOAD (testing only)
+    =====================================================================
+  -->
+      <h2>Manual Upload (Testing)</h2>
+      <div class="upload-section">
+        <div class="upload-note">
+          Upload images manually while cameras aren't setup in MN without actual
+          pics to take. This bypasses the Pi's camera capture and sends your
+          images straight to EC2 for grading. Just using the OG test images for
+          now.
+        </div>
+        <div class="form-row" style="margin-bottom: 10px">
+          <input
+            type="text"
+            id="uploadSerialId"
+            placeholder="serial_id (e.g. GOAT001)"
+          />
+          <input
+            type="number"
+            id="uploadLiveWeight"
+            placeholder="live_weight (lbs)"
+            step="0.1"
+          />
+        </div>
+        <div class="upload-row">
+          <div class="upload-box">
+            <label class="title">Side</label>
+            <div class="upload-drop" id="drop-side">
+              <span class="placeholder">click or drop</span>
+              <input
+                type="file"
+                accept="image/*"
+                onchange="handleUpload('side', this)"
+              />
+            </div>
+          </div>
+          <div class="upload-box">
+            <label class="title">Top</label>
+            <div class="upload-drop" id="drop-top">
+              <span class="placeholder">click or drop</span>
+              <input
+                type="file"
+                accept="image/*"
+                onchange="handleUpload('top', this)"
+              />
+            </div>
+          </div>
+          <div class="upload-box">
+            <label class="title">Front</label>
+            <div class="upload-drop" id="drop-front">
+              <span class="placeholder">click or drop</span>
+              <input
+                type="file"
+                accept="image/*"
+                onchange="handleUpload('front', this)"
+              />
+            </div>
+          </div>
+        </div>
+        <div style="margin-top: 12px">
+          <button id="uploadGradeBtn" onclick="startUploadGrade()" disabled>
+            Grade with Uploaded Images
+          </button>
+          <span
+            id="upload-status"
+            style="margin-left: 10px; font-size: 11px; color: #666"
+          ></span>
+        </div>
       </div>
-      <div class="form-row" style="margin-bottom: 10px">
+
+      <!--
+    =====================================================================
+    GRADE FORM (live camera capture)
+    =====================================================================
+  -->
+      <h2>Grade (Live Capture)</h2>
+      <div class="form-row">
         <input
           type="text"
-          id="uploadSerialId"
+          id="serialId"
           placeholder="serial_id (e.g. GOAT001)"
         />
         <input
           type="number"
-          id="uploadLiveWeight"
+          id="liveWeight"
           placeholder="live_weight (lbs)"
           step="0.1"
         />
       </div>
-      <div class="upload-row">
-        <div class="upload-box">
-          <label class="title">Side</label>
-          <div class="upload-drop" id="drop-side">
-            <span class="placeholder">click or drop</span>
-            <input
-              type="file"
-              accept="image/*"
-              onchange="handleUpload('side', this)"
-            />
-          </div>
-        </div>
-        <div class="upload-box">
-          <label class="title">Top</label>
-          <div class="upload-drop" id="drop-top">
-            <span class="placeholder">click or drop</span>
-            <input
-              type="file"
-              accept="image/*"
-              onchange="handleUpload('top', this)"
-            />
-          </div>
-        </div>
-        <div class="upload-box">
-          <label class="title">Front</label>
-          <div class="upload-drop" id="drop-front">
-            <span class="placeholder">click or drop</span>
-            <input
-              type="file"
-              accept="image/*"
-              onchange="handleUpload('front', this)"
-            />
-          </div>
-        </div>
+      <button id="gradeBtn" onclick="startGrade()">Grade</button>
+
+      <!--
+    =====================================================================
+    DEBUG IMAGES (shown after successful grade)
+    =====================================================================
+  -->
+      <div id="debug-section" style="display: none; margin-top: 20px">
+        <button onclick="">View Debug Images</button>
+        <div id="debug-images" class="streams" style="margin-top: 10px"></div>
       </div>
-      <div style="margin-top: 12px">
-        <button id="uploadGradeBtn" onclick="startUploadGrade()" disabled>
-          Grade with Uploaded Images
-        </button>
-        <span
-          id="upload-status"
-          style="margin-left: 10px; font-size: 11px; color: #666"
-        ></span>
-      </div>
-    </div>
 
-    <!--
-  =====================================================================
-  GRADE FORM (live camera capture)
-  =====================================================================
--->
-    <h2>Grade (Live Capture)</h2>
-    <div class="form-row">
-      <input type="text" id="serialId" placeholder="serial_id (e.g. GOAT001)" />
-      <input
-        type="number"
-        id="liveWeight"
-        placeholder="live_weight (lbs)"
-        step="0.1"
-      />
+      <div id="log"></div>
     </div>
-    <button id="gradeBtn" onclick="startGrade()">Grade</button>
-
-    <!--
-  =====================================================================
-  DEBUG IMAGES (shown after successful grade)
-  =====================================================================
--->
-    <div id="debug-section" style="display: none; margin-top: 20px">
-      <button onclick="">View Debug Images</button>
-      <div id="debug-images" class="streams" style="margin-top: 10px"></div>
-    </div>
-
-    <div id="log"></div>
 
     <script>
-      // =====================================================================
-      // STREAMS
-      // =====================================================================
-      ["side", "top", "front"].forEach((cam) => {
-        document.getElementById("stream-" + cam).src =
-          CONFIG.API_BASE + "/api/viewfocus/stream/" + cam;
-      });
+      function showApp(user) {
+        document.getElementById("app").style.display = "block";
+        document.getElementById("navUser").textContent =
+          user.username + " (" + user.role + ")";
+
+        // Start streams
+        ["side", "top", "front"].forEach((cam) => {
+          document.getElementById("stream-" + cam).src =
+            CONFIG.API_BASE + "/api/viewfocus/stream/" + cam;
+        });
+      }
 
       // =====================================================================
       // LOGGING
@@ -392,7 +436,6 @@
 
         uploadedFiles[view] = file;
 
-        // Show preview
         const drop = document.getElementById("drop-" + view);
         const existing = drop.querySelector("img");
         if (existing) existing.remove();
@@ -466,10 +509,13 @@
           formData.append("top_image", uploadedFiles.top);
           formData.append("front_image", uploadedFiles.front);
 
-          const resp = await fetch(CONFIG.API_BASE + "/api/prod/grade/test", {
-            method: "POST",
-            body: formData,
-          });
+          const resp = await HerdAuth.fetch(
+            CONFIG.API_BASE + "/api/prod/grade/test",
+            {
+              method: "POST",
+              body: formData,
+            },
+          );
 
           const body = await resp.json();
 
@@ -484,7 +530,6 @@
             return;
           }
 
-          // /grade/test returns result directly — no polling needed
           log("Grade complete!", "ok");
           log("  Grade:  " + (body.grade || "N/A"), "ok");
           log("  Views OK: " + body.all_views_successful, "info");
@@ -542,14 +587,17 @@
         try {
           log("POST /api/prod/grade ...", "info");
 
-          const resp = await fetch(CONFIG.API_BASE + "/api/prod/grade", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              serial_id: serialId,
-              live_weight: liveWeight,
-            }),
-          });
+          const resp = await HerdAuth.fetch(
+            CONFIG.API_BASE + "/api/prod/grade",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                serial_id: serialId,
+                live_weight: liveWeight,
+              }),
+            },
+          );
 
           const body = await resp.json();
 
@@ -617,7 +665,9 @@
 
           let data;
           try {
-            const resp = await fetch(CONFIG.API_BASE + "/api/prod/status");
+            const resp = await HerdAuth.fetch(
+              CONFIG.API_BASE + "/api/prod/status",
+            );
             data = await resp.json();
           } catch (err) {
             log("Lost connection to Pi, retrying...", "warn");
@@ -688,8 +738,11 @@
           container.appendChild(div);
         });
 
-        log("Debug images loaded — review measurement overlays above", "ok"); //
+        log("Debug images loaded — review measurement overlays above", "ok");
       }
+
+      // Auth gate
+      HerdAuth.requireAuth().then((user) => showApp(user));
     </script>
   </body>
 </html>

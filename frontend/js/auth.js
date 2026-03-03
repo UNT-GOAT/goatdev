@@ -455,4 +455,4 @@ const HerdAuth = (() => {
         getAccessToken,
         isAuthenticated: isAccessTokenValid,
     };
-})();
+})(); //

@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "auth/**"
+      - "js/**"
       - ".github/workflows/deploy-auth.yml"
   workflow_dispatch:
 

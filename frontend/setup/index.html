@@ -7,8 +7,8 @@
       content="width=device-width, initial-scale=1.0, user-scalable=no"
     />
     <title>Capture | HerdSync</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/blueimp-md5/2.19.0/js/md5.min.js"></script>
     <script src="/config.js"></script>
+    <script src="/js/auth.js"></script>
     <style>
       * {
         box-sizing: border-box;
@@ -24,40 +24,6 @@
         display: flex;
         justify-content: center;
         align-items: center;
-      }
-      #login {
-        text-align: center;
-        padding: 20px;
-      }
-      #login h1 {
-        font-size: 24px;
-        margin-bottom: 8px;
-        color: #eee;
-      }
-      #login .subtitle {
-        font-size: 13px;
-        color: #555;
-        margin-bottom: 30px;
-      }
-      #login input {
-        padding: 15px 20px;
-        font-size: 18px;
-        border: none;
-        border-radius: 10px;
-        width: 250px;
-        margin-bottom: 15px;
-      }
-      #login button {
-        padding: 15px 40px;
-        font-size: 18px;
-        background: #4caf50;
-        color: white;
-        border: none;
-        border-radius: 10px;
-        cursor: pointer;
-      }
-      #login button:hover {
-        background: #45a049;
       }
       .nav {
         position: fixed;
@@ -102,6 +68,15 @@
       .nav-links a.active {
         color: #4caf50;
         background: #1a1a2e;
+      }
+      .nav-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .nav-user {
+        font-size: 11px;
+        color: #555;
       }
       .logout-btn {
         background: none;
@@ -346,17 +321,6 @@
     </style>
   </head>
   <body>
-    <div id="login">
-      <h1>HerdSync</h1>
-      <div class="subtitle">Setup &amp; Capture</div>
-      <input
-        type="password"
-        id="pw"
-        placeholder="Password"
-        onkeypress="if (event.key === 'Enter') checkPw();"
-      />
-      <br /><button onclick="checkPw()">Enter</button>
-    </div>
     <div id="app">
       <nav class="nav">
         <div class="nav-left">
@@ -367,14 +331,17 @@
             <a href="view-focus.html">View Focus</a>
           </div>
         </div>
-        <button class="logout-btn" onclick="logout()">Logout</button>
+        <div class="nav-right">
+          <span class="nav-user" id="navUser"></span>
+          <button class="logout-btn" onclick="HerdAuth.logout()">Logout</button>
+        </div>
       </nav>
       <div class="app-layout">
         <div class="control-panel">
           <div class="label">GOAT NUMBER</div>
           <div class="counter" id="counter">...</div>
           <div class="buttons">
-            <div class="warning">⚠️ Only use CAPTURE for real data</div>
+            <div class="warning">Warning: Only use CAPTURE for real data</div>
             <button
               class="record-btn"
               id="recordBtn"
@@ -458,22 +425,11 @@
       function clearLog() {
         document.getElementById("log").innerHTML = "";
       }
-      function checkPw() {
-        if (md5(document.getElementById("pw").value) === CONFIG.PASS_HASH) {
-          localStorage.setItem("auth", "true");
-          showApp();
-        } else {
-          alert("Wrong password");
-        }
-      }
-      function logout() {
-        localStorage.removeItem("auth");
-        location.reload();
-      }
 
-      async function showApp() {
-        document.getElementById("login").style.display = "none";
+      async function showApp(user) {
         document.getElementById("app").style.display = "block";
+        document.getElementById("navUser").textContent =
+          user.username + " (" + user.role + ")";
         log("Initializing...", "info");
         await fetchCurrentCount();
       }
@@ -545,16 +501,19 @@
           const captureId = isMock ? "test_" + Date.now() : goatId;
           let response;
           try {
-            response = await fetch(CONFIG.API_BASE + "/api/capture/record", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                goat_id: captureId,
-                goat_data: formData,
-                is_test: isMock,
-                require_all_cameras: !isMock,
-              }),
-            });
+            response = await HerdAuth.fetch(
+              CONFIG.API_BASE + "/api/capture/record",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  goat_id: captureId,
+                  goat_data: formData,
+                  is_test: isMock,
+                  require_all_cameras: !isMock,
+                }),
+              },
+            );
           } catch (networkErr) {
             throw new Error(
               "Cannot reach Pi server. Check that it is powered on and connected.",
@@ -625,7 +584,9 @@
           await sleep(500);
           let response;
           try {
-            response = await fetch(CONFIG.API_BASE + "/api/capture/status");
+            response = await HerdAuth.fetch(
+              CONFIG.API_BASE + "/api/capture/status",
+            );
           } catch (networkErr) {
             log("Lost connection to Pi...", "warn");
             continue;
@@ -689,7 +650,9 @@
       function sleep(ms) {
         return new Promise((r) => setTimeout(r, ms));
       }
-      if (localStorage.getItem("auth") === "true") showApp(); //
+
+      // Auth gate — show app when authenticated
+      HerdAuth.requireAuth().then((user) => showApp(user));
     </script>
   </body>
 </html>
