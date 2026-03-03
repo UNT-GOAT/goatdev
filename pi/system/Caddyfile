@@ -1,4 +1,6 @@
-{$SITE_DOMAIN} {
+"{$SITE_DOMAIN}" {
+
+    tls internal
 
     # --- Training / Capture (port 5001) ---
     handle_path /api/capture/* {

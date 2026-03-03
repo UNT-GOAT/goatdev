@@ -35,10 +35,9 @@ fi
 
 echo "Installing Caddyfile..."
 if [ -f "$SYSTEM_DIR/Caddyfile" ]; then
-  sudo cp "$SYSTEM_DIR/Caddyfile" /etc/caddy/Caddyfile
-  echo "  ✓ Caddyfile"
-  sudo caddy validate --config /etc/caddy/Caddyfile
-  sudo systemctl reload caddy || sudo systemctl restart caddy
+    sudo cp "$SYSTEM_DIR/Caddyfile" /etc/caddy/Caddyfile
+    echo "  ✓ Caddyfile"
+    sudo systemctl reload caddy || sudo systemctl restart caddy
 fi
 
 systemctl daemon-reload

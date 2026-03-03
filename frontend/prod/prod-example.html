@@ -135,6 +135,74 @@
         border-radius: 4px;
         display: block;
       }
+
+      /* Upload section styles */
+      .upload-section {
+        border: 1px dashed #333;
+        border-radius: 6px;
+        padding: 16px;
+        margin-bottom: 20px;
+        background: #0a0a1a;
+      }
+      .upload-note {
+        color: #ff9800;
+        font-size: 11px;
+        margin-bottom: 12px;
+        line-height: 1.5;
+      }
+      .upload-row {
+        display: flex;
+        gap: 10px;
+      }
+      .upload-box {
+        flex: 1;
+        text-align: center;
+      }
+      .upload-box label.title {
+        display: block;
+        font-size: 11px;
+        color: #666;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+      }
+      .upload-drop {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 4/3;
+        background: #000;
+        border: 1px dashed #333;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        overflow: hidden;
+        transition: border-color 0.2s;
+      }
+      .upload-drop:hover {
+        border-color: #4caf50;
+      }
+      .upload-drop.has-file {
+        border-style: solid;
+        border-color: #4caf50;
+      }
+      .upload-drop input[type="file"] {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+      }
+      .upload-drop .placeholder {
+        color: #444;
+        font-size: 11px;
+        pointer-events: none;
+      }
+      .upload-drop img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+      }
     </style>
   </head>
   <body>
@@ -165,6 +233,7 @@
   Stream URL pattern: {CONFIG.API_BASE}/api/viewfocus/stream/{side|top|front}
 -->
     <h2>Camera Previews</h2>
+    <b>Probably blacked out so you cant spy on me in my apartment for now.</b>
     <div class="streams">
       <div class="stream-box">
         <label>Side</label>
@@ -182,7 +251,70 @@
 
     <!--
   =====================================================================
-  GRADE FORM
+  MANUAL UPLOAD (testing only)
+  =====================================================================
+  Temporary section for testing the grading pipeline without live cameras.
+  Upload a JPEG/PNG for each angle. These get sent directly to EC2 via
+  POST /api/prod/grade-upload instead of triggering a camera capture.
+  
+-->
+    <h2>Manual Upload (Testing)</h2>
+    <div class="upload-section">
+      <div class="upload-note">
+        Upload images manually while cameras aren't setup in MN without actual
+        pics to take. This bypasses the Pi's camera capture and sends your
+        images straight to EC2 for grading. Just using the OG test images for
+        now.
+      </div>
+      <div class="upload-row">
+        <div class="upload-box">
+          <label class="title">Side</label>
+          <div class="upload-drop" id="drop-side">
+            <span class="placeholder">click or drop</span>
+            <input
+              type="file"
+              accept="image/*"
+              onchange="handleUpload('side', this)"
+            />
+          </div>
+        </div>
+        <div class="upload-box">
+          <label class="title">Top</label>
+          <div class="upload-drop" id="drop-top">
+            <span class="placeholder">click or drop</span>
+            <input
+              type="file"
+              accept="image/*"
+              onchange="handleUpload('top', this)"
+            />
+          </div>
+        </div>
+        <div class="upload-box">
+          <label class="title">Front</label>
+          <div class="upload-drop" id="drop-front">
+            <span class="placeholder">click or drop</span>
+            <input
+              type="file"
+              accept="image/*"
+              onchange="handleUpload('front', this)"
+            />
+          </div>
+        </div>
+      </div>
+      <div style="margin-top: 12px">
+        <button id="uploadGradeBtn" onclick="startUploadGrade()" disabled>
+          Grade with Uploaded Images
+        </button>
+        <span
+          id="upload-status"
+          style="margin-left: 10px; font-size: 11px; color: #666"
+        ></span>
+      </div>
+    </div>
+
+    <!--
+  =====================================================================
+  GRADE FORM (live camera capture)
   =====================================================================
   POST /api/prod/grade on the Pi (Caddy strips prefix, hits prod server's /grade):
     { "serial_id": "GOAT001", "live_weight": 85.5 }
@@ -195,7 +327,7 @@
     5. Archives images to S3
     6. Result available via GET /status polling
 -->
-    <h2>Grade</h2>
+    <h2>Grade (Live Capture)</h2>
     <div class="form-row">
       <input type="text" id="serialId" placeholder="serial_id (e.g. GOAT001)" />
       <input
@@ -257,7 +389,159 @@
       }
 
       // =====================================================================
-      // GRADE FLOW
+      // MANUAL UPLOAD (testing only)
+      // =====================================================================
+      // Stores selected files in memory. Once all 3 are chosen, enables the
+      // grade button. Sends as multipart/form-data to /api/prod/grade-upload.
+
+      const uploadedFiles = { side: null, top: null, front: null };
+
+      function handleUpload(view, input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        uploadedFiles[view] = file;
+
+        // Show preview
+        const drop = document.getElementById("drop-" + view);
+        const existing = drop.querySelector("img");
+        if (existing) existing.remove();
+
+        const img = document.createElement("img");
+        img.src = URL.createObjectURL(file);
+        drop.appendChild(img);
+        drop.classList.add("has-file");
+        drop.querySelector(".placeholder").style.display = "none";
+
+        updateUploadStatus();
+      }
+
+      function updateUploadStatus() {
+        const filled = Object.values(uploadedFiles).filter(Boolean).length;
+        const status = document.getElementById("upload-status");
+        const btn = document.getElementById("uploadGradeBtn");
+
+        status.textContent = filled + "/3 images selected";
+        btn.disabled = filled < 3;
+
+        if (filled === 3) {
+          status.style.color = "#4caf50";
+        } else {
+          status.style.color = "#666";
+        }
+      }
+
+      async function startUploadGrade() {
+        const serialId = document.getElementById("serialId").value.trim();
+        const liveWeight = parseFloat(
+          document.getElementById("liveWeight").value,
+        );
+        const btn = document.getElementById("uploadGradeBtn");
+
+        if (!serialId) {
+          log(
+            "serial_id is required (fill in the Grade form fields above)",
+            "err",
+          );
+          return;
+        }
+        if (!liveWeight || liveWeight <= 0) {
+          log("valid live_weight is required", "err");
+          return;
+        }
+
+        btn.disabled = true;
+        document.getElementById("log").innerHTML = "";
+        document.getElementById("debug-section").style.display = "none";
+        log(
+          "Starting upload grade for " + serialId + " @ " + liveWeight + " lbs",
+        );
+        log("Uploading 3 images to Pi...", "info");
+
+        try {
+          // -----------------------------------------------------------------
+          // POST /api/prod/grade-upload — multipart with image files
+          // -----------------------------------------------------------------
+          // Sends images directly instead of triggering camera capture.
+          // The Pi forwards them to EC2 the same way it would captured images.
+          //
+          // Form fields:
+          //   serial_id   — string
+          //   live_weight — number
+          //   side        — file (JPEG/PNG)
+          //   top         — file (JPEG/PNG)
+          //   front       — file (JPEG/PNG)
+          // -----------------------------------------------------------------
+          const formData = new FormData();
+          formData.append("serial_id", serialId);
+          formData.append("live_weight", liveWeight);
+          formData.append("side", uploadedFiles.side);
+          formData.append("top", uploadedFiles.top);
+          formData.append("front", uploadedFiles.front);
+
+          const resp = await fetch(CONFIG.API_BASE + "/api/prod/grade-upload", {
+            method: "POST",
+            body: formData,
+          });
+
+          const body = await resp.json();
+
+          if (!resp.ok) {
+            log(
+              "Upload grade rejected: " +
+                (body.message || body.error_code || resp.status),
+              "err",
+            );
+            if (body.fix) log("Fix: " + body.fix, "warn");
+            btn.disabled = false;
+            return;
+          }
+
+          log("Images uploaded — grading in progress...", "ok");
+
+          // Poll status the same way as live capture
+          const result = await pollStatus();
+
+          if (result && result.success) {
+            log("Grade complete!", "ok");
+            log("  Grade:  " + (result.grade || "N/A"), "ok");
+            log("  Views OK: " + result.all_views_successful, "info");
+            if (result.timing) {
+              log(
+                "  EC2: " +
+                  result.timing.ec2_sec +
+                  "s, Total: " +
+                  result.timing.total_sec +
+                  "s",
+                "info",
+              );
+            }
+            if (result.measurements) {
+              log(
+                "  Measurements: " + JSON.stringify(result.measurements),
+                "info",
+              );
+            }
+            if (result.warnings && result.warnings.length > 0) {
+              result.warnings.forEach((w) => log("  Warning: " + w, "warn"));
+            }
+            log("");
+            log("Click button below to review measurement overlays", "info");
+            showDebugButton(serialId);
+          } else {
+            log("Grade failed: " + (result?.error || "unknown"), "err");
+            if (result?.fix) log("Fix: " + result.fix, "warn");
+          }
+        } catch (err) {
+          log("Network error: " + err.message, "err");
+          log("Is the Pi reachable at " + CONFIG.API_BASE + "?", "warn");
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      // =====================================================================
+      // GRADE FLOW (live capture)
       // =====================================================================
       async function startGrade() {
         const serialId = document.getElementById("serialId").value.trim();
@@ -283,15 +567,6 @@
         try {
           // -----------------------------------------------------------------
           // Step 1: POST /grade — kicks off capture + grade pipeline
-          // -----------------------------------------------------------------
-          // Returns 200 { status: 'grade_started' } on success.
-          //
-          // Error codes:
-          //   409 GRADE_IN_PROGRESS  — another grade is already running
-          //   400 MISSING_SERIAL_ID
-          //   400 INVALID_WEIGHT     — weight out of range (0-500 lbs)
-          //   503 EC2_UNREACHABLE    — EC2 health check failed before capture
-          //   503 CAMERAS_NOT_READY  — one or more cameras offline
           // -----------------------------------------------------------------
           log("POST /api/prod/grade ...", "info");
 
@@ -322,17 +597,6 @@
 
           // -----------------------------------------------------------------
           // Step 2: Poll GET /status until background thread finishes
-          // -----------------------------------------------------------------
-          // Response:
-          //   active: bool        — true while running
-          //   progress: string    — 'starting'|'capturing'|'grading'|'archiving'
-          //   last_error: string  — set on failure
-          //   last_result: object — final result when done
-          //
-          // last_result on success contains:
-          //   serial_id, success, grade, measurements, confidence_scores,
-          //   all_views_successful, warnings,
-          //   timing: { capture_sec, ec2_sec, total_sec }
           // -----------------------------------------------------------------
           const result = await pollStatus();
 
@@ -425,10 +689,6 @@
       // =====================================================================
       // DEBUG IMAGES
       // =====================================================================
-      // Pi proxies debug images from EC2:
-      //   GET /api/prod/debug/{serial_id}/{view} → Caddy strips prefix → prod server → EC2
-      // Views: side, top, front
-
       function showDebugButton(serialId) {
         const container = document.getElementById("debug-section");
         container.style.display = "block";
