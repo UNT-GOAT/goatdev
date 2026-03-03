@@ -2,8 +2,8 @@
 Database ORM models.
 
 Users:
-  - admin: can create/delete associates, full access
-  - associate: can use grading, capture, view features
+  - admin: can create/delete operators, full access
+  - operator: can use grading, capture, view features
 
 RefreshTokens:
   - Stored hashed (SHA-256) so a DB leak doesn't compromise active sessions
@@ -24,7 +24,7 @@ class User(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     username = Column(String(50), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
-    role = Column(String(20), nullable=False, default="associate")  # admin | associate
+    role = Column(String(20), nullable=False, default="operator")  # admin | operator
     active = Column(Boolean, nullable=False, default=True)
     created_by = Column(String(50), nullable=True)  # username of creator
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
