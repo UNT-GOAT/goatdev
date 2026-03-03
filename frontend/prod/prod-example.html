@@ -228,9 +228,6 @@
   =====================================================================
   CAMERA STREAMS
   =====================================================================
-  MJPEG streams from the camera proxy running on the Pi.
-  The browser handles MJPEG natively — just set the img src.
-  Stream URL pattern: {CONFIG.API_BASE}/api/viewfocus/stream/{side|top|front}
 -->
     <h2>Camera Previews</h2>
     <b>Probably blacked out so you cant spy on me in my apartment for now.</b>
@@ -254,9 +251,11 @@
   MANUAL UPLOAD (testing only)
   =====================================================================
   Temporary section for testing the grading pipeline without live cameras.
-  Upload a JPEG/PNG for each angle. These get sent directly to EC2 via
-  POST /api/prod/grade-upload instead of triggering a camera capture.
+  Upload a JPEG/PNG for each angle. Sends to /api/prod/grade/test which
+  forwards directly to EC2 — no camera capture, no status polling needed.
   
+  Uses the existing /grade/test endpoint on prod_server.py which accepts
+  multipart form fields: serial_id, live_weight, side_image, top_image, front_image
 -->
     <h2>Manual Upload (Testing)</h2>
     <div class="upload-section">
@@ -265,6 +264,19 @@
         pics to take. This bypasses the Pi's camera capture and sends your
         images straight to EC2 for grading. Just using the OG test images for
         now.
+      </div>
+      <div class="form-row" style="margin-bottom: 10px">
+        <input
+          type="text"
+          id="uploadSerialId"
+          placeholder="serial_id (e.g. GOAT001)"
+        />
+        <input
+          type="number"
+          id="uploadLiveWeight"
+          placeholder="live_weight (lbs)"
+          step="0.1"
+        />
       </div>
       <div class="upload-row">
         <div class="upload-box">
@@ -316,16 +328,6 @@
   =====================================================================
   GRADE FORM (live camera capture)
   =====================================================================
-  POST /api/prod/grade on the Pi (Caddy strips prefix, hits prod server's /grade):
-    { "serial_id": "GOAT001", "live_weight": 85.5 }
-
-  The Pi then:
-    1. Pre-checks EC2 reachability (fails fast if down)
-    2. Pre-checks all 3 cameras via proxy
-    3. Captures 1 image per camera
-    4. Sends images + data to EC2 /analyze
-    5. Archives images to S3
-    6. Result available via GET /status polling
 -->
     <h2>Grade (Live Capture)</h2>
     <div class="form-row">
@@ -343,11 +345,6 @@
   =====================================================================
   DEBUG IMAGES (shown after successful grade)
   =====================================================================
-  After grading, EC2 saves debug images (measurement overlays).
-  Frontend can't reach EC2 directly.
-  Pi proxies: GET /api/prod/debug/{serial_id}/{view}
-  Caddy strips /api/prod, hits prod server's /debug/{serial_id}/{view}
-  Prod server fetches from EC2 and returns the JPEG.
 -->
     <div id="debug-section" style="display: none; margin-top: 20px">
       <button onclick="">View Debug Images</button>
@@ -357,16 +354,6 @@
     <div id="log"></div>
 
     <script>
-      // =====================================================================
-      // CONFIG
-      // =====================================================================
-      // Point this at the Pi's Caddy port.
-      // All services are behind Caddy on port 8443.
-      // Camera streams:  /api/viewfocus/stream/{cam}
-      // Prod endpoints:  /api/prod/grade, /api/prod/status, /api/prod/debug/...
-      // Caddy strips the prefix and routes to the right backend.
-      // Stored in config.js in root s3 bucket, fetched by the <script> tag in the head.
-
       // =====================================================================
       // STREAMS
       // =====================================================================
@@ -391,8 +378,11 @@
       // =====================================================================
       // MANUAL UPLOAD (testing only)
       // =====================================================================
-      // Stores selected files in memory. Once all 3 are chosen, enables the
-      // grade button. Sends as multipart/form-data to /api/prod/grade-upload.
+      // Sends images to /api/prod/grade/test which forwards directly to EC2.
+      // No status polling — the endpoint returns the result synchronously.
+      //
+      // Field names must match prod_server.py /grade/test:
+      //   serial_id, live_weight, side_image, top_image, front_image
 
       const uploadedFiles = { side: null, top: null, front: null };
 
@@ -432,17 +422,14 @@
       }
 
       async function startUploadGrade() {
-        const serialId = document.getElementById("serialId").value.trim();
+        const serialId = document.getElementById("uploadSerialId").value.trim();
         const liveWeight = parseFloat(
-          document.getElementById("liveWeight").value,
+          document.getElementById("uploadLiveWeight").value,
         );
         const btn = document.getElementById("uploadGradeBtn");
 
         if (!serialId) {
-          log(
-            "serial_id is required (fill in the Grade form fields above)",
-            "err",
-          );
+          log("serial_id is required", "err");
           return;
         }
         if (!liveWeight || liveWeight <= 0) {
@@ -456,30 +443,30 @@
         log(
           "Starting upload grade for " + serialId + " @ " + liveWeight + " lbs",
         );
-        log("Uploading 3 images to Pi...", "info");
+        log("Uploading 3 images to Pi → EC2...", "info");
 
         try {
           // -----------------------------------------------------------------
-          // POST /api/prod/grade-upload — multipart with image files
+          // POST /api/prod/grade/test — multipart with image files
           // -----------------------------------------------------------------
-          // Sends images directly instead of triggering camera capture.
-          // The Pi forwards them to EC2 the same way it would captured images.
+          // Hits prod_server.py /grade/test which forwards to EC2 /analyze.
+          // Returns result synchronously (no polling needed).
           //
-          // Form fields:
+          // Form fields (must match server expectations):
           //   serial_id   — string
           //   live_weight — number
-          //   side        — file (JPEG/PNG)
-          //   top         — file (JPEG/PNG)
-          //   front       — file (JPEG/PNG)
+          //   side_image  — file (JPEG/PNG)
+          //   top_image   — file (JPEG/PNG)
+          //   front_image — file (JPEG/PNG)
           // -----------------------------------------------------------------
           const formData = new FormData();
           formData.append("serial_id", serialId);
           formData.append("live_weight", liveWeight);
-          formData.append("side", uploadedFiles.side);
-          formData.append("top", uploadedFiles.top);
-          formData.append("front", uploadedFiles.front);
+          formData.append("side_image", uploadedFiles.side);
+          formData.append("top_image", uploadedFiles.top);
+          formData.append("front_image", uploadedFiles.front);
 
-          const resp = await fetch(CONFIG.API_BASE + "/api/prod/grade-upload", {
+          const resp = await fetch(CONFIG.API_BASE + "/api/prod/grade/test", {
             method: "POST",
             body: formData,
           });
@@ -497,41 +484,29 @@
             return;
           }
 
-          log("Images uploaded — grading in progress...", "ok");
-
-          // Poll status the same way as live capture
-          const result = await pollStatus();
-
-          if (result && result.success) {
-            log("Grade complete!", "ok");
-            log("  Grade:  " + (result.grade || "N/A"), "ok");
-            log("  Views OK: " + result.all_views_successful, "info");
-            if (result.timing) {
-              log(
-                "  EC2: " +
-                  result.timing.ec2_sec +
-                  "s, Total: " +
-                  result.timing.total_sec +
-                  "s",
-                "info",
-              );
-            }
-            if (result.measurements) {
-              log(
-                "  Measurements: " + JSON.stringify(result.measurements),
-                "info",
-              );
-            }
-            if (result.warnings && result.warnings.length > 0) {
-              result.warnings.forEach((w) => log("  Warning: " + w, "warn"));
-            }
-            log("");
-            log("Click button below to review measurement overlays", "info");
-            showDebugButton(serialId);
-          } else {
-            log("Grade failed: " + (result?.error || "unknown"), "err");
-            if (result?.fix) log("Fix: " + result.fix, "warn");
+          // /grade/test returns result directly — no polling needed
+          log("Grade complete!", "ok");
+          log("  Grade:  " + (body.grade || "N/A"), "ok");
+          log("  Views OK: " + body.all_views_successful, "info");
+          if (body.timing) {
+            log(
+              "  EC2: " +
+                body.timing.ec2_sec +
+                "s, Total: " +
+                body.timing.total_sec +
+                "s",
+              "info",
+            );
           }
+          if (body.measurements) {
+            log("  Measurements: " + JSON.stringify(body.measurements), "info");
+          }
+          if (body.warnings && body.warnings.length > 0) {
+            body.warnings.forEach((w) => log("  Warning: " + w, "warn"));
+          }
+          log("");
+          log("Click button below to review measurement overlays", "info");
+          showDebugButton(serialId);
         } catch (err) {
           log("Network error: " + err.message, "err");
           log("Is the Pi reachable at " + CONFIG.API_BASE + "?", "warn");
@@ -565,9 +540,6 @@
         log("Starting grade for " + serialId + " @ " + liveWeight + " lbs");
 
         try {
-          // -----------------------------------------------------------------
-          // Step 1: POST /grade — kicks off capture + grade pipeline
-          // -----------------------------------------------------------------
           log("POST /api/prod/grade ...", "info");
 
           const resp = await fetch(CONFIG.API_BASE + "/api/prod/grade", {
@@ -595,9 +567,6 @@
 
           log("Grade started — capturing images...", "ok");
 
-          // -----------------------------------------------------------------
-          // Step 2: Poll GET /status until background thread finishes
-          // -----------------------------------------------------------------
           const result = await pollStatus();
 
           if (result && result.success) {
@@ -643,7 +612,6 @@
       async function pollStatus() {
         let lastProgress = null;
 
-        // Poll every 500ms, timeout after 120s
         for (let i = 0; i < 240; i++) {
           await new Promise((r) => setTimeout(r, 500));
 
