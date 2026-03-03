@@ -33,6 +33,14 @@ if [ -f "$SYSTEM_DIR/sync-on-boot.sh" ]; then
     echo "  ✓ sync-on-boot.sh"
 fi
 
+echo "Installing Caddyfile..."
+if [ -f "$SYSTEM_DIR/Caddyfile" ]; then
+  sudo cp "$SYSTEM_DIR/Caddyfile" /etc/caddy/Caddyfile
+  echo "  ✓ Caddyfile"
+  sudo caddy validate --config /etc/caddy/Caddyfile
+  sudo systemctl reload caddy || sudo systemctl restart caddy
+fi
+
 systemctl daemon-reload
 systemctl enable goat-prod.service
 systemctl enable goat-training.service
