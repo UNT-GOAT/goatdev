@@ -8,6 +8,7 @@ WorkingDirectory=/home/pi/goatdev/pi
 User=pi
 Restart=always
 RestartSec=5
+EnvironmentFile=.env
 Environment=PYTHONPATH=/home/pi/goatdev/pi
 
 [Install]

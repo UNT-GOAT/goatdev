@@ -1,0 +1,16 @@
+[Unit]
+Description=HerdSync JWT Verifier for Caddy forward_auth
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/goatdev/pi
+ExecStart=/usr/bin/python3 /home/pi/goatdev/pi/servers/auth_verifier.py
+Restart=always
+RestartSec=5
+EnvironmentFile=/home/pi/goatdev/pi/.env
+
+[Install]
+WantedBy=multi-user.target

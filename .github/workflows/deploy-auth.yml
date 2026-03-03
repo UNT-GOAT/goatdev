@@ -1,0 +1,111 @@
+# .github/workflows/deploy-auth.yml
+name: Build and Deploy Auth Service
+on:
+  push:
+    branches: [main]
+    paths:
+      - "auth/**"
+      - ".github/workflows/deploy-auth.yml"
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-2
+  ECR_REPOSITORY: herdsync-auth
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image_uri: ${{ steps.build.outputs.image_uri }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Create ECR repository if not exists
+        run: |
+          aws ecr describe-repositories --repository-names $ECR_REPOSITORY 2>/dev/null || \
+          aws ecr create-repository --repository-name $ECR_REPOSITORY
+
+      - name: Build, tag, and push image
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "Building $IMAGE_URI"
+          docker build -f auth/Dockerfile -t $IMAGE_URI auth/
+          docker tag $IMAGE_URI $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "Pushing to ECR..."
+          docker push $IMAGE_URI
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            echo "=== Deploying Auth Service ==="
+
+            # Login to ECR
+            aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 937249941844.dkr.ecr.us-east-2.amazonaws.com
+
+            # Pull latest image
+            echo "Pulling latest image..."
+            docker pull 937249941844.dkr.ecr.us-east-2.amazonaws.com/herdsync-auth:latest
+
+            # Stop and remove old container
+            echo "Stopping old container..."
+            docker stop herdsync-auth || true
+            docker rm herdsync-auth || true
+
+            # Run new container
+            # Keys volume persists RSA key pair across deploys
+            echo "Starting new container..."
+            docker run -d \
+              --name herdsync-auth \
+              --restart unless-stopped \
+              -p 8001:8001 \
+              -v auth-keys:/app/keys \
+              --env-file /home/ubuntu/auth.env \
+              --log-driver=awslogs \
+              --log-opt awslogs-region=us-east-2 \
+              --log-opt awslogs-group=/goatdev \
+              --log-opt awslogs-stream=ec2/auth \
+              937249941844.dkr.ecr.us-east-2.amazonaws.com/herdsync-auth:latest
+
+            # Wait and check health
+            echo "Waiting for health check..."
+            sleep 10
+            docker ps
+            curl -f http://localhost:8001/auth/health || echo "Health check failed"
+
+            # Cleanup old images
+            echo "Cleaning up old images..."
+            docker image prune -af
+
+            echo "=== Auth deployment complete ==="
+
+      - name: Verify deployment
+        run: |
+          sleep 5
+          curl -f http://${{ secrets.EC2_HOST }}:8001/auth/health
