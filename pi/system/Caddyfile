@@ -1,4 +1,4 @@
-{$SITE_DOMAIN} {
+"{$SITE_DOMAIN}" {
 
     tls internal
 
