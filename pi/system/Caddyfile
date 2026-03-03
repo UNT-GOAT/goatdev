@@ -1,51 +1,100 @@
 "{$SITE_DOMAIN}" {
+tls {
+get_certificate tailscale
+}
 
-    tls {
-        get_certificate tailscale
+    handle_path /api/capture/_ {
+    	forward_auth 127.0.0.1:5003 {
+    		uri /verify
+    		copy_headers Authorization
+    	}
+    	reverse_proxy 127.0.0.1:5001
     }
 
-    handle_path /api/capture/* {
-        reverse_proxy 127.0.0.1:5001
+    handle_path /api/heater/_ {
+    	forward_auth 127.0.0.1:5003 {
+    		uri /verify
+    		copy_headers Authorization
+    	}
+    	reverse_proxy 127.0.0.1:5002
     }
 
-    handle_path /api/heater/* {
-        reverse_proxy 127.0.0.1:5002
-    }
-
-    handle_path /api/viewfocus/* {
+    # Stream endpoint — no auth (browsers can't add headers to img src)
+    handle_path /api/viewfocus/stream/* {
         reverse_proxy 127.0.0.1:8080
     }
 
-    handle_path /api/prod/* {
-        reverse_proxy 127.0.0.1:5000
+    handle_path /api/viewfocus/_ {
+    	forward_auth 127.0.0.1:5003 {
+    		uri /verify
+    		copy_headers Authorization
+    	}
+    	reverse_proxy 127.0.0.1:8080
+    }
+
+    handle_path /api/prod/_ {
+    	forward_auth 127.0.0.1:5003 {
+    		uri /verify
+    		copy_headers Authorization
+    	}
+    	reverse_proxy 127.0.0.1:5000
     }
 
     handle {
-        reverse_proxy 127.0.0.1:5001
+    	forward_auth 127.0.0.1:5003 {
+    		uri /verify
+    		copy_headers Authorization
+    	}
+    	reverse_proxy 127.0.0.1:5001
     }
 
 }
 
 :8444 {
 
-    handle_path /api/capture/* {
-        reverse_proxy 127.0.0.1:5001
+    handle_path /api/capture/_ {
+    	forward_auth 127.0.0.1:5003 {
+    		uri /verify
+    		copy_headers Authorization
+    	}
+    	reverse_proxy 127.0.0.1:5001
     }
 
-    handle_path /api/heater/* {
-        reverse_proxy 127.0.0.1:5002
+    handle_path /api/heater/_ {
+    	forward_auth 127.0.0.1:5003 {
+    		uri /verify
+    		copy_headers Authorization
+    	}
+    	reverse_proxy 127.0.0.1:5002
     }
 
-    handle_path /api/viewfocus/* {
+    # Stream endpoint — no auth (browsers can't add headers to img src)
+    handle_path /api/viewfocus/stream/* {
         reverse_proxy 127.0.0.1:8080
     }
 
-    handle_path /api/prod/* {
-        reverse_proxy 127.0.0.1:5000
+    handle_path /api/viewfocus/_ {
+    	forward_auth 127.0.0.1:5003 {
+    		uri /verify
+    		copy_headers Authorization
+    	}
+    	reverse_proxy 127.0.0.1:8080
+    }
+
+    handle_path /api/prod/_ {
+    	forward_auth 127.0.0.1:5003 {
+    		uri /verify
+    		copy_headers Authorization
+    	}
+    	reverse_proxy 127.0.0.1:5000
     }
 
     handle {
-        reverse_proxy 127.0.0.1:5001
+    	forward_auth 127.0.0.1:5003 {
+    		uri /verify
+    		copy_headers Authorization
+    	}
+    	reverse_proxy 127.0.0.1:5001
     }
 
 }
