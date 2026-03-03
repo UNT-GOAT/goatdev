@@ -8,8 +8,10 @@ import cv2
 import numpy as np
 import time
 import os
+import json
 import shutil
 import psutil
+import threading
 from io import BytesIO
 from datetime import datetime
 from typing import Optional
@@ -22,7 +24,8 @@ from fastapi.responses import JSONResponse
 from .logger import log
 from .config import (
     MIN_IMAGE_DIMENSION, MAX_FILE_SIZE_BYTES, VALID_IMAGE_EXTENSIONS,
-    MIN_WEIGHT_LBS, MAX_WEIGHT_LBS
+    MIN_WEIGHT_LBS, MAX_WEIGHT_LBS,
+    S3_CAPTURES_BUCKET, S3_PROCESSED_BUCKET
 )
 from .models import (
     AnalyzeResponse, MeasurementsResponse, ConfidenceScores, ViewError,
@@ -38,6 +41,122 @@ from .grade_calculator import calculate_grade
 # new analysis. Prevents /app/data/debug/ from growing unbounded.
 DEBUG_DIR_BASE = '/app/data/debug'
 MAX_DEBUG_SERIAL_IDS = 100
+
+
+# =============================================================================
+# S3 HELPER
+# =============================================================================
+# EC2 owns ALL S3 archival. The Pi does not write to S3.
+#
+# Responsibility:
+#   goat-captures bucket  — raw uploaded images (as received from Pi)
+#   goat-processed bucket — debug overlay images + result.json
+#
+# Archival only happens on successful grades (all views OK).
+# Runs in a background thread so it never blocks the API response.
+# =============================================================================
+
+_s3_client = None
+_s3_lock = threading.Lock()
+
+
+def get_s3():
+    """Lazy-init S3 client. Thread-safe."""
+    global _s3_client
+    if _s3_client is None:
+        with _s3_lock:
+            if _s3_client is None:
+                import boto3
+                _s3_client = boto3.client('s3')
+    return _s3_client
+
+
+def _s3_upload_bytes(bucket: str, key: str, data: bytes, content_type: str = 'image/jpeg'):
+    """Upload bytes to S3. Logs warning on failure, never raises."""
+    try:
+        get_s3().put_object(Bucket=bucket, Key=key, Body=data, ContentType=content_type)
+        log.info('s3', 'Uploaded', bucket=bucket, key=key, size_bytes=len(data))
+    except Exception as e:
+        log.warn('s3', 'Upload failed (non-fatal)', bucket=bucket, key=key, error=str(e))
+
+
+def _s3_upload_file(bucket: str, key: str, filepath: str, content_type: str = 'image/jpeg'):
+    """Upload a local file to S3. Logs warning on failure, never raises."""
+    try:
+        get_s3().upload_file(filepath, bucket, key, ExtraArgs={'ContentType': content_type})
+        log.info('s3', 'Uploaded file', bucket=bucket, key=key,
+                size_bytes=os.path.getsize(filepath))
+    except Exception as e:
+        log.warn('s3', 'File upload failed (non-fatal)', bucket=bucket, key=key, error=str(e))
+
+
+def _archive_to_s3(
+    serial_id: str,
+    raw_images: dict,
+    debug_image_paths: dict,
+    result_dict: dict
+):
+    """
+    Archive a successful grade to S3. Runs in a background thread.
+
+    Writes:
+      goat-captures/{serial_id}/{view}.jpg        — raw images
+      goat-processed/{serial_id}/{view}_debug.jpg  — debug overlays
+      goat-processed/{serial_id}/result.json       — full grade result
+
+    Args:
+        serial_id: Goat identifier
+        raw_images: Dict of {view_name: bytes} for the raw uploaded images
+        debug_image_paths: Dict of {view_name: filepath} for debug images on disk
+        result_dict: The full AnalyzeResponse as a dict
+    """
+    try:
+        # Raw images → captures bucket
+        if S3_CAPTURES_BUCKET:
+            for view_name, raw_bytes in raw_images.items():
+                _s3_upload_bytes(
+                    S3_CAPTURES_BUCKET,
+                    f'{serial_id}/{view_name}.jpg',
+                    raw_bytes
+                )
+        else:
+            log.warn('s3:captures', 'S3_CAPTURES_BUCKET not set, skipping')
+
+        # Debug images + result → processed bucket
+        if S3_PROCESSED_BUCKET:
+            for view_name, debug_path in debug_image_paths.items():
+                if os.path.exists(debug_path):
+                    _s3_upload_file(
+                        S3_PROCESSED_BUCKET,
+                        f'{serial_id}/{view_name}_debug.jpg',
+                        debug_path
+                    )
+
+            # Include S3 paths in result for cross-referencing
+            result_with_paths = dict(result_dict)
+            result_with_paths['s3'] = {
+                'captures_bucket': S3_CAPTURES_BUCKET,
+                'processed_bucket': S3_PROCESSED_BUCKET,
+                'raw_images': {v: f'{serial_id}/{v}.jpg' for v in raw_images},
+                'debug_images': {v: f'{serial_id}/{v}_debug.jpg' for v in debug_image_paths},
+                'result_key': f'{serial_id}/result.json'
+            }
+
+            result_json = json.dumps(result_with_paths, indent=2, default=str)
+            _s3_upload_bytes(
+                S3_PROCESSED_BUCKET,
+                f'{serial_id}/result.json',
+                result_json.encode('utf-8'),
+                content_type='application/json'
+            )
+        else:
+            log.warn('s3:processed', 'S3_PROCESSED_BUCKET not set, skipping')
+
+        log.info('s3', 'Archival complete', serial_id=serial_id)
+
+    except Exception as e:
+        # Catch-all so the background thread never crashes silently
+        log.warn('s3', 'Archival failed (non-fatal)', serial_id=serial_id, error=str(e))
 
 
 # =============================================================================
@@ -70,6 +189,11 @@ async def lifespan(app: FastAPI):
             log.error('startup', error)
     else:
         log.info('startup', 'Grader initialized', gpu=grader.gpu_available)
+    
+    # Log S3 config
+    log.info('startup', 'S3 archival config',
+            captures_bucket=S3_CAPTURES_BUCKET or '(not set)',
+            processed_bucket=S3_PROCESSED_BUCKET or '(not set)')
     
     # Log system info
     memory = psutil.virtual_memory()
@@ -143,16 +267,19 @@ async def general_exception_handler(request: Request, exc: Exception):
 # HELPERS
 # =============================================================================
 
-def validate_image(file: UploadFile, view_name: str) -> tuple[Optional[np.ndarray], Optional[dict]]:
+def validate_image(file: UploadFile, view_name: str) -> tuple[Optional[np.ndarray], Optional[bytes], Optional[dict]]:
     """
     Validate and decode an uploaded image.
     
     Returns:
-        (image_array, error_dict) - one will be None
+        (image_array, raw_bytes, error_dict) - on success error_dict is None,
+        on failure image_array and raw_bytes are None.
+    
+    raw_bytes is preserved for S3 archival so we only read the upload once.
     """
     # Check filename
     if not file.filename:
-        return None, {
+        return None, None, {
             "error": f"No filename for {view_name} image",
             "error_code": "MISSING_FILENAME",
             "fix": "Ensure file has a name"
@@ -161,18 +288,17 @@ def validate_image(file: UploadFile, view_name: str) -> tuple[Optional[np.ndarra
     # Check extension
     ext = '.' + file.filename.lower().split('.')[-1] if '.' in file.filename else ''
     if ext not in VALID_IMAGE_EXTENSIONS:
-        return None, {
+        return None, None, {
             "error": f"Invalid file type for {view_name}: {ext}",
             "error_code": "INVALID_FILE_TYPE",
             "fix": f"Use one of: {', '.join(VALID_IMAGE_EXTENSIONS)}"
         }
     
-    # Read file content
+    # Read file content (single read — reused for both decoding and S3 archival)
     try:
         content = file.file.read()
-        file.file.seek(0)  # Reset for potential re-read
     except Exception as e:
-        return None, {
+        return None, None, {
             "error": f"Failed to read {view_name} image: {e}",
             "error_code": "READ_ERROR",
             "fix": "Ensure file is not corrupted"
@@ -181,7 +307,7 @@ def validate_image(file: UploadFile, view_name: str) -> tuple[Optional[np.ndarra
     # Check size
     if len(content) > MAX_FILE_SIZE_BYTES:
         size_mb = len(content) / (1024 * 1024)
-        return None, {
+        return None, None, {
             "error": f"{view_name} image too large: {size_mb:.1f}MB",
             "error_code": "FILE_TOO_LARGE",
             "fix": f"Maximum size is {MAX_FILE_SIZE_BYTES // (1024*1024)}MB"
@@ -192,14 +318,14 @@ def validate_image(file: UploadFile, view_name: str) -> tuple[Optional[np.ndarra
         nparr = np.frombuffer(content, np.uint8)
         image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     except Exception as e:
-        return None, {
+        return None, None, {
             "error": f"Failed to decode {view_name} image: {e}",
             "error_code": "DECODE_ERROR",
             "fix": "Ensure image is valid JPEG/PNG"
         }
     
     if image is None:
-        return None, {
+        return None, None, {
             "error": f"{view_name} image is corrupted or invalid format",
             "error_code": "INVALID_IMAGE",
             "fix": "Re-capture the image"
@@ -208,13 +334,13 @@ def validate_image(file: UploadFile, view_name: str) -> tuple[Optional[np.ndarra
     # Check dimensions
     height, width = image.shape[:2]
     if height < MIN_IMAGE_DIMENSION or width < MIN_IMAGE_DIMENSION:
-        return None, {
+        return None, None, {
             "error": f"{view_name} image too small: {width}x{height}",
             "error_code": "IMAGE_TOO_SMALL",
             "fix": f"Minimum dimension is {MIN_IMAGE_DIMENSION}px"
         }
     
-    return image, None
+    return image, content, None
 
 
 def sanitize_serial_id(serial_id: str) -> tuple[Optional[str], Optional[dict]]:
@@ -366,6 +492,14 @@ async def analyze(
     - side_image: Side view image file
     - top_image: Top view image file
     - front_image: Front view image file
+    
+    On successful grades (all views OK), archives to S3 in a background thread:
+    - Raw images → goat-captures bucket: {serial_id}/{view}.jpg
+    - Debug overlays → goat-processed bucket: {serial_id}/{view}_debug.jpg
+    - Result JSON → goat-processed bucket: {serial_id}/result.json
+    
+    S3 archival is skipped for failed grades to avoid polluting buckets
+    with unusable data.
     """
     start_time = time.time()
     
@@ -401,24 +535,31 @@ async def analyze(
             }
         )
     
-    # Validate and decode images
-    side_img, side_error = validate_image(side_image, "side")
+    # Validate and decode images.
+    # validate_image returns (cv2_array, raw_bytes, error) — raw_bytes is
+    # preserved for S3 archival so we only read each upload once.
+    raw_images = {}
+    
+    side_img, side_raw, side_error = validate_image(side_image, "side")
     if side_error:
         log.error('analyze', 'Side image validation failed',
                  serial_id=serial_id, error=side_error['error'])
         raise HTTPException(status_code=400, detail=side_error)
+    raw_images['side'] = side_raw
     
-    top_img, top_error = validate_image(top_image, "top")
+    top_img, top_raw, top_error = validate_image(top_image, "top")
     if top_error:
         log.error('analyze', 'Top image validation failed',
                  serial_id=serial_id, error=top_error['error'])
         raise HTTPException(status_code=400, detail=top_error)
+    raw_images['top'] = top_raw
     
-    front_img, front_error = validate_image(front_image, "front")
+    front_img, front_raw, front_error = validate_image(front_image, "front")
     if front_error:
         log.error('analyze', 'Front image validation failed',
                  serial_id=serial_id, error=front_error['error'])
         raise HTTPException(status_code=400, detail=front_error)
+    raw_images['front'] = front_raw
     
     log.info('analyze', 'Images validated',
             serial_id=serial_id,
@@ -429,7 +570,7 @@ async def analyze(
     # Process images
     grader_result = grader.process_images(side_img, top_img, front_img, serial_id)
     
-    # Save debug images if generated
+    # Save debug images to disk (for /debug endpoint serving)
     debug_image_paths = {}
     if grader_result.get('debug_images'):
         debug_dir = f'{DEBUG_DIR_BASE}/{serial_id}'
@@ -447,7 +588,7 @@ async def analyze(
                     log.error('analyze', f'Failed to save debug image',
                              serial_id=serial_id, view=view_name, error=str(e))
         
-        # Prune old debug directories after saving new ones.
+        # Prune old debug directories
         _cleanup_old_debug_dirs()
     
     # Calculate grade
@@ -464,15 +605,12 @@ async def analyze(
     
     # Build response
     measurements = MeasurementsResponse(
-        # Heights from side view
         head_height_cm=grader_result['measurements'].get('head_height_cm'),
         withers_height_cm=grader_result['measurements'].get('withers_height_cm'),
         rump_height_cm=grader_result['measurements'].get('rump_height_cm'),
-        # Widths from top view (cross-referenced with side view leg positions)
         shoulder_width_cm=grader_result['measurements'].get('shoulder_width_cm'),
         waist_width_cm=grader_result['measurements'].get('waist_width_cm'),
         rump_width_cm=grader_result['measurements'].get('rump_width_cm'),
-        # Fallback/legacy
         top_body_width_cm=grader_result['measurements'].get('top_body_width_cm'),
         front_body_width_cm=grader_result['measurements'].get('front_body_width_cm'),
         avg_body_width_cm=grader_result['measurements'].get('avg_body_width_cm')
@@ -504,14 +642,36 @@ async def analyze(
         success=True
     )
     
-    # Save result
+    # Save result to local storage
     result_dict = response.model_dump()
     save_ok, save_error = storage.save_result(result_dict)
     if not save_ok:
         log.error('analyze', 'Failed to save result',
                  serial_id=serial_id, error=save_error)
-        # Don't fail the request, just log the error
     
+    # =========================================================================
+    # S3 ARCHIVAL (background, success-only)
+    # =========================================================================
+    # Only archive when grading actually produced useful results.
+    # Failed grades (missing views, bad detections, etc.) are not worth
+    # storing — they'd just pollute the buckets with unusable data.
+    #
+    # Runs in a background thread so the API response returns immediately.
+    # =========================================================================
+    if response.success and response.all_views_successful:
+        thread = threading.Thread(
+            target=_archive_to_s3,
+            args=(serial_id, raw_images, debug_image_paths, result_dict),
+            daemon=True
+        )
+        thread.start()
+        log.info('analyze', 'S3 archival started in background', serial_id=serial_id)
+    else:
+        log.info('analyze', 'Skipping S3 archival (grade not fully successful)',
+                serial_id=serial_id,
+                success=response.success,
+                all_views_ok=response.all_views_successful)
+
     duration = round(time.time() - start_time, 2)
     log.info('analyze', 'Request complete',
             serial_id=serial_id,
