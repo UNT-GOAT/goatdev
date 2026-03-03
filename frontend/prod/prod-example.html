@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prod Integration Example | HerdSync</title>
+    <script src="config.js"></script>
     <style>
       body {
         font-family: monospace;
@@ -161,7 +162,7 @@
   =====================================================================
   MJPEG streams from the camera proxy running on the Pi.
   The browser handles MJPEG natively — just set the img src.
-  Stream URL pattern: {PI_BASE}/api/viewfocus/stream/{side|top|front}
+  Stream URL pattern: {CONFIG.API_BASE}/api/viewfocus/stream/{side|top|front}
 -->
     <h2>Camera Previews</h2>
     <div class="streams">
@@ -232,14 +233,14 @@
       // Camera streams:  /api/viewfocus/stream/{cam}
       // Prod endpoints:  /api/prod/grade, /api/prod/status, /api/prod/debug/...
       // Caddy strips the prefix and routes to the right backend.
-      const PI_BASE = "https://CHANGE_ME:8443";
+      // Stored in config.js in root s3 bucket, fetched by the <script> tag in the head.
 
       // =====================================================================
       // STREAMS
       // =====================================================================
       ["side", "top", "front"].forEach((cam) => {
         document.getElementById("stream-" + cam).src =
-          PI_BASE + "/api/viewfocus/stream/" + cam;
+          CONFIG.API_BASE + "/api/viewfocus/stream/" + cam;
       });
 
       // =====================================================================
@@ -294,7 +295,7 @@
           // -----------------------------------------------------------------
           log("POST /api/prod/grade ...", "info");
 
-          const resp = await fetch(PI_BASE + "/api/prod/grade", {
+          const resp = await fetch(CONFIG.API_BASE + "/api/prod/grade", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -369,7 +370,7 @@
           }
         } catch (err) {
           log("Network error: " + err.message, "err");
-          log("Is the Pi reachable at " + PI_BASE + "?", "warn");
+          log("Is the Pi reachable at " + CONFIG.API_BASE + "?", "warn");
         } finally {
           btn.disabled = false;
         }
@@ -384,7 +385,7 @@
 
           let data;
           try {
-            const resp = await fetch(PI_BASE + "/api/prod/status");
+            const resp = await fetch(CONFIG.API_BASE + "/api/prod/status");
             data = await resp.json();
           } catch (err) {
             log("Lost connection to Pi, retrying...", "warn");
@@ -442,7 +443,8 @@
         log("Loading debug images...", "info");
 
         ["side", "top", "front"].forEach((view) => {
-          const url = PI_BASE + "/api/prod/debug/" + serialId + "/" + view;
+          const url =
+            CONFIG.API_BASE + "/api/prod/debug/" + serialId + "/" + view;
           const div = document.createElement("div");
           div.className = "debug-box";
           div.innerHTML =
@@ -458,7 +460,7 @@
           container.appendChild(div);
         });
 
-        log("Debug images loaded — review measurement overlays above", "ok");
+        log("Debug images loaded — review measurement overlays above", "ok"); //
       }
     </script>
   </body>
