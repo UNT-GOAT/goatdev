@@ -4,8 +4,9 @@ on:
   push:
     branches: [main]
     paths:
-      - "goat-app/**"
+      - "frontend/**"
       - ".github/workflows/deploy-frontend.yml"
+      - ".github/actions/upload-shared-config/**"
   workflow_dispatch:
 
 jobs:
@@ -17,44 +18,48 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Generate config
-        run: |
-          cat > goat-app/setup/config.js << EOF
-          const CONFIG = {
-            PASS_HASH: "${{ secrets.PASS_HASH }}",
-            API_BASE: "https://${{ secrets.TAILSCALE_HOST }}",
-            S3_BUCKET: "${{ secrets.S3_TRAINING_BUCKET }}",
-            S3_REGION: "us-east-2",
-          };
-          EOF
-
       - name: Check for setup page changes
         id: check
         run: |
-          if git diff --name-only HEAD~1 | grep -q "goat-app/setup/"; then
+          if git diff --name-only HEAD~1 | grep -q "^frontend/setup/"; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Deploy training UI to S3
+      - name: Upload shared config to S3 root
+        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        uses: ./.github/actions/upload-shared-config
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        with:
+          s3_bucket: goat-web-937249941844
+          aws_region: us-east-2
+          pass_hash: ${{ secrets.PASS_HASH }}
+          tailscale_host: ${{ secrets.TAILSCALE_HOST }}
+          s3_training_bucket: ${{ secrets.S3_TRAINING_BUCKET }}
+
+      - name: Deploy setup UI to S3
         if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: us-east-2
         run: |
-          aws s3 sync goat-app/setup/ s3://goat-web-937249941844/setup/
+          aws s3 sync frontend/setup/ s3://goat-web-937249941844/setup/
           echo "Setup UI deployed"
 
-      - name: Invalidate CloudFront
+      - name: Invalidate CloudFront (setup + config)
         if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: us-east-2
         run: |
-          aws cloudfront create-invalidation --distribution-id EB8KCE4E7TGI4 --paths "/setup/*"
+          aws cloudfront create-invalidation \
+            --distribution-id EB8KCE4E7TGI4 \
+            --paths "/setup/*" "/config.js"
 
   deploy-prod:
     runs-on: ubuntu-latest
@@ -67,26 +72,42 @@ jobs:
       - name: Check for prod changes
         id: check
         run: |
-          if git diff --name-only HEAD~1 | grep -v "goat-app/training/" | grep -q "goat-app/"; then
+          if git diff --name-only HEAD~1 | grep -v "^frontend/setup/" | grep -q "^frontend/"; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build and deploy prod
-        if: steps.check.outputs.changed == 'true'
+      - name: Upload shared config to S3 root
+        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        uses: ./.github/actions/upload-shared-config
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: us-east-2
-        run: |
-          echo "Prod build skipped - React not configured yet"
+        with:
+          s3_bucket: goat-web-937249941844
+          aws_region: us-east-2
+          pass_hash: ${{ secrets.PASS_HASH }}
+          tailscale_host: ${{ secrets.TAILSCALE_HOST }}
+          s3_training_bucket: ${{ secrets.S3_TRAINING_BUCKET }}
 
-      - name: Invalidate CloudFront
-        if: steps.check.outputs.changed == 'true'
+      - name: Deploy prod
+        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: us-east-2
         run: |
-          aws cloudfront create-invalidation --distribution-id EB8KCE4E7TGI4 --paths "/*"
+          aws s3 sync frontend/ s3://goat-web-937249941844/ --exclude "setup/*"
+          echo "Prod UI deployed"
+
+      - name: Invalidate CloudFront (prod + config)
+        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-2
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id EB8KCE4E7TGI4 \
+            --paths "/*" "/config.js"

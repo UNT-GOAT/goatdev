@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prod Integration Example | HerdSync</title>
+    <style>
+      body {
+        font-family: monospace;
+        background: #111;
+        color: #ccc;
+        max-width: 900px;
+        margin: 40px auto;
+        padding: 20px;
+      }
+      h1 {
+        color: #4caf50;
+        font-size: 18px;
+        margin-bottom: 4px;
+      }
+      .note {
+        color: #666;
+        font-size: 12px;
+        margin-bottom: 30px;
+        line-height: 1.6;
+      }
+      h2 {
+        color: #888;
+        font-size: 13px;
+        text-transform: uppercase;
+        margin: 30px 0 10px;
+      }
+
+      .streams {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+      .stream-box {
+        flex: 1;
+      }
+      .stream-box label {
+        display: block;
+        font-size: 11px;
+        color: #666;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+      }
+      .stream-box img {
+        width: 100%;
+        aspect-ratio: 4/3;
+        object-fit: contain;
+        background: #000;
+        border-radius: 4px;
+        display: block;
+      }
+
+      .form-row {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .form-row input {
+        flex: 1;
+        padding: 10px;
+        background: #1a1a2e;
+        border: 1px solid #333;
+        border-radius: 4px;
+        color: white;
+        font-family: monospace;
+      }
+      .form-row input:focus {
+        outline: none;
+        border-color: #4caf50;
+      }
+      button {
+        padding: 10px 24px;
+        background: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #45a049;
+      }
+      button:disabled {
+        background: #333;
+        color: #666;
+        cursor: not-allowed;
+      }
+
+      #log {
+        background: #000;
+        border-radius: 4px;
+        padding: 12px;
+        margin-top: 20px;
+        height: 300px;
+        overflow-y: auto;
+        font-size: 12px;
+        line-height: 1.8;
+      }
+      .log-line {
+        white-space: pre-wrap;
+      }
+      .log-line.ok {
+        color: #4caf50;
+      }
+      .log-line.err {
+        color: #e53935;
+      }
+      .log-line.warn {
+        color: #ff9800;
+      }
+      .log-line.info {
+        color: #888;
+      }
+
+      .debug-box {
+        flex: 1;
+      }
+      .debug-box label {
+        display: block;
+        font-size: 11px;
+        color: #666;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+      }
+      .debug-box img {
+        width: 100%;
+        background: #000;
+        border-radius: 4px;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Prod Integration Example</h1>
+    <p class="note">
+      Reference implementation — camera streams, grade submission, status
+      polling, debug images.<br />
+      All requests go to the Pi. The Pi captures images and forwards to EC2
+      internally.<br /><br />
+      <b>Backend services on the Pi used by this page:</b><br />
+      &bull; Camera proxy (port 8080) — MJPEG streams at
+      <code>/api/viewfocus/stream/{cam}</code><br />
+      &bull; Prod server (port 5000) — <code>/api/prod/grade</code>,
+      <code>/api/prod/status</code>, <code>/api/prod/debug/{id}/{view}</code
+      ><br />
+      &bull; Caddy reverse proxy unifies both behind port 8443. It strips the
+      <code>/api/prod</code> prefix before forwarding to port 5000.<br />
+      &bull; See the included <code>Caddyfile</code> under pi/system/ for the
+      full routing config.
+    </p>
+
+    <!--
+  =====================================================================
+  CAMERA STREAMS
+  =====================================================================
+  MJPEG streams from the camera proxy running on the Pi.
+  The browser handles MJPEG natively — just set the img src.
+  Stream URL pattern: {PI_BASE}/api/viewfocus/stream/{side|top|front}
+-->
+    <h2>Camera Previews</h2>
+    <div class="streams">
+      <div class="stream-box">
+        <label>Side</label>
+        <img id="stream-side" src="" alt="side stream" />
+      </div>
+      <div class="stream-box">
+        <label>Top</label>
+        <img id="stream-top" src="" alt="top stream" />
+      </div>
+      <div class="stream-box">
+        <label>Front</label>
+        <img id="stream-front" src="" alt="front stream" />
+      </div>
+    </div>
+
+    <!--
+  =====================================================================
+  GRADE FORM
+  =====================================================================
+  POST /api/prod/grade on the Pi (Caddy strips prefix, hits prod server's /grade):
+    { "serial_id": "GOAT001", "live_weight": 85.5 }
+
+  The Pi then:
+    1. Pre-checks EC2 reachability (fails fast if down)
+    2. Pre-checks all 3 cameras via proxy
+    3. Captures 1 image per camera
+    4. Sends images + data to EC2 /analyze
+    5. Archives images to S3
+    6. Result available via GET /status polling
+-->
+    <h2>Grade</h2>
+    <div class="form-row">
+      <input type="text" id="serialId" placeholder="serial_id (e.g. GOAT001)" />
+      <input
+        type="number"
+        id="liveWeight"
+        placeholder="live_weight (lbs)"
+        step="0.1"
+      />
+    </div>
+    <button id="gradeBtn" onclick="startGrade()">Grade</button>
+
+    <!--
+  =====================================================================
+  DEBUG IMAGES (shown after successful grade)
+  =====================================================================
+  After grading, EC2 saves debug images (measurement overlays).
+  Frontend can't reach EC2 directly.
+  Pi proxies: GET /api/prod/debug/{serial_id}/{view}
+  Caddy strips /api/prod, hits prod server's /debug/{serial_id}/{view}
+  Prod server fetches from EC2 and returns the JPEG.
+-->
+    <div id="debug-section" style="display: none; margin-top: 20px">
+      <button onclick="">View Debug Images</button>
+      <div id="debug-images" class="streams" style="margin-top: 10px"></div>
+    </div>
+
+    <div id="log"></div>
+
+    <script>
+      // =====================================================================
+      // CONFIG
+      // =====================================================================
+      // Point this at the Pi's Caddy port.
+      // All services are behind Caddy on port 8443.
+      // Camera streams:  /api/viewfocus/stream/{cam}
+      // Prod endpoints:  /api/prod/grade, /api/prod/status, /api/prod/debug/...
+      // Caddy strips the prefix and routes to the right backend.
+      const PI_BASE = "https://CHANGE_ME:8443";
+
+      // =====================================================================
+      // STREAMS
+      // =====================================================================
+      ["side", "top", "front"].forEach((cam) => {
+        document.getElementById("stream-" + cam).src =
+          PI_BASE + "/api/viewfocus/stream/" + cam;
+      });
+
+      // =====================================================================
+      // LOGGING
+      // =====================================================================
+      function log(msg, type = "info") {
+        const el = document.getElementById("log");
+        const time = new Date().toLocaleTimeString();
+        const div = document.createElement("div");
+        div.className = "log-line " + type;
+        div.textContent = time + "  " + msg;
+        el.appendChild(div);
+        el.scrollTop = el.scrollHeight;
+      }
+
+      // =====================================================================
+      // GRADE FLOW
+      // =====================================================================
+      async function startGrade() {
+        const serialId = document.getElementById("serialId").value.trim();
+        const liveWeight = parseFloat(
+          document.getElementById("liveWeight").value,
+        );
+        const btn = document.getElementById("gradeBtn");
+
+        if (!serialId) {
+          log("serial_id is required", "err");
+          return;
+        }
+        if (!liveWeight || liveWeight <= 0) {
+          log("valid live_weight is required", "err");
+          return;
+        }
+
+        btn.disabled = true;
+        document.getElementById("log").innerHTML = "";
+        document.getElementById("debug-section").style.display = "none";
+        log("Starting grade for " + serialId + " @ " + liveWeight + " lbs");
+
+        try {
+          // -----------------------------------------------------------------
+          // Step 1: POST /grade — kicks off capture + grade pipeline
+          // -----------------------------------------------------------------
+          // Returns 200 { status: 'grade_started' } on success.
+          //
+          // Error codes:
+          //   409 GRADE_IN_PROGRESS  — another grade is already running
+          //   400 MISSING_SERIAL_ID
+          //   400 INVALID_WEIGHT     — weight out of range (0-500 lbs)
+          //   503 EC2_UNREACHABLE    — EC2 health check failed before capture
+          //   503 CAMERAS_NOT_READY  — one or more cameras offline
+          // -----------------------------------------------------------------
+          log("POST /api/prod/grade ...", "info");
+
+          const resp = await fetch(PI_BASE + "/api/prod/grade", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              serial_id: serialId,
+              live_weight: liveWeight,
+            }),
+          });
+
+          const body = await resp.json();
+
+          if (!resp.ok) {
+            log(
+              "Grade rejected: " +
+                (body.message || body.error_code || resp.status),
+              "err",
+            );
+            if (body.fix) log("Fix: " + body.fix, "warn");
+            if (body.errors) body.errors.forEach((e) => log("  " + e, "warn"));
+            btn.disabled = false;
+            return;
+          }
+
+          log("Grade started — capturing images...", "ok");
+
+          // -----------------------------------------------------------------
+          // Step 2: Poll GET /status until background thread finishes
+          // -----------------------------------------------------------------
+          // Response:
+          //   active: bool        — true while running
+          //   progress: string    — 'starting'|'capturing'|'grading'|'archiving'
+          //   last_error: string  — set on failure
+          //   last_result: object — final result when done
+          //
+          // last_result on success contains:
+          //   serial_id, success, grade, measurements, confidence_scores,
+          //   all_views_successful, warnings,
+          //   timing: { capture_sec, ec2_sec, total_sec }
+          // -----------------------------------------------------------------
+          const result = await pollStatus();
+
+          if (result && result.success) {
+            log("Grade complete!", "ok");
+            log("  Grade:  " + (result.grade || "N/A"), "ok");
+            log("  Views OK: " + result.all_views_successful, "info");
+            if (result.timing) {
+              log(
+                "  Capture: " +
+                  result.timing.capture_sec +
+                  "s, EC2: " +
+                  result.timing.ec2_sec +
+                  "s, Total: " +
+                  result.timing.total_sec +
+                  "s",
+                "info",
+              );
+            }
+            if (result.measurements) {
+              log(
+                "  Measurements: " + JSON.stringify(result.measurements),
+                "info",
+              );
+            }
+            if (result.warnings && result.warnings.length > 0) {
+              result.warnings.forEach((w) => log("  Warning: " + w, "warn"));
+            }
+            log("");
+            log("Click button below to review measurement overlays", "info");
+            showDebugButton(serialId);
+          } else {
+            log("Grade failed: " + (result?.error || "unknown"), "err");
+            if (result?.fix) log("Fix: " + result.fix, "warn");
+          }
+        } catch (err) {
+          log("Network error: " + err.message, "err");
+          log("Is the Pi reachable at " + PI_BASE + "?", "warn");
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      async function pollStatus() {
+        let lastProgress = null;
+
+        // Poll every 500ms, timeout after 120s
+        for (let i = 0; i < 240; i++) {
+          await new Promise((r) => setTimeout(r, 500));
+
+          let data;
+          try {
+            const resp = await fetch(PI_BASE + "/api/prod/status");
+            data = await resp.json();
+          } catch (err) {
+            log("Lost connection to Pi, retrying...", "warn");
+            continue;
+          }
+
+          if (data.progress && data.progress !== lastProgress) {
+            lastProgress = data.progress;
+            const msgs = {
+              starting: "Initializing cameras...",
+              capturing: "Capturing images from cameras...",
+              grading: "Sending to EC2 for grading...",
+              archiving: "Archiving images to S3...",
+            };
+            log(msgs[data.progress] || data.progress, "info");
+          }
+
+          if (!data.active) {
+            if (data.last_error) {
+              return { success: false, error: data.last_error };
+            }
+            return (
+              data.last_result || {
+                success: false,
+                error: "No result returned",
+              }
+            );
+          }
+        }
+
+        return {
+          success: false,
+          error: "Timed out waiting for grade to complete",
+        };
+      }
+
+      // =====================================================================
+      // DEBUG IMAGES
+      // =====================================================================
+      // Pi proxies debug images from EC2:
+      //   GET /api/prod/debug/{serial_id}/{view} → Caddy strips prefix → prod server → EC2
+      // Views: side, top, front
+
+      function showDebugButton(serialId) {
+        const container = document.getElementById("debug-section");
+        container.style.display = "block";
+        container.querySelector("button").onclick = () =>
+          loadDebugImages(serialId);
+        document.getElementById("debug-images").innerHTML = "";
+      }
+
+      async function loadDebugImages(serialId) {
+        const container = document.getElementById("debug-images");
+        container.innerHTML = "";
+        log("Loading debug images...", "info");
+
+        ["side", "top", "front"].forEach((view) => {
+          const url = PI_BASE + "/api/prod/debug/" + serialId + "/" + view;
+          const div = document.createElement("div");
+          div.className = "debug-box";
+          div.innerHTML =
+            "<label>" +
+            view +
+            "</label>" +
+            '<img src="' +
+            url +
+            '" alt="' +
+            view +
+            ' debug"' +
+            " onerror=\"this.alt='not available'; this.style.opacity=0.3\" />";
+          container.appendChild(div);
+        });
+
+        log("Debug images loaded — review measurement overlays above", "ok"); //
+      }
+    </script>
+  </body>
+</html>
