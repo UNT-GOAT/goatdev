@@ -24,7 +24,9 @@
         }
         reverse_proxy 127.0.0.1:5002
     }
-    handle_path /api/viewfocus/stream/* {
+    @streams path /api/viewfocus/stream/*
+    handle @streams {
+        uri strip_prefix /api/viewfocus
         reverse_proxy 127.0.0.1:8080
     }
     handle_path /api/viewfocus/* {
@@ -73,7 +75,9 @@
         }
         reverse_proxy 127.0.0.1:5002
     }
-    handle_path /api/viewfocus/stream/* {
+    @streams path /api/viewfocus/stream/*
+    handle @streams {
+        uri strip_prefix /api/viewfocus
         reverse_proxy 127.0.0.1:8080
     }
     handle_path /api/viewfocus/* {
