@@ -1,115 +1,51 @@
-"{$SITE\*DOMAIN}" {
+"{$SITE_DOMAIN}" {
 
     tls {
-    get_certificate tailscale
+        get_certificate tailscale
     }
 
-    handle_path /api/capture/\* {
-
-    	forward*auth 127.0.0.1:5003 {
-    		uri /verify
-    		copy_headers Authorization
-    	}
-
-    	reverse_proxy 127.0.0.1:5001
-
+    handle_path /api/capture/* {
+        reverse_proxy 127.0.0.1:5001
     }
 
-    handle_path /api/heater/\* {
-
-    	forward*auth 127.0.0.1:5003 {
-    		uri /verify
-    		copy_headers Authorization
-    	}
-
-    	reverse_proxy 127.0.0.1:5002
-
+    handle_path /api/heater/* {
+        reverse_proxy 127.0.0.1:5002
     }
 
-    handle_path /api/viewfocus/\* {
-
-    	forward*auth 127.0.0.1:5003 {
-    		uri /verify
-    		copy_headers Authorization
-
-    	}
-    	reverse_proxy 127.0.0.1:8080
-
+    handle_path /api/viewfocus/* {
+        reverse_proxy 127.0.0.1:8080
     }
 
-    handle_path /api/prod/\* {
-
-    	forward_auth 127.0.0.1:5003 {
-    		uri /verify
-    		copy_headers Authorization
-    	}
-    	reverse_proxy 127.0.0.1:5000
-
+    handle_path /api/prod/* {
+        reverse_proxy 127.0.0.1:5000
     }
 
     handle {
-
-    	forward_auth 127.0.0.1:5003 {
-    		uri /verify
-    		copy_headers Authorization
-    	}
-
-    	reverse_proxy 127.0.0.1:5001
-
+        reverse_proxy 127.0.0.1:5001
     }
 
 }
 
 :8444 {
 
-    handle*path /api/capture/* {
-
-    	forward*auth 127.0.0.1:5003 {
-    		uri /verify
-    		copy_headers Authorization
-    	}
-
-    	reverse_proxy 127.0.0.1:5001
+    handle_path /api/capture/* {
+        reverse_proxy 127.0.0.1:5001
     }
 
     handle_path /api/heater/* {
-
-    	forward*auth 127.0.0.1:5003 {
-    		uri /verify
-    		copy_headers Authorization
-    	}
-
-    	reverse_proxy 127.0.0.1:5002
+        reverse_proxy 127.0.0.1:5002
     }
 
     handle_path /api/viewfocus/* {
-
-    	forward*auth 127.0.0.1:5003 {
-    		uri /verify
-    		copy_headers Authorization
-    	}
-
-    	reverse_proxy 127.0.0.1:8080
+        reverse_proxy 127.0.0.1:8080
     }
 
     handle_path /api/prod/* {
-
-    	forward_auth 127.0.0.1:5003 {
-    		uri /verify
-    		copy_headers Authorization
-    	}
-
-    	reverse_proxy 127.0.0.1:5000
+        reverse_proxy 127.0.0.1:5000
     }
 
     handle {
-
-    	forward_auth 127.0.0.1:5003 {
-    		uri /verify
-    		copy_headers Authorization
-    	}
-
-    reverse_proxy 127.0.0.1:5001
+        reverse_proxy 127.0.0.1:5001
     }
 
 }
