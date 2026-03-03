@@ -1,0 +1,156 @@
+"""
+Security utilities.
+
+JWT:
+  - RS256 (asymmetric). Private key signs, public key verifies.
+  - Key pair auto-generated on first run if not present.
+  - Public key served via JWKS endpoint so any service can validate
+    without a shared secret.
+
+Passwords:
+  - bcrypt via passlib. Slow by design — brute force resistant.
+
+Tokens:
+  - Access token: short-lived (15 min), used for API auth
+  - Refresh token: long-lived (30 days), stored hashed in DB,
+    used to get new access tokens without re-entering password
+"""
+
+import os
+import hashlib
+import secrets
+from datetime import datetime, timedelta
+from typing import Optional
+
+import jwt
+from passlib.context import CryptContext
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+from .config import (
+    JWT_PRIVATE_KEY_PATH, JWT_PUBLIC_KEY_PATH,
+    ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
+)
+
+
+# =============================================================================
+# PASSWORD HASHING
+# =============================================================================
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
+
+
+# =============================================================================
+# RSA KEY MANAGEMENT
+# =============================================================================
+
+_private_key = None
+_public_key = None
+_public_key_pem = None
+
+
+def _ensure_keys():
+    """Load or generate RSA key pair."""
+    global _private_key, _public_key, _public_key_pem
+
+    if _private_key is not None:
+        return
+
+    if os.path.exists(JWT_PRIVATE_KEY_PATH) and os.path.exists(JWT_PUBLIC_KEY_PATH):
+        # Load existing keys
+        with open(JWT_PRIVATE_KEY_PATH, "rb") as f:
+            _private_key = serialization.load_pem_private_key(f.read(), password=None)
+        with open(JWT_PUBLIC_KEY_PATH, "rb") as f:
+            _public_key_pem = f.read()
+            _public_key = serialization.load_pem_public_key(_public_key_pem)
+    else:
+        # Generate new key pair
+        _private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=2048,
+        )
+        _public_key = _private_key.public_key()
+
+        private_pem = _private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        _public_key_pem = _public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+
+        os.makedirs(os.path.dirname(JWT_PRIVATE_KEY_PATH), exist_ok=True)
+        with open(JWT_PRIVATE_KEY_PATH, "wb") as f:
+            f.write(private_pem)
+        os.chmod(JWT_PRIVATE_KEY_PATH, 0o600)
+
+        with open(JWT_PUBLIC_KEY_PATH, "wb") as f:
+            f.write(_public_key_pem)
+
+
+def get_public_key_pem() -> bytes:
+    """Return the public key in PEM format (for JWKS endpoint)."""
+    _ensure_keys()
+    return _public_key_pem
+
+
+# =============================================================================
+# JWT TOKEN CREATION & VALIDATION
+# =============================================================================
+
+def create_access_token(user_id: int, username: str, role: str) -> str:
+    """Create a short-lived access token."""
+    _ensure_keys()
+    now = datetime.utcnow()
+    payload = {
+        "sub": str(user_id),
+        "username": username,
+        "role": role,
+        "type": "access",
+        "iat": now,
+        "exp": now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+    }
+    return jwt.encode(payload, _private_key, algorithm="RS256")
+
+
+def create_refresh_token() -> tuple[str, datetime]:
+    """
+    Create a refresh token.
+    Returns (raw_token, expires_at).
+    The raw token is sent to the client. Only the hash is stored in DB.
+    """
+    raw_token = secrets.token_urlsafe(48)
+    expires_at = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    return raw_token, expires_at
+
+
+def hash_refresh_token(raw_token: str) -> str:
+    """SHA-256 hash of refresh token for DB storage."""
+    return hashlib.sha256(raw_token.encode()).hexdigest()
+
+
+def decode_access_token(token: str) -> Optional[dict]:
+    """
+    Decode and validate an access token.
+    Returns the payload dict or None if invalid/expired.
+    """
+    _ensure_keys()
+    try:
+        payload = jwt.decode(token, _public_key, algorithms=["RS256"])
+        if payload.get("type") != "access":
+            return None
+        return payload
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
