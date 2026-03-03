@@ -15,7 +15,7 @@
  *     // At page load — checks auth, shows login if needed
  *     HerdAuth.requireAuth().then(user => {
  *       console.log('Logged in as', user.username, user.role);
- *       // user.role is 'admin' or 'associate'
+ *       // user.role is 'admin' or 'operator'
  *     });
  *
  *     // For API calls — automatically adds Bearer token
