@@ -1,6 +1,8 @@
 "{$SITE_DOMAIN}" {
 
-    tls internal
+    tls {
+        get_certificate tailscale
+    }
 
     # --- Training / Capture (port 5001) ---
     handle_path /api/capture/* {
