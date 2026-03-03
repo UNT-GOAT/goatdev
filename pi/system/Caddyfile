@@ -1,5 +1,7 @@
 {$SITE_DOMAIN} {
 
+    tls internal
+
     # --- Training / Capture (port 5001) ---
     handle_path /api/capture/* {
     	reverse_proxy 127.0.0.1:5001
