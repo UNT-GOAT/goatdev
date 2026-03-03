@@ -1,28 +1,51 @@
-(site_routes) {
-handle_path /api/capture/_ {
-reverse_proxy 127.0.0.1:5001
-}
-handle_path /api/heater/_ {
-reverse_proxy 127.0.0.1:5002
-}
-handle_path /api/viewfocus/_ {
-reverse_proxy 127.0.0.1:8080
-}
-handle_path /api/prod/_ {
-reverse_proxy 127.0.0.1:5000
-}
-handle {
-reverse_proxy 127.0.0.1:5001
-}
-}
-
 "{$SITE_DOMAIN}" {
-tls {
-get_certificate tailscale
-}
-import site_routes
+
+    tls {
+        get_certificate tailscale
+    }
+
+    handle_path /api/capture/* {
+        reverse_proxy 127.0.0.1:5001
+    }
+
+    handle_path /api/heater/* {
+        reverse_proxy 127.0.0.1:5002
+    }
+
+    handle_path /api/viewfocus/* {
+        reverse_proxy 127.0.0.1:8080
+    }
+
+    handle_path /api/prod/* {
+        reverse_proxy 127.0.0.1:5000
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:5001
+    }
+
 }
 
 :8444 {
-import site_routes
+
+    handle_path /api/capture/* {
+        reverse_proxy 127.0.0.1:5001
+    }
+
+    handle_path /api/heater/* {
+        reverse_proxy 127.0.0.1:5002
+    }
+
+    handle_path /api/viewfocus/* {
+        reverse_proxy 127.0.0.1:8080
+    }
+
+    handle_path /api/prod/* {
+        reverse_proxy 127.0.0.1:5000
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:5001
+    }
+
 }
