@@ -21,7 +21,7 @@ jobs:
       - name: Check for setup page changes
         id: check
         run: |
-          if git diff --name-only HEAD~1 | grep -q "^frontend/setup/\|^frontend/auth/"; then
+          if git diff --name-only HEAD~1 | grep -q "^frontend/setup/\|^frontend/js/"; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
@@ -48,7 +48,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: us-east-2
         run: |
-          aws s3 sync frontend/auth/ s3://goat-web-937249941844/auth/
+          aws s3 sync frontend/js/ s3://goat-web-937249941844/js/
           echo "Auth JS deployed"
 
       - name: Deploy setup UI to S3
@@ -70,7 +70,7 @@ jobs:
         run: |
           aws cloudfront create-invalidation \
             --distribution-id EB8KCE4E7TGI4 \
-            --paths "/setup/*" "/config.js" "/auth/*"
+            --paths "/setup/*" "/config.js" "/js/*"
 
   deploy-prod:
     runs-on: ubuntu-latest
@@ -83,7 +83,7 @@ jobs:
       - name: Check for prod changes
         id: check
         run: |
-          if git diff --name-only HEAD~1 | grep -q "^frontend/prod/\|^frontend/auth/"; then
+          if git diff --name-only HEAD~1 | grep -q "^frontend/prod/\|^frontend/js/"; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
@@ -110,7 +110,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: us-east-2
         run: |
-          aws s3 sync frontend/auth/ s3://goat-web-937249941844/auth/
+          aws s3 sync frontend/js/ s3://goat-web-937249941844/js/
           echo "Auth JS deployed"
 
       - name: Deploy prod
@@ -132,4 +132,4 @@ jobs:
         run: |
           aws cloudfront create-invalidation \
             --distribution-id EB8KCE4E7TGI4 \
-            --paths "/*" "/config.js" "/auth/*"
+            --paths "/*" "/config.js" "/js/*"
