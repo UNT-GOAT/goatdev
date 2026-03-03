@@ -6,7 +6,7 @@ SYSTEM_DIR="$REPO_ROOT/pi/system"
 echo "=== GOAT-PI System Deploy ==="
 
 echo "Installing systemd services..."
-for service in goat-prod.service goat-training.service goat-display.service camera-heating.service camera-proxy.service setup-proxy.service git-sync-on-boot.service; do
+for service in goat-prod.service goat-training.service goat-display.service camera-heating.service camera-proxy.service git-sync-on-boot.service; do
     if [ -f "$SYSTEM_DIR/$service" ]; then
         cp "$SYSTEM_DIR/$service" /etc/systemd/system/
         echo "  ✓ $service"
