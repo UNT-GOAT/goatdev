@@ -2,6 +2,11 @@
 Pi Production Server
 Captures images from 3 cameras via camera proxy, sends to EC2 API for grading.
 Also provides connectivity testing and health checks.
+
+S3 ARCHIVAL NOTE:
+The Pi does NOT write to S3. EC2 owns all S3 archival (raw images to
+goat-captures, debug images + result.json to goat-processed). This keeps
+the Pi thin — it only captures and relays.
 """
 
 from flask import Flask, jsonify, request
@@ -51,10 +56,6 @@ REQUEST_TIMEOUT_SEC = 10
 MIN_IMAGE_BYTES = 50000      # 50KB minimum valid image
 MAX_SERIAL_ID_LEN = 50
 
-# S3 bucket for archiving captured images (prod grading flow).
-# Previously prod captures were deleted after EC2 response with no archive.
-S3_CAPTURES_BUCKET = os.environ.get('S3_CAPTURES_BUCKET')
-
 # ============================================================
 # LOGGING
 # ============================================================
@@ -95,20 +96,6 @@ def reset_state():
             'started_at': None,
             'progress': None
         })
-
-# ============================================================
-# S3 HELPER
-# ============================================================
-
-_s3_client = None
-
-def get_s3():
-    """Lazy-init S3 client for image archival."""
-    global _s3_client
-    if _s3_client is None:
-        import boto3
-        _s3_client = boto3.client('s3')
-    return _s3_client
 
 # ============================================================
 # CAMERA HELPERS
@@ -249,12 +236,10 @@ def do_grade(serial_id: str, live_weight: float):
     """
     Full capture → grade workflow. Runs in background thread.
     Captures 1 image per camera via proxy, sends all 3 to EC2 API.
+    EC2 handles S3 archival on success — Pi just captures and relays.
     """
     start_time = time.time()
     results = {}
-    # Lock for thread-safe writes to the shared results dict.
-    # Previously threads called results.update({n: ...}) without sync,
-    # which is not guaranteed atomic and can corrupt on ARM / with gevent.
     results_lock = threading.Lock()
 
     try:
@@ -309,7 +294,6 @@ def do_grade(serial_id: str, live_weight: float):
 
             threads = {}
             for name, path in batch:
-                # Thread-safe write to results dict via lock.
                 def _capture_and_store(n=name, p=path):
                     result = capture_single_image(n, p, serial_id)
                     with results_lock:
@@ -367,6 +351,7 @@ def do_grade(serial_id: str, live_weight: float):
                 per_camera={n: r.get('capture_time_sec') for n, r in results.items()})
 
         # Phase 2: Send to EC2
+        # EC2 handles grading, S3 archival of raw images, debug images, and result.json.
         set_state(progress='grading')
         log.info('grade', 'Sending to EC2',
                 serial_id=serial_id, ec2_api=EC2_API,
@@ -399,25 +384,6 @@ def do_grade(serial_id: str, live_weight: float):
             if response.status_code == 200:
                 grade_result = response.json()
                 total_time = round(time.time() - start_time, 2)
-
-                # Upload captured images to S3 before deleting them.
-                # This mirrors what training_server does, provides a debug
-                # archive so we can review what the grading model saw.
-                if S3_CAPTURES_BUCKET:
-                    set_state(progress='archiving')
-                    for cam_name, r in results.items():
-                        fp = r.get('filepath')
-                        if fp and os.path.exists(fp):
-                            s3_key = f'{serial_id}/{cam_name}.jpg'
-                            try:
-                                get_s3().upload_file(fp, S3_CAPTURES_BUCKET, s3_key)
-                                log.info(f's3:{cam_name}', 'Archived to S3',
-                                        key=s3_key,
-                                        size_bytes=r.get('file_size_bytes'))
-                            except Exception as e:
-                                # Don't fail the grade if S3 upload fails
-                                log.warn(f's3:{cam_name}', 'S3 archive failed (non-fatal)',
-                                        key=s3_key, error=str(e))
 
                 set_state(
                     last_error=None,
@@ -503,7 +469,7 @@ def do_grade(serial_id: str, live_weight: float):
                          serial_id=serial_id, error=str(e))
 
         finally:
-            # Clean up captured images
+            # Clean up captured images from /tmp
             for r in results.values():
                 fp = r.get('filepath')
                 if fp and os.path.exists(fp):
@@ -710,9 +676,8 @@ def grade():
         "live_weight": 85.5
     }
 
-    Now checks EC2 reachability BEFORE starting the capture.
-    Previously the entire 10s+ capture would complete only to discover
-    EC2 was down, wasting time and camera resources.
+    Checks EC2 reachability BEFORE starting the capture.
+    EC2 handles all S3 archival on successful grades.
     """
     state = get_state()
     if state['active']:
@@ -774,8 +739,6 @@ def grade():
         }), 400
 
     # Check EC2 reachability BEFORE capturing images.
-    # This avoids wasting 10s+ on a full 3-camera capture cycle only to
-    # discover EC2 is down when we try to submit. Fail fast instead.
     ec2_check = check_ec2_api()
     if ec2_check['status'] != 'ok':
         log.error('grade', 'EC2 not reachable, aborting before capture',
@@ -843,8 +806,8 @@ def status():
 @app.route('/grade/test', methods=['POST'])
 def grade_test():
     """
-    Test grading with local image files instead of cameras.
-    Runs the same EC2 submission pipeline as /grade but skips capture.
+    Test grading with uploaded image files instead of cameras.
+    Forwards directly to EC2 /analyze — EC2 handles grading and S3 archival.
 
     Usage:
         curl -X POST http://localhost:5000/grade/test \
@@ -891,7 +854,7 @@ def grade_test():
             top_size=request.files['top_image'].content_length,
             front_size=request.files['front_image'].content_length)
 
-    # Forward to EC2
+    # Forward to EC2 (EC2 handles grading + S3 archival)
     start_time = time.time()
     try:
         files = {
@@ -1103,24 +1066,12 @@ def test_connectivity():
     return jsonify(results)
 
 
-"""
-Add these routes to prod_server.py (in the ROUTES section, before STARTUP).
-
-Proxies debug images from EC2 so the frontend doesn't need direct EC2 access.
-"""
-
-
 @app.route('/debug/<serial_id>/<view>')
 def proxy_debug_image(serial_id, view):
     """
     Proxy a debug image from EC2.
     
-    The EC2 API stores debug images (measurement overlays) after grading.
-    Frontend can't reach EC2 directly, so this fetches and passes through.
-    
     GET /debug/{serial_id}/{view}  ->  EC2 GET /debug/{serial_id}/{view}
-    
-    Returns: JPEG image or error JSON
     """
     if view not in ('side', 'top', 'front'):
         return jsonify({
@@ -1129,7 +1080,6 @@ def proxy_debug_image(serial_id, view):
             'message': 'view must be one of: side, top, front'
         }), 400
 
-    # Sanitize serial_id same as /grade does
     sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', serial_id.strip())
     if not sanitized or len(sanitized) > MAX_SERIAL_ID_LEN:
         return jsonify({
@@ -1188,8 +1138,6 @@ def proxy_debug_list(serial_id):
     Proxy the debug image listing from EC2.
     
     GET /debug/{serial_id}  ->  EC2 GET /debug/{serial_id}
-    
-    Returns: { serial_id, debug_images: [{view, url, filename}], count }
     """
     sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', serial_id.strip())
     if not sanitized or len(sanitized) > MAX_SERIAL_ID_LEN:
@@ -1252,8 +1200,7 @@ def run_startup_checks():
     log.info('startup', 'Configuration',
             ec2_ip=EC2_IP, ec2_api=EC2_API,
             resolution=f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
-            proxy_url=PROXY_URL,
-            s3_captures_bucket=S3_CAPTURES_BUCKET or '(not set)')
+            proxy_url=PROXY_URL)
 
     # System info
     sys_info = get_system_info()
