@@ -357,8 +357,7 @@ def reconnect_camera(name):
 
 def _has_active_demand():
     """Check if any stream clients are connected or a capture is pending."""
-    if _capture_requested.is_set():
-        return True
+    return True
 
     return any(buf._get_client_count() > 0 for buf in buffers.values())
 
