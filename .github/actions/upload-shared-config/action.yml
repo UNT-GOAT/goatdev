@@ -9,9 +9,6 @@ inputs:
     description: AWS region (e.g. us-east-2)
     required: true
 
-  pass_hash:
-    description: PASS_HASH value
-    required: true
   tailscale_host:
     description: TAILSCALE host (domain or hostname, without scheme)
     required: true
@@ -31,7 +28,6 @@ runs:
         mkdir -p frontend
         cat > frontend/config.js << 'EOF'
         const CONFIG = {
-          PASS_HASH: "__PASS_HASH__",
           API_BASE: "https://__TAILSCALE_HOST__:__TAILSCALE_PORT__",
           S3_BUCKET: "__S3_TRAINING_BUCKET__",
           S3_REGION: "__S3_REGION__",
@@ -39,7 +35,6 @@ runs:
         EOF
 
         sed -i \
-          -e "s|__PASS_HASH__|${{ inputs.pass_hash }}|g" \
           -e "s|__TAILSCALE_HOST__|${{ inputs.tailscale_host }}|g" \
           -e "s|__TAILSCALE_PORT__|${{ inputs.tailscale_port }}|g" \
           -e "s|__S3_TRAINING_BUCKET__|${{ inputs.s3_training_bucket }}|g" \
