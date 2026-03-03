@@ -40,12 +40,12 @@ class RefreshResponse(BaseModel):
 class CreateUserRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=50, pattern=r"^[a-zA-Z0-9_-]+$")
     password: str = Field(..., min_length=8)
-    role: str = Field(default="associate", pattern=r"^(admin|associate)$")
+    role: str = Field(default="operator", pattern=r"^(admin|operator)$")
 
 
 class UpdateUserRequest(BaseModel):
     password: Optional[str] = Field(default=None, min_length=8)
-    role: Optional[str] = Field(default=None, pattern=r"^(admin|associate)$")
+    role: Optional[str] = Field(default=None, pattern=r"^(admin|operator)$")
     active: Optional[bool] = None
 
 
