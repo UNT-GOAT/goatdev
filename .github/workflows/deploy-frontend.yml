@@ -38,7 +38,6 @@ jobs:
           aws_region: us-east-2
           pass_hash: ${{ secrets.PASS_HASH }}
           tailscale_host: ${{ secrets.TAILSCALE_HOST }}
-          tailscale_port: ${{ secrets.TAILSCALE_PORT }}
           s3_training_bucket: ${{ secrets.S3_TRAINING_BUCKET }}
 
       - name: Deploy setup UI to S3
@@ -90,7 +89,6 @@ jobs:
           aws_region: us-east-2
           pass_hash: ${{ secrets.PASS_HASH }}
           tailscale_host: ${{ secrets.TAILSCALE_HOST }}
-          tailscale_port: ${{ secrets.TAILSCALE_PORT }}
           s3_training_bucket: ${{ secrets.S3_TRAINING_BUCKET }}
 
       - name: Deploy prod

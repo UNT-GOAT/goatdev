@@ -1,4 +1,4 @@
-:8443 {
+{$SITE_DOMAIN} {
 
     # --- Training / Capture (port 5001) ---
     handle_path /api/capture/* {

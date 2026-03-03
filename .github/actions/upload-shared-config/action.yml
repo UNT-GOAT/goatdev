@@ -15,9 +15,6 @@ inputs:
   tailscale_host:
     description: TAILSCALE host (domain or hostname, without scheme)
     required: true
-  tailscale_port:
-    description: TAILSCALE port (e.g. 8443)
-    required: true
   s3_training_bucket:
     description: Training bucket name used by UI
     required: true
@@ -32,7 +29,7 @@ runs:
         cat > frontend/config.js << 'EOF'
         const CONFIG = {
           PASS_HASH: "__PASS_HASH__",
-          API_BASE: "https://__TAILSCALE_HOST__:__TAILSCALE_PORT__",
+          API_BASE: "https://__TAILSCALE_HOST__",
           S3_BUCKET: "__S3_TRAINING_BUCKET__",
           S3_REGION: "__S3_REGION__",
         };
@@ -41,7 +38,6 @@ runs:
         sed -i \
           -e "s|__PASS_HASH__|${{ inputs.pass_hash }}|g" \
           -e "s|__TAILSCALE_HOST__|${{ inputs.tailscale_host }}|g" \
-          -e "s|__TAILSCALE_PORT__|${{ inputs.tailscale_port }}|g" \
           -e "s|__S3_TRAINING_BUCKET__|${{ inputs.s3_training_bucket }}|g" \
           -e "s|__S3_REGION__|${{ inputs.aws_region }}|g" \
           frontend/config.js
