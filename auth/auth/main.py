@@ -6,7 +6,7 @@ Runs on EC2 port 8001, independent of the goat grading pipeline.
 
 Provides:
   - Username/password authentication with JWT tokens
-  - User management (admin creates associates)
+  - User management (admin creates operators)
   - JWKS endpoint for offline token validation by other services
   - Token refresh flow for seamless session management
 
