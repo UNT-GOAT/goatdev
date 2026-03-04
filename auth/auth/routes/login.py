@@ -1,10 +1,8 @@
 """
 Authentication routes — login, refresh, logout.
-
 These are the only unauthenticated endpoints (login and refresh).
 Everything else requires a valid access token.
 """
-
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -22,13 +20,60 @@ from ..rate_limiter import login_limiter
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+@router.post("/login", response_model=LoginResponse)
+def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    """
+    Authenticate with username + password, receive access + refresh tokens.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+
+    # Rate limit check
+    is_limited, retry_after = login_limiter.is_rate_limited(client_ip, req.username)
+    if is_limited:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many login attempts. Try again in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    user = db.query(User).filter(
+        User.username == req.username,
+        User.active == True
+    ).first()
+
+    if not user or not verify_password(req.password, user.password_hash):
+        login_limiter.record_failure(client_ip, req.username)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    login_limiter.record_success(client_ip, req.username)
+
+    # Create tokens
+    access_token = create_access_token(user.id, user.username, user.role)
+    raw_refresh, refresh_expires = create_refresh_token()
+
+    # Store hashed refresh token
+    db_token = RefreshToken(
+        user_id=user.id,
+        token_hash=hash_refresh_token(raw_refresh),
+        expires_at=refresh_expires,
+    )
+    db.add(db_token)
+    db.commit()
+
+    return LoginResponse(
+        access_token=access_token,
+        refresh_token=raw_refresh,
+        token_type="bearer",
+        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        user={"id": user.id, "username": user.username, "role": user.role},
+    )
+
+
 @router.post("/refresh", response_model=RefreshResponse)
 def refresh(req: RefreshRequest, db: Session = Depends(get_db)):
     """
     Exchange a valid refresh token for a new access token.
     The old refresh token is revoked and a new one issued (rotation).
-    If someone steals a refresh token and uses it, the legitimate user's
-    next refresh will fail — signaling compromise.
     """
     token_hash = hash_refresh_token(req.refresh_token)
 
@@ -74,57 +119,16 @@ def refresh(req: RefreshRequest, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/refresh", response_model=RefreshResponse)
-def refresh(req: RefreshRequest, db: Session = Depends(get_db)):
-    """
-    Exchange a valid refresh token for a new access token.
-    The refresh token itself is NOT rotated — it stays valid until expiry.
-    """
-    token_hash = hash_refresh_token(req.refresh_token)
-
-    db_token = db.query(RefreshToken).filter(
-        RefreshToken.token_hash == token_hash
-    ).first()
-
-    if not db_token:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
-
-    if db_token.expires_at < datetime.utcnow():
-        # Clean up expired token
-        db.delete(db_token)
-        db.commit()
-        raise HTTPException(status_code=401, detail="Refresh token expired")
-
-    user = db.query(User).filter(
-        User.id == db_token.user_id,
-        User.active == True
-    ).first()
-
-    if not user:
-        raise HTTPException(status_code=401, detail="User deactivated")
-
-    access_token = create_access_token(user.id, user.username, user.role)
-
-    return RefreshResponse(
-        access_token=access_token,
-        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-    )
-
-
 @router.post("/logout")
 def logout(req: RefreshRequest, db: Session = Depends(get_db)):
     """
     Revoke a refresh token. Access tokens will expire naturally (15 min).
-    For immediate revocation of an associate, deactivate their account
-    via /auth/users — that prevents refresh and new access tokens.
     """
     token_hash = hash_refresh_token(req.refresh_token)
     db_token = db.query(RefreshToken).filter(
         RefreshToken.token_hash == token_hash
     ).first()
-
     if db_token:
         db.delete(db_token)
         db.commit()
-
     return {"status": "ok"}
