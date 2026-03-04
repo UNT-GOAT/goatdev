@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..db_models import User, RefreshToken
-from ..security import hash_password
+from ..security import hash_password, mark_user_deactivated, mark_user_reactivated
 from ..models import (
     CreateUserRequest, UpdateUserRequest,
     UserResponse, UserListResponse
@@ -119,11 +119,15 @@ def update_user(
 
     if req.active is not None:
         user.active = req.active
-        # If deactivating, revoke all refresh tokens
         if not req.active:
+            # Revoke all refresh tokens
             db.query(RefreshToken).filter(
                 RefreshToken.user_id == user.id
             ).delete()
+            # Immediately reject any existing access tokens
+            mark_user_deactivated(user.id)
+        else:
+            mark_user_reactivated(user.id)
 
     db.commit()
     db.refresh(user)
@@ -148,6 +152,7 @@ def delete_user(
     if user.id == admin.id:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
 
+    mark_user_deactivated(user.id)
     db.delete(user)
     db.commit()
 

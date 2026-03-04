@@ -19,6 +19,7 @@ Tokens:
 import os
 import hashlib
 import secrets
+import threading
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -168,3 +169,37 @@ def decode_access_token(token: str) -> Optional[dict]:
         return None
     except jwt.InvalidTokenError:
         return None
+    
+
+
+# =============================================================================
+# DEACTIVATED USER TRACKING
+# =============================================================================
+# In-memory set of user IDs whose tokens should be rejected immediately,
+# even if the JWT is technically valid. Populated when an admin deactivates
+# a user. Checked by the verify endpoint on every request.
+#
+# Cleared on restart — but that just means a deactivated user gets the
+# normal 15-min expiry window until the next deactivation event repopulates
+# the set. Acceptable tradeoff vs. a DB query on every single API request.
+
+_deactivated_users: set[str] = set()
+_deactivated_lock = threading.Lock()
+
+
+def mark_user_deactivated(user_id: int):
+    """Add a user ID to the deactivated set."""
+    with _deactivated_lock:
+        _deactivated_users.add(str(user_id))
+
+
+def mark_user_reactivated(user_id: int):
+    """Remove a user ID from the deactivated set."""
+    with _deactivated_lock:
+        _deactivated_users.discard(str(user_id))
+
+
+def is_user_deactivated(user_id: str) -> bool:
+    """Check if a user ID is in the deactivated set."""
+    with _deactivated_lock:
+        return user_id in _deactivated_users

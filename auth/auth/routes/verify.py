@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 from ..database import get_db
 from ..db_models import User
-from ..security import decode_access_token, get_public_key_pem, get_key_id
+from ..security import decode_access_token, get_public_key_pem, get_key_id, is_user_deactivated
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -68,11 +68,16 @@ def verify(request: Request):
     Caddy sends the original request headers here. We check the
     Authorization header and return 200 (allow) or 401 (deny).
     No body needed — Caddy only looks at the status code.
+
+    Also checks the in-memory deactivated users set for immediate
+    revocation (no DB query needed on the hot path).
     """
     token = _extract_token(request)
     payload = decode_access_token(token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    if is_user_deactivated(payload.get("sub", "")):
+        raise HTTPException(status_code=401, detail="User deactivated")
     return {"status": "ok", "user": payload.get("username"), "role": payload.get("role")}
 
 
