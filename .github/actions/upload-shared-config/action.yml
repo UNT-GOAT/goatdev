@@ -8,12 +8,8 @@ inputs:
   aws_region:
     description: AWS region (e.g. us-east-2)
     required: true
-
-  tailscale_host:
-    description: TAILSCALE host (domain or hostname, without scheme)
-    required: true
-  tailscale_port:
-    description: TAILSCALE port (e.g. 8443)
+  api_base:
+    description: Base URL for pi api's
     required: true
   s3_training_bucket:
     description: Training bucket name used by UI
@@ -28,15 +24,14 @@ runs:
         mkdir -p frontend
         cat > frontend/config.js << 'EOF'
         const CONFIG = {
-          API_BASE: "https://__TAILSCALE_HOST__:__TAILSCALE_PORT__",
+          API_BASE: "__API_BASE__",
           S3_BUCKET: "__S3_TRAINING_BUCKET__",
           S3_REGION: "__S3_REGION__",
         };
         EOF
 
         sed -i \
-          -e "s|__TAILSCALE_HOST__|${{ inputs.tailscale_host }}|g" \
-          -e "s|__TAILSCALE_PORT__|${{ inputs.tailscale_port }}|g" \
+          -e "s|__API_BASE__|${{ inputs.api_base }}|g" \
           -e "s|__S3_TRAINING_BUCKET__|${{ inputs.s3_training_bucket }}|g" \
           -e "s|__S3_REGION__|${{ inputs.aws_region }}|g" \
           frontend/config.js
