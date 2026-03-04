@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 from ..database import get_db
 from ..db_models import User
-from ..security import decode_access_token, get_public_key_pem
+from ..security import decode_access_token, get_public_key_pem, get_key_id
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -106,6 +106,7 @@ def jwks():
             "kty": "RSA",
             "alg": "RS256",
             "use": "sig",
+            "kid": get_key_id(),
             "n": _b64url(pub_numbers.n, n_bytes),
             "e": _b64url(pub_numbers.e, 3),
         }]

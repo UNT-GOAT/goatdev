@@ -55,7 +55,18 @@ def verify_password(plain: str, hashed: str) -> bool:
 _private_key = None
 _public_key = None
 _public_key_pem = None
+_key_id = None
 
+
+def _compute_kid(public_key_pem: bytes) -> str:
+    """Derive a stable key ID from the public key (SHA-256 truncated)."""
+    return hashlib.sha256(public_key_pem).hexdigest()[:16]
+
+
+def get_key_id() -> str:
+    """Return the current key ID."""
+    _ensure_keys()
+    return _key_id
 
 def _ensure_keys():
     """Load or generate RSA key pair."""
@@ -71,6 +82,7 @@ def _ensure_keys():
         with open(JWT_PUBLIC_KEY_PATH, "rb") as f:
             _public_key_pem = f.read()
             _public_key = serialization.load_pem_public_key(_public_key_pem)
+        _key_id = _compute_kid(_public_key_pem)
     else:
         # Generate new key pair
         _private_key = rsa.generate_private_key(
@@ -97,6 +109,8 @@ def _ensure_keys():
         with open(JWT_PUBLIC_KEY_PATH, "wb") as f:
             f.write(_public_key_pem)
 
+        _key_id = _compute_kid(_public_key_pem)
+
 
 def get_public_key_pem() -> bytes:
     """Return the public key in PEM format (for JWKS endpoint)."""
@@ -120,7 +134,7 @@ def create_access_token(user_id: int, username: str, role: str) -> str:
         "iat": now,
         "exp": now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     }
-    return jwt.encode(payload, _private_key, algorithm="RS256")
+    return jwt.encode(payload, _private_key, algorithm="RS256", headers={"kid": _key_id})
 
 
 def create_refresh_token() -> tuple[str, datetime]:
