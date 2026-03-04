@@ -183,8 +183,8 @@ const HerdAuth = (() => {
         }
 
         const data = await resp.json();
-        // Keep existing refresh token, update access token
-        saveTokens(data.access_token, null, data.expires_in, getUser());
+        // Store rotated refresh token (server revokes the old one)
+        saveTokens(data.access_token, data.refresh_token, data.expires_in, getUser());
 
         // Refresh any MJPEG stream <img> tags that use ?token= so they
         // don't die when the old access token expires (15 min).

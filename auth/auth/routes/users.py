@@ -6,12 +6,13 @@ Deactivating a user immediately prevents token refresh. Existing
 access tokens expire naturally within 15 minutes.
 """
 
+import re
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..db_models import User, RefreshToken
-from ..security import hash_password
+from ..security import hash_password, mark_user_deactivated, mark_user_reactivated
 from ..models import (
     CreateUserRequest, UpdateUserRequest,
     UserResponse, UserListResponse
@@ -41,6 +42,14 @@ def create_user(
     admin: User = Depends(require_admin)
 ):
     """Create a new user account."""
+    # Enforce password policy
+    if (len(req.password) < 8 or
+            not re.search(r'[A-Z]', req.password) or
+            not re.search(r'[a-z]', req.password) or
+            not re.search(r'[0-9]', req.password) or
+            not re.search(r'[^A-Za-z0-9]', req.password)):
+        raise HTTPException(status_code=400, detail="Password must be 8+ chars with uppercase, lowercase, number, and special character")
+
     # Check username not taken
     existing = db.query(User).filter(User.username == req.username).first()
     if existing:
@@ -94,6 +103,12 @@ def update_user(
         raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
 
     if req.password is not None:
+        if (len(req.password) < 8 or
+                not re.search(r'[A-Z]', req.password) or
+                not re.search(r'[a-z]', req.password) or
+                not re.search(r'[0-9]', req.password) or
+                not re.search(r'[^A-Za-z0-9]', req.password)):
+            raise HTTPException(status_code=400, detail="Password must be 8+ chars with uppercase, lowercase, number, and special character")
         user.password_hash = hash_password(req.password)
 
     if req.role is not None:
@@ -104,11 +119,15 @@ def update_user(
 
     if req.active is not None:
         user.active = req.active
-        # If deactivating, revoke all refresh tokens
         if not req.active:
+            # Revoke all refresh tokens
             db.query(RefreshToken).filter(
                 RefreshToken.user_id == user.id
             ).delete()
+            # Immediately reject any existing access tokens
+            mark_user_deactivated(user.id)
+        else:
+            mark_user_reactivated(user.id)
 
     db.commit()
     db.refresh(user)
@@ -133,6 +152,7 @@ def delete_user(
     if user.id == admin.id:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
 
+    mark_user_deactivated(user.id)
     db.delete(user)
     db.commit()
 

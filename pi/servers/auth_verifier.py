@@ -174,6 +174,17 @@ def verify():
     except pyjwt.ExpiredSignatureError:
         return jsonify({'error': 'Token expired'}), 401
     except pyjwt.InvalidTokenError as ex:
+        # Key may have rotated — try refetching once
+        if fetch_public_key():
+            key = get_public_key()
+            try:
+                payload = pyjwt.decode(token, key, algorithms=['RS256'])
+                if payload.get('type') != 'access':
+                    return jsonify({'error': 'Invalid token type'}), 401
+                log.info('verify', 'Token validated after key refetch')
+                return jsonify({'status': 'ok', 'user': payload.get('username')}), 200
+            except pyjwt.InvalidTokenError:
+                pass
         return jsonify({'error': 'Invalid token'}), 401
 
 

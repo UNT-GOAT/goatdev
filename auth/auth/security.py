@@ -19,6 +19,7 @@ Tokens:
 import os
 import hashlib
 import secrets
+import threading
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -55,7 +56,18 @@ def verify_password(plain: str, hashed: str) -> bool:
 _private_key = None
 _public_key = None
 _public_key_pem = None
+_key_id = None
 
+
+def _compute_kid(public_key_pem: bytes) -> str:
+    """Derive a stable key ID from the public key (SHA-256 truncated)."""
+    return hashlib.sha256(public_key_pem).hexdigest()[:16]
+
+
+def get_key_id() -> str:
+    """Return the current key ID."""
+    _ensure_keys()
+    return _key_id
 
 def _ensure_keys():
     """Load or generate RSA key pair."""
@@ -71,6 +83,7 @@ def _ensure_keys():
         with open(JWT_PUBLIC_KEY_PATH, "rb") as f:
             _public_key_pem = f.read()
             _public_key = serialization.load_pem_public_key(_public_key_pem)
+        _key_id = _compute_kid(_public_key_pem)
     else:
         # Generate new key pair
         _private_key = rsa.generate_private_key(
@@ -97,6 +110,8 @@ def _ensure_keys():
         with open(JWT_PUBLIC_KEY_PATH, "wb") as f:
             f.write(_public_key_pem)
 
+        _key_id = _compute_kid(_public_key_pem)
+
 
 def get_public_key_pem() -> bytes:
     """Return the public key in PEM format (for JWKS endpoint)."""
@@ -120,7 +135,7 @@ def create_access_token(user_id: int, username: str, role: str) -> str:
         "iat": now,
         "exp": now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     }
-    return jwt.encode(payload, _private_key, algorithm="RS256")
+    return jwt.encode(payload, _private_key, algorithm="RS256", headers={"kid": _key_id})
 
 
 def create_refresh_token() -> tuple[str, datetime]:
@@ -154,3 +169,37 @@ def decode_access_token(token: str) -> Optional[dict]:
         return None
     except jwt.InvalidTokenError:
         return None
+    
+
+
+# =============================================================================
+# DEACTIVATED USER TRACKING
+# =============================================================================
+# In-memory set of user IDs whose tokens should be rejected immediately,
+# even if the JWT is technically valid. Populated when an admin deactivates
+# a user. Checked by the verify endpoint on every request.
+#
+# Cleared on restart — but that just means a deactivated user gets the
+# normal 15-min expiry window until the next deactivation event repopulates
+# the set. Acceptable tradeoff vs. a DB query on every single API request.
+
+_deactivated_users: set[str] = set()
+_deactivated_lock = threading.Lock()
+
+
+def mark_user_deactivated(user_id: int):
+    """Add a user ID to the deactivated set."""
+    with _deactivated_lock:
+        _deactivated_users.add(str(user_id))
+
+
+def mark_user_reactivated(user_id: int):
+    """Remove a user ID from the deactivated set."""
+    with _deactivated_lock:
+        _deactivated_users.discard(str(user_id))
+
+
+def is_user_deactivated(user_id: str) -> bool:
+    """Check if a user ID is in the deactivated set."""
+    with _deactivated_lock:
+        return user_id in _deactivated_users
