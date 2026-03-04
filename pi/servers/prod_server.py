@@ -31,6 +31,7 @@ load_dotenv("/home/pi/goatdev/pi/.env")
 
 EC2_IP = os.environ.get('EC2_IP')
 EC2_API = f'http://{EC2_IP}:8000'
+EC2_API_KEY = os.environ.get('EC2_API_KEY')
 
 # Camera paths (for reference / diagnostics)
 CAMERAS = {
@@ -373,6 +374,7 @@ def do_grade(serial_id: str, live_weight: float):
                 f'{EC2_API}/analyze',
                 files=files,
                 data=data,
+                headers={'X-API-Key': EC2_API_KEY} if EC2_API_KEY else {},
                 timeout=EC2_TIMEOUT_SEC
             )
             ec2_time = round(time.time() - ec2_start, 2)
@@ -884,6 +886,7 @@ def grade_test():
             f'{EC2_API}/analyze',
             files=files,
             data=data,
+            headers={'X-API-Key': EC2_API_KEY} if EC2_API_KEY else {},
             timeout=EC2_TIMEOUT_SEC
         )
         ec2_time = round(time.time() - ec2_start, 2)
@@ -1091,6 +1094,7 @@ def proxy_debug_image(serial_id, view):
     try:
         resp = requests.get(
             f'{EC2_API}/debug/{sanitized}/{view}',
+            headers={'X-API-Key': EC2_API_KEY} if EC2_API_KEY else {},
             timeout=REQUEST_TIMEOUT_SEC
         )
 
@@ -1150,6 +1154,7 @@ def proxy_debug_list(serial_id):
     try:
         resp = requests.get(
             f'{EC2_API}/debug/{sanitized}',
+            headers={'X-API-Key': EC2_API_KEY} if EC2_API_KEY else {},
             timeout=REQUEST_TIMEOUT_SEC
         )
 
@@ -1199,8 +1204,13 @@ def run_startup_checks():
     log.info('startup', 'PROD PI SERVER STARTING')
     log.info('startup', 'Configuration',
             ec2_ip=EC2_IP, ec2_api=EC2_API,
+            ec2_api_key_set=bool(EC2_API_KEY),
             resolution=f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
             proxy_url=PROXY_URL)
+
+    if not EC2_API_KEY:
+        log.critical('startup', 'EC2_API_KEY not set — EC2 will reject grading requests',
+                    fix='Set EC2_API_KEY in .env to match API_KEY on EC2')
 
     # System info
     sys_info = get_system_info()

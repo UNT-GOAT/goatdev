@@ -185,6 +185,15 @@ const HerdAuth = (() => {
         const data = await resp.json();
         // Keep existing refresh token, update access token
         saveTokens(data.access_token, null, data.expires_in, getUser());
+
+        // Refresh any MJPEG stream <img> tags that use ?token= so they
+        // don't die when the old access token expires (15 min).
+        document.querySelectorAll('img[src*="token="]').forEach(img => {
+            const url = new URL(img.src);
+            url.searchParams.set('token', data.access_token);
+            img.src = url.toString();
+        });
+
         return data.access_token;
     }
 

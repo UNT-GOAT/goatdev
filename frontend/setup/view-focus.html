@@ -398,7 +398,7 @@
               <span class="focus-card-status loading" id="fstatus-${cam}">Connecting</span>
             </div>
             <div class="stream-container">
-              <img id="fimg-${cam}" src="${CONFIG.API_BASE}/api/viewfocus/stream/${cam}"
+              <img id="fimg-${cam}" src="${CONFIG.API_BASE}/api/viewfocus/stream/${cam}?token=${HerdAuth.getAccessToken()}"
                 onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"
                 onload="this.style.display='block'; this.nextElementSibling.style.display='none';">
               <span class="placeholder" id="fph-${cam}">No stream</span>
