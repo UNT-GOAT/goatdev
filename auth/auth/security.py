@@ -71,7 +71,7 @@ def get_key_id() -> str:
 
 def _ensure_keys():
     """Load or generate RSA key pair."""
-    global _private_key, _public_key, _public_key_pem
+    global _private_key, _public_key, _public_key_pem, _key_id
 
     if _private_key is not None:
         return
