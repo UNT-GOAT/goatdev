@@ -6,7 +6,7 @@ Everything else requires a valid access token.
 """
 
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -17,22 +17,39 @@ from ..security import (
 )
 from ..models import LoginRequest, LoginResponse, RefreshRequest, RefreshResponse
 from ..config import ACCESS_TOKEN_EXPIRE_MINUTES
+from ..rate_limiter import login_limiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=LoginResponse)
-def login(req: LoginRequest, db: Session = Depends(get_db)):
+def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
     """
     Authenticate with username + password.
     Returns access token (short-lived) and refresh token (long-lived).
     """
+    # Rate limit by IP and username independently.
+    # Attacker spraying passwords across users from one IP → IP key triggers.
+    # Attacker hitting one user from a botnet → username key triggers.
+    client_ip = request.client.host if request.client else "unknown"
+    ip_key = f"ip:{client_ip}"
+    user_key = f"user:{req.username}"
+
+    allowed, retry_after = login_limiter.check(ip_key, user_key)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many login attempts. Try again in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
     user = db.query(User).filter(
         User.username == req.username,
         User.active == True
     ).first()
 
     if not user or not verify_password(req.password, user.password_hash):
+        login_limiter.record_failure(ip_key, user_key)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     # Create tokens
@@ -50,6 +67,9 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
     # Update last login
     user.last_login = datetime.utcnow()
     db.commit()
+
+    # Clear rate limit counters on success
+    login_limiter.record_success(ip_key, user_key)
 
     return LoginResponse(
         access_token=access_token,
