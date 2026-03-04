@@ -402,7 +402,11 @@
         // Start streams
         ["side", "top", "front"].forEach((cam) => {
           document.getElementById("stream-" + cam).src =
-            CONFIG.API_BASE + "/api/viewfocus/stream/" + cam;
+            CONFIG.API_BASE +
+            "/api/viewfocus/stream/" +
+            cam +
+            "?token=" +
+            HerdAuth.getAccessToken();
         });
       }
 

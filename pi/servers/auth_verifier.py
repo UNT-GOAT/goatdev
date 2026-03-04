@@ -17,6 +17,7 @@ Why a separate service instead of middleware on each Flask app?
   - Public key caching in one place
 """
 
+from urllib.parse import urlparse, parse_qs
 from flask import Flask, request, jsonify
 import jwt as pyjwt # type: ignore
 import requests
@@ -128,15 +129,36 @@ def key_refresh_loop():
 @app.route('/verify')
 def verify():
     """
-    Validate JWT from Authorization header.
+    Validate JWT from Authorization header or query-param token.
+
     Called by Caddy forward_auth on every /api/* request.
     Returns 200 if valid, 401 if not.
+
+    Token sources (checked in order):
+      1. Authorization: Bearer <token>  — normal API calls
+      2. ?token=<token> in X-Forwarded-Uri — MJPEG streams loaded via <img>
+         (img tags can't set headers, so the frontend appends the token as
+         a query parameter; Caddy forwards the original URI in this header)
     """
+    token = None
+
+    # Source 1: Authorization header
     auth = request.headers.get('Authorization', '')
-    if not auth.startswith('Bearer '):
+    if auth.startswith('Bearer '):
+        token = auth[7:]
+
+    # Source 2: token query param from the original request URI
+    if not token:
+        forwarded_uri = request.headers.get('X-Forwarded-Uri', '')
+        if '?' in forwarded_uri:
+            params = parse_qs(urlparse(forwarded_uri).query)
+            token_list = params.get('token')
+            if token_list:
+                token = token_list[0]
+
+    if not token:
         return jsonify({'error': 'Missing token'}), 401
 
-    token = auth[7:]
     key = get_public_key()
 
     if key is None:
