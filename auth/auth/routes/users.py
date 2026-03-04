@@ -6,6 +6,7 @@ Deactivating a user immediately prevents token refresh. Existing
 access tokens expire naturally within 15 minutes.
 """
 
+import re
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -41,6 +42,14 @@ def create_user(
     admin: User = Depends(require_admin)
 ):
     """Create a new user account."""
+    # Enforce password policy
+    if (len(req.password) < 8 or
+            not re.search(r'[A-Z]', req.password) or
+            not re.search(r'[a-z]', req.password) or
+            not re.search(r'[0-9]', req.password) or
+            not re.search(r'[^A-Za-z0-9]', req.password)):
+        raise HTTPException(status_code=400, detail="Password must be 8+ chars with uppercase, lowercase, number, and special character")
+
     # Check username not taken
     existing = db.query(User).filter(User.username == req.username).first()
     if existing:
@@ -94,6 +103,12 @@ def update_user(
         raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
 
     if req.password is not None:
+        if (len(req.password) < 8 or
+                not re.search(r'[A-Z]', req.password) or
+                not re.search(r'[a-z]', req.password) or
+                not re.search(r'[0-9]', req.password) or
+                not re.search(r'[^A-Za-z0-9]', req.password)):
+            raise HTTPException(status_code=400, detail="Password must be 8+ chars with uppercase, lowercase, number, and special character")
         user.password_hash = hash_password(req.password)
 
     if req.role is not None:
