@@ -22,60 +22,55 @@ from ..rate_limiter import login_limiter
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/login", response_model=LoginResponse)
-def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
+@router.post("/refresh", response_model=RefreshResponse)
+def refresh(req: RefreshRequest, db: Session = Depends(get_db)):
     """
-    Authenticate with username + password.
-    Returns access token (short-lived) and refresh token (long-lived).
+    Exchange a valid refresh token for a new access token.
+    The old refresh token is revoked and a new one issued (rotation).
+    If someone steals a refresh token and uses it, the legitimate user's
+    next refresh will fail — signaling compromise.
     """
-    # Rate limit by IP and username independently.
-    # Attacker spraying passwords across users from one IP → IP key triggers.
-    # Attacker hitting one user from a botnet → username key triggers.
-    client_ip = request.client.host if request.client else "unknown"
-    ip_key = f"ip:{client_ip}"
-    user_key = f"user:{req.username}"
+    token_hash = hash_refresh_token(req.refresh_token)
 
-    allowed, retry_after = login_limiter.check(ip_key, user_key)
-    if not allowed:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Too many login attempts. Try again in {retry_after} seconds.",
-            headers={"Retry-After": str(retry_after)},
-        )
+    db_token = db.query(RefreshToken).filter(
+        RefreshToken.token_hash == token_hash
+    ).first()
+
+    if not db_token:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    if db_token.expires_at < datetime.utcnow():
+        db.delete(db_token)
+        db.commit()
+        raise HTTPException(status_code=401, detail="Refresh token expired")
 
     user = db.query(User).filter(
-        User.username == req.username,
+        User.id == db_token.user_id,
         User.active == True
     ).first()
 
-    if not user or not verify_password(req.password, user.password_hash):
-        login_limiter.record_failure(ip_key, user_key)
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not user:
+        raise HTTPException(status_code=401, detail="User deactivated")
 
-    # Create tokens
+    # Revoke old refresh token
+    db.delete(db_token)
+
+    # Issue new tokens
     access_token = create_access_token(user.id, user.username, user.role)
-    raw_refresh, refresh_expires = create_refresh_token()
+    new_raw_refresh, new_refresh_expires = create_refresh_token()
 
-    # Store refresh token hash in DB
-    db_token = RefreshToken(
+    new_db_token = RefreshToken(
         user_id=user.id,
-        token_hash=hash_refresh_token(raw_refresh),
-        expires_at=refresh_expires,
+        token_hash=hash_refresh_token(new_raw_refresh),
+        expires_at=new_refresh_expires,
     )
-    db.add(db_token)
-
-    # Update last login
-    user.last_login = datetime.utcnow()
+    db.add(new_db_token)
     db.commit()
 
-    # Clear rate limit counters on success
-    login_limiter.record_success(ip_key, user_key)
-
-    return LoginResponse(
+    return RefreshResponse(
         access_token=access_token,
-        refresh_token=raw_refresh,
+        refresh_token=new_raw_refresh,
         expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        user=user.to_dict(),
     )
 
 
