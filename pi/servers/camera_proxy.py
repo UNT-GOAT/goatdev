@@ -32,6 +32,7 @@ Endpoints:
   GET  /capture/<camera>           - Latest full-res JPEG
   GET  /capture                    - Alias for /capture/all (GET convenience)
   POST /capture/all                - All 3 cameras, saved to /tmp, returns paths
+  POST /capture/burst/<camera>     - Burst capture: N frames over time, returns tar.gz
   GET  /status                     - Per-camera health + system info
   GET  /focus/<camera>/<val>       - Set focus_absolute via v4l2-ctl
   GET  /autofocus/<camera>/<on>    - Set autofocus on/off
@@ -49,6 +50,8 @@ import json
 import os
 import sys
 import numpy as np
+import tarfile
+import io
 
 sys.path.insert(0, '/home/pi/goatdev/pi')
 from logger.pi_cloudwatch import Logger
@@ -94,6 +97,13 @@ CAPTURE_WAKE_TIMEOUT_SEC = 2.0  # Max time to wait for fresh frame after wake
 # Stream heartbeat timeout — if no new frame consumed in this many
 # seconds, assume client is gone and break the generator.
 STREAM_HEARTBEAT_TIMEOUT_SEC = 30
+
+# Burst capture settings
+BURST_MIN_IMAGE_BYTES = 50000   # 50KB minimum valid frame
+BURST_MAX_COUNT = 100           # Cap frames per burst
+BURST_MIN_INTERVAL_MS = 100     # Floor on interval between frames
+BURST_DEFAULT_COUNT = 20
+BURST_DEFAULT_INTERVAL_MS = 1500
 
 API_PORT = 8080
 
@@ -762,6 +772,124 @@ def capture_all_cameras():
         'success': all_ok,
         'cameras': results,
     }), 200 if all_ok else 503
+
+
+# === FLASK ROUTES: BURST CAPTURE ===
+
+@app.route('/capture/burst/<camera>', methods=['POST'])
+def capture_burst(camera):
+    """Burst capture: collect N unique frames over time, return as tar.gz.
+
+    Deduplicates by frame timestamp entirely proxy-side — no per-frame
+    HTTP round-trips from the caller. The reader loop continues its normal
+    pair rotation; this endpoint just samples from the buffer at intervals.
+
+    Body (JSON, all optional):
+      count:       Number of frames to collect (default 20, max 100)
+      interval_ms: Milliseconds between frames (default 1500, min 100)
+                   Higher = more pose variation (goat moves between shots)
+      prefix:      Filename prefix inside tar (default 'capture')
+
+    Returns: application/gzip (tar.gz containing JPEG files)
+    Headers:
+      X-Frame-Count:     Actual frames captured (may be < count on timeout)
+      X-Requested-Count: Originally requested count
+      X-Total-Raw-Size:  Sum of raw JPEG sizes before compression
+
+    Timing: 20 frames @ 1500ms = ~30s. The proxy's ~8fps read rate
+    guarantees a fresh frame is always available at each interval.
+    """
+    buf = buffers.get(camera)
+    if not buf:
+        return jsonify({'error': f'Unknown camera: {camera}'}), 404
+
+    data = request.get_json(silent=True) or {}
+    count = min(int(data.get('count', BURST_DEFAULT_COUNT)), BURST_MAX_COUNT)
+    interval_ms = max(int(data.get('interval_ms', BURST_DEFAULT_INTERVAL_MS)), BURST_MIN_INTERVAL_MS)
+    prefix = data.get('prefix', 'capture')
+
+    # Wake reader if idle
+    if _reader_idle.is_set():
+        _capture_requested.set()
+    if not _wait_for_fresh_frame(camera, timeout=3.0):
+        return jsonify({
+            'error': f'Camera {camera} not available',
+            'last_error': buf.last_error
+        }), 503
+
+    frames = []
+    last_timestamp = 0
+    timeout_sec = count * (interval_ms / 1000) + 10  # generous timeout
+    start = time.time()
+    stall_count = 0
+
+    log.info(f'burst:{camera}', 'Starting burst capture',
+             count=count, interval_ms=interval_ms, prefix=prefix)
+
+    while len(frames) < count and (time.time() - start) < timeout_sec:
+        raw, timestamp = buf.get_raw_frame()
+
+        # Wait for a new unique frame
+        if raw is None or timestamp <= last_timestamp:
+            time.sleep(0.05)
+            stall_count += 1
+            # If no new frame in ~10s, camera is probably dead
+            if stall_count > 200:
+                log.warn(f'burst:{camera}', 'Stalled waiting for new frame',
+                         frames_so_far=len(frames), stall_count=stall_count)
+                break
+            continue
+
+        # Skip tiny/corrupt frames
+        if len(raw) < BURST_MIN_IMAGE_BYTES:
+            log.warn(f'burst:{camera}', 'Frame too small, skipping',
+                     size=len(raw), min=BURST_MIN_IMAGE_BYTES)
+            time.sleep(0.05)
+            continue
+
+        frames.append((raw, timestamp))
+        last_timestamp = timestamp
+        stall_count = 0
+
+        # Sleep until next capture interval (unless we have enough)
+        if len(frames) < count:
+            time.sleep(interval_ms / 1000)
+
+    if not frames:
+        log.error(f'burst:{camera}', 'No frames captured',
+                  last_error=buf.last_error)
+        return jsonify({
+            'error': f'No frames captured from {camera}',
+            'last_error': buf.last_error
+        }), 503
+
+    # Package as tar.gz — single response, no per-frame HTTP overhead
+    tar_buffer = io.BytesIO()
+    total_raw_size = 0
+    with tarfile.open(fileobj=tar_buffer, mode='w:gz') as tar:
+        for i, (frame_bytes, ts) in enumerate(frames, 1):
+            filename = f'{prefix}_{camera}_{i:02d}.jpg'
+            info = tarfile.TarInfo(name=filename)
+            info.size = len(frame_bytes)
+            info.mtime = ts
+            tar.addfile(info, io.BytesIO(frame_bytes))
+            total_raw_size += len(frame_bytes)
+
+    tar_bytes = tar_buffer.getvalue()
+    duration = round(time.time() - start, 2)
+
+    log.info(f'burst:{camera}', 'Burst complete',
+             frames=len(frames), requested=count,
+             tar_size_bytes=len(tar_bytes),
+             total_raw_bytes=total_raw_size,
+             duration_sec=duration)
+
+    return Response(tar_bytes, mimetype='application/gzip', headers={
+        'Content-Disposition': f'attachment; filename="{prefix}_{camera}.tar.gz"',
+        'X-Frame-Count': str(len(frames)),
+        'X-Requested-Count': str(count),
+        'X-Total-Raw-Size': str(total_raw_size),
+    })
 
 
 # === FLASK ROUTES: STATUS ===
