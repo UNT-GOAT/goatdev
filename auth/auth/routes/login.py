@@ -28,7 +28,7 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
     client_ip = request.client.host if request.client else "unknown"
 
     # Rate limit check
-    is_limited, retry_after = login_limiter.is_rate_limited(client_ip, req.username)
+    is_limited, retry_after = login_limiter.check(client_ip, req.username)
     if is_limited:
         raise HTTPException(
             status_code=429,
