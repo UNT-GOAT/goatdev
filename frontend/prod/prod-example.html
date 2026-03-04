@@ -6,36 +6,78 @@
     <title>Prod Integration Example | HerdSync</title>
     <script src="config.js"></script>
     <script src="/js/auth.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <style>
+      * {
+        box-sizing: border-box;
+      }
       body {
         font-family: monospace;
         background: #111;
         color: #ccc;
-        max-width: 900px;
-        margin: 40px auto;
-        padding: 20px;
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
       }
-      h1 {
+
+      /* Tab bar */
+      .tab-bar {
+        position: sticky;
+        top: 0;
+        z-index: 200;
+        background: #0a0a0a;
+        border-bottom: 1px solid #333;
+        display: flex;
+        align-items: center;
+        padding: 0 20px;
+      }
+      .tab-bar .brand {
+        font-size: 14px;
+        font-weight: 700;
         color: #4caf50;
-        font-size: 18px;
-        margin-bottom: 4px;
+        margin-right: 24px;
+        padding: 12px 0;
       }
-      .header-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 4px;
+      .tab-btn {
+        background: none;
+        border: none;
+        color: #666;
+        font-family: monospace;
+        font-size: 13px;
+        padding: 12px 16px;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        transition: all 0.2s;
       }
-      .header-right {
-        display: flex;
-        align-items: center;
-        gap: 12px;
+      .tab-btn:hover {
+        color: #ccc;
       }
-      .nav-user {
+      .tab-btn.active {
+        color: #4caf50;
+        border-bottom-color: #4caf50;
+      }
+      .tab-bar .spacer {
+        flex: 1;
+      }
+      .tab-bar .nav-user {
         font-size: 11px;
         color: #555;
+        margin-right: 8px;
       }
-      .logout-btn {
+      .tab-bar .nav-link {
+        color: #ff9800;
+        font-size: 12px;
+        text-decoration: none;
+        margin-right: 12px;
+      }
+      .tab-bar .nav-link:hover {
+        color: #ffb74d;
+      }
+      .tab-bar .logout-btn {
         background: none;
         border: 1px solid #333;
         color: #666;
@@ -45,9 +87,27 @@
         font-family: monospace;
         font-size: 12px;
       }
-      .logout-btn:hover {
+      .tab-bar .logout-btn:hover {
         border-color: #666;
         color: #888;
+      }
+      .tab-content {
+        display: none;
+      }
+      .tab-content.active {
+        display: block;
+      }
+
+      /* Main tab */
+      .main-tab {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .main-tab h1 {
+        color: #4caf50;
+        font-size: 18px;
+        margin-bottom: 4px;
       }
       .note {
         color: #666;
@@ -55,13 +115,12 @@
         margin-bottom: 30px;
         line-height: 1.6;
       }
-      h2 {
+      .main-tab h2 {
         color: #888;
         font-size: 13px;
         text-transform: uppercase;
         margin: 30px 0 10px;
       }
-
       .streams {
         display: flex;
         gap: 10px;
@@ -85,7 +144,6 @@
         border-radius: 4px;
         display: block;
       }
-
       .form-row {
         display: flex;
         gap: 10px;
@@ -104,7 +162,7 @@
         outline: none;
         border-color: #4caf50;
       }
-      button {
+      .main-tab button {
         padding: 10px 24px;
         background: #4caf50;
         color: white;
@@ -114,15 +172,14 @@
         font-size: 14px;
         cursor: pointer;
       }
-      button:hover {
+      .main-tab button:hover {
         background: #45a049;
       }
-      button:disabled {
+      .main-tab button:disabled {
         background: #333;
         color: #666;
         cursor: not-allowed;
       }
-
       #log {
         background: #000;
         border-radius: 4px;
@@ -148,7 +205,6 @@
       .log-line.info {
         color: #888;
       }
-
       .debug-box {
         flex: 1;
       }
@@ -165,8 +221,6 @@
         border-radius: 4px;
         display: block;
       }
-
-      /* Upload section styles */
       .upload-section {
         border: 1px dashed #333;
         border-radius: 6px;
@@ -233,173 +287,625 @@
         object-fit: contain;
         display: block;
       }
+      .password-section {
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 16px;
+        margin-bottom: 20px;
+        background: #0a0a1a;
+      }
+      .password-section h3 {
+        color: #888;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 12px;
+      }
+      .password-section input {
+        padding: 10px;
+        background: #1a1a2e;
+        border: 1px solid #333;
+        border-radius: 4px;
+        color: white;
+        font-family: monospace;
+        width: 100%;
+        margin-bottom: 8px;
+      }
+      .password-section input:focus {
+        outline: none;
+        border-color: #4caf50;
+      }
+      .pw-hint {
+        font-size: 10px;
+        color: #555;
+        margin-bottom: 12px;
+        display: block;
+      }
+      .pw-msg {
+        font-size: 12px;
+        min-height: 18px;
+        margin-top: 8px;
+      }
+      .pw-msg.error {
+        color: #e53935;
+      }
+      .pw-msg.success {
+        color: #4caf50;
+      }
+
+      /* Notes tab */
+      .notes-tab {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 24px 20px;
+      }
+      .notes-tab .section {
+        margin-bottom: 36px;
+      }
+      .section-header {
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 8px 8px 0 0;
+        padding: 14px 18px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .section-header h2 {
+        font-size: 14px;
+        color: #f0f6fc;
+        margin: 0;
+        font-family: monospace;
+        text-transform: none;
+      }
+      .tag {
+        font-size: 10px;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .tag.security {
+        background: rgba(246, 78, 77, 0.15);
+        color: #f97583;
+      }
+      .tag.auth {
+        background: rgba(88, 166, 255, 0.15);
+        color: #58a6ff;
+      }
+      .tag.arch {
+        background: rgba(126, 231, 135, 0.15);
+        color: #7ee787;
+      }
+      .tag.pattern {
+        background: rgba(210, 153, 34, 0.15);
+        color: #e3b341;
+      }
+      .tag.feature {
+        background: rgba(188, 140, 255, 0.15);
+        color: #bc8cff;
+      }
+      .annotation {
+        background: #1c2128;
+        border-left: 1px solid #30363d;
+        border-right: 1px solid #30363d;
+        padding: 14px 18px;
+        font-size: 13px;
+        color: #8b949e;
+        line-height: 1.7;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .annotation strong {
+        color: #c9d1d9;
+      }
+      .annotation code {
+        background: #30363d;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 12px;
+        color: #7ee787;
+      }
+      .annotation .callout {
+        background: rgba(246, 78, 77, 0.08);
+        border-left: 3px solid #f97583;
+        padding: 10px 14px;
+        margin: 10px 0;
+        border-radius: 0 4px 4px 0;
+        font-size: 12px;
+        color: #f97583;
+      }
+      .annotation .info {
+        background: rgba(88, 166, 255, 0.08);
+        border-left: 3px solid #58a6ff;
+        padding: 10px 14px;
+        margin: 10px 0;
+        border-radius: 0 4px 4px 0;
+        font-size: 12px;
+        color: #8b949e;
+      }
+      .code-block {
+        border: 1px solid #30363d;
+        border-top: none;
+        border-radius: 0 0 8px 8px;
+        overflow: hidden;
+      }
+      .code-block pre {
+        margin: 0;
+        padding: 14px 18px;
+        overflow-x: auto;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .code-block code {
+        font-family: "SF Mono", "Fira Code", monospace;
+      }
 
       #app {
         display: none;
+      }
+      @media (max-width: 600px) {
+        .form-row,
+        .upload-row,
+        .streams {
+          flex-direction: column;
+        }
+        .tab-bar {
+          flex-wrap: wrap;
+        }
+        .section-header {
+          flex-direction: column;
+          gap: 6px;
+          align-items: flex-start;
+        }
       }
     </style>
   </head>
   <body>
     <div id="app">
-      <div class="header-row">
-        <h1>Prod Integration Example</h1>
-        <div class="header-right">
-          <span class="nav-user" id="navUser"></span>
-          <button class="logout-btn" onclick="HerdAuth.logout()">Logout</button>
-        </div>
-      </div>
-      <p class="note">
-        Reference implementation — camera streams, grade submission, status
-        polling, debug images.<br />
-        All requests go to the Pi. The Pi captures images and forwards to EC2
-        internally.<br /><br />
-        <b>Backend services on the Pi used by this page:</b><br />
-        &bull; Camera proxy (port 8080) — MJPEG streams at
-        <code>/api/viewfocus/stream/{cam}</code><br />
-        &bull; Prod server (port 5000) — <code>/api/prod/grade</code>,
-        <code>/api/prod/status</code>, <code>/api/prod/debug/{id}/{view}</code
-        ><br />
-        &bull; Caddy reverse proxy unifies both behind port 8443. It strips the
-        <code>/api/prod</code> prefix before forwarding to port 5000.<br />
-        &bull; See the included <code>Caddyfile</code> under pi/system/ for the
-        full routing config.
-      </p>
-
-      <!--
-    =====================================================================
-    CAMERA STREAMS
-    =====================================================================
-  -->
-      <h2>Camera Previews</h2>
-      <b>Probably blacked out so you cant spy on me in my apartment for now.</b>
-      <div class="streams">
-        <div class="stream-box">
-          <label>Side</label>
-          <img id="stream-side" src="" alt="side stream" />
-        </div>
-        <div class="stream-box">
-          <label>Top</label>
-          <img id="stream-top" src="" alt="top stream" />
-        </div>
-        <div class="stream-box">
-          <label>Front</label>
-          <img id="stream-front" src="" alt="front stream" />
-        </div>
+      <div class="tab-bar">
+        <span class="brand">HerdSync</span>
+        <button class="tab-btn active" onclick="switchTab('main', this)">
+          Prod
+        </button>
+        <button class="tab-btn" onclick="switchTab('notes', this)">
+          Notes
+        </button>
+        <span class="spacer"></span>
+        <span id="adminLinkSlot"></span>
+        <span class="nav-user" id="navUser"></span>
+        <button class="logout-btn" onclick="HerdAuth.logout()">Logout</button>
       </div>
 
-      <!--
-    =====================================================================
-    MANUAL UPLOAD (testing only)
-    =====================================================================
-  -->
-      <h2>Manual Upload (Testing)</h2>
-      <div class="upload-section">
-        <div class="upload-note">
-          Upload images manually while cameras aren't setup in MN without actual
-          pics to take. This bypasses the Pi's camera capture and sends your
-          images straight to EC2 for grading. Just using the OG test images for
-          now.
-        </div>
-        <div class="form-row" style="margin-bottom: 10px">
-          <input
-            type="text"
-            id="uploadSerialId"
-            placeholder="serial_id (e.g. GOAT001)"
-          />
-          <input
-            type="number"
-            id="uploadLiveWeight"
-            placeholder="live_weight (lbs)"
-            step="0.1"
-          />
-        </div>
-        <div class="upload-row">
-          <div class="upload-box">
-            <label class="title">Side</label>
-            <div class="upload-drop" id="drop-side">
-              <span class="placeholder">click or drop</span>
-              <input
-                type="file"
-                accept="image/*"
-                onchange="handleUpload('side', this)"
-              />
+      <!-- ============================================================= -->
+      <!-- PROD TAB -->
+      <!-- ============================================================= -->
+      <div id="tab-main" class="tab-content active">
+        <div class="main-tab">
+          <h1>Prod Integration Example</h1>
+          <p class="note">
+            Reference implementation &mdash; camera streams, grade submission,
+            status polling, debug images.<br />
+            All requests go to the Pi. The Pi captures images and forwards to
+            EC2 internally.<br /><br />
+            <b>Backend services on the Pi used by this page:</b><br />
+            &bull; Camera proxy (port 8080) &mdash; MJPEG streams at
+            <code>/api/viewfocus/stream/{cam}</code><br />
+            &bull; Prod server (port 5000) &mdash; <code>/api/prod/grade</code>,
+            <code>/api/prod/status</code>,
+            <code>/api/prod/debug/{id}/{view}</code><br />
+            &bull; Caddy reverse proxy unifies both behind port 8443. It strips
+            the <code>/api/prod</code> prefix before forwarding to port 5000.<br />
+            &bull; See the included <code>Caddyfile</code> under pi/system/ for
+            the full routing config.
+          </p>
+
+          <h2>Camera Previews</h2>
+          <div class="streams">
+            <div class="stream-box">
+              <label>Side</label
+              ><img id="stream-side" src="" alt="side stream" />
+            </div>
+            <div class="stream-box">
+              <label>Top</label><img id="stream-top" src="" alt="top stream" />
+            </div>
+            <div class="stream-box">
+              <label>Front</label
+              ><img id="stream-front" src="" alt="front stream" />
             </div>
           </div>
-          <div class="upload-box">
-            <label class="title">Top</label>
-            <div class="upload-drop" id="drop-top">
-              <span class="placeholder">click or drop</span>
+
+          <h2>Manual Upload (Testing)</h2>
+          <div class="upload-section">
+            <div class="upload-note">
+              Upload images manually while cameras aren't connected. Bypasses Pi
+              camera capture, sends straight to EC2.
+            </div>
+            <div class="form-row" style="margin-bottom: 10px">
               <input
-                type="file"
-                accept="image/*"
-                onchange="handleUpload('top', this)"
+                type="text"
+                id="uploadSerialId"
+                placeholder="serial_id (e.g. GOAT001)"
+              />
+              <input
+                type="number"
+                id="uploadLiveWeight"
+                placeholder="live_weight (lbs)"
+                step="0.1"
               />
             </div>
+            <div class="upload-row">
+              <div class="upload-box">
+                <label class="title">Side</label>
+                <div class="upload-drop" id="drop-side">
+                  <span class="placeholder">click or drop</span
+                  ><input
+                    type="file"
+                    accept="image/*"
+                    onchange="handleUpload('side', this)"
+                  />
+                </div>
+              </div>
+              <div class="upload-box">
+                <label class="title">Top</label>
+                <div class="upload-drop" id="drop-top">
+                  <span class="placeholder">click or drop</span
+                  ><input
+                    type="file"
+                    accept="image/*"
+                    onchange="handleUpload('top', this)"
+                  />
+                </div>
+              </div>
+              <div class="upload-box">
+                <label class="title">Front</label>
+                <div class="upload-drop" id="drop-front">
+                  <span class="placeholder">click or drop</span
+                  ><input
+                    type="file"
+                    accept="image/*"
+                    onchange="handleUpload('front', this)"
+                  />
+                </div>
+              </div>
+            </div>
+            <div style="margin-top: 12px">
+              <button id="uploadGradeBtn" onclick="startUploadGrade()" disabled>
+                Grade with Uploaded Images
+              </button>
+              <span
+                id="upload-status"
+                style="margin-left: 10px; font-size: 11px; color: #666"
+              ></span>
+            </div>
           </div>
-          <div class="upload-box">
-            <label class="title">Front</label>
-            <div class="upload-drop" id="drop-front">
-              <span class="placeholder">click or drop</span>
-              <input
-                type="file"
-                accept="image/*"
-                onchange="handleUpload('front', this)"
-              />
+
+          <h2>Grade (Live Capture)</h2>
+          <div class="form-row">
+            <input
+              type="text"
+              id="serialId"
+              placeholder="serial_id (e.g. GOAT001)"
+            />
+            <input
+              type="number"
+              id="liveWeight"
+              placeholder="live_weight (lbs)"
+              step="0.1"
+            />
+          </div>
+          <button id="gradeBtn" onclick="startGrade()">Grade</button>
+
+          <div id="debug-section" style="display: none; margin-top: 20px">
+            <button onclick="">View Debug Images</button>
+            <div
+              id="debug-images"
+              class="streams"
+              style="margin-top: 10px"
+            ></div>
+          </div>
+
+          <h2>Account</h2>
+          <div class="password-section">
+            <h3>Change Password</h3>
+            <input
+              type="password"
+              id="currentPassword"
+              placeholder="Current password"
+            />
+            <input
+              type="password"
+              id="newPassword"
+              placeholder="New password"
+            />
+            <span class="pw-hint"
+              >8+ chars &middot; uppercase &middot; lowercase &middot; number
+              &middot; special character</span
+            >
+            <input
+              type="password"
+              id="confirmPassword"
+              placeholder="Confirm new password"
+            />
+            <button onclick="changePassword()" id="changePwBtn">
+              Update Password
+            </button>
+            <div class="pw-msg" id="pwMsg"></div>
+          </div>
+
+          <div id="log"></div>
+        </div>
+      </div>
+
+      <!-- ============================================================= -->
+      <!-- NOTES TAB -->
+      <!-- ============================================================= -->
+      <div id="tab-notes" class="tab-content">
+        <div class="notes-tab">
+          <div class="section">
+            <div class="section-header">
+              <h2>Auth Gate Pattern</h2>
+              <span class="tag security">Security</span>
+            </div>
+            <div class="annotation">
+              <strong
+                >Every authenticated page MUST follow this pattern.</strong
+              >
+              The app starts hidden. No content renders until
+              <code>HerdAuth.requireAuth()</code> confirms a valid session. If
+              no session exists, the user is redirected to
+              <code>/login.html</code>.
+              <div class="callout">
+                <strong>Rule:</strong> Never show page content before
+                <code>requireAuth()</code> resolves.
+                <code>showApp(user)</code> is the single entry point. This call
+                must be the LAST line in every page's script.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-javascript">function showApp(user) {
+  document.getElementById("app").style.display = "block";
+}
+// LAST line — gates everything
+HerdAuth.requireAuth().then((user) => showApp(user));</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>HerdAuth API &amp; Token Lifecycle</h2>
+              <span class="tag auth">Auth</span>
+            </div>
+            <div class="annotation">
+              <code>auth.js</code> provides the <code>HerdAuth</code> global.
+              All authenticated requests MUST use <code>HerdAuth.fetch()</code>.
+              <div class="info">
+                <strong>Methods:</strong><br />
+                &bull; <code>requireAuth()</code> — Gate a page. Returns
+                Promise&lt;user&gt; or redirects.<br />
+                &bull; <code>getAccessToken()</code> — Current JWT from
+                sessionStorage (15 min).<br />
+                &bull; <code>fetch(url, opts)</code> — Drop-in for fetch().
+                Attaches Bearer, auto-refreshes, redirects if refresh fails.<br />
+                &bull; <code>logout()</code> — Clears tokens, revokes refresh
+                server-side, redirects.<br />
+                &bull; <code>getUser()</code> — Cached {id, username, role}.
+              </div>
+              <div class="callout">
+                <strong>Token storage:</strong> Refresh tokens (30-day) in
+                localStorage — XSS-extractable. Mitigated by rotation: each use
+                invalidates old token. Stolen token = single use.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">Access token:  JWT (RS256 + kid), 15 min, sessionStorage
+Refresh token: opaque, 30 days, localStorage, rotated on every use
+Stream imgs:   auto-updated on refresh (img[src*="token="])</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Camera Streams — Token-in-URL Auth</h2>
+              <span class="tag security">Security</span>
+            </div>
+            <div class="annotation">
+              <strong>&lt;img&gt; tags cannot set HTTP headers.</strong> JWT
+              passed as <code>?token=</code> in the URL.
+              <div class="info">
+                1. Frontend appends <code>?token=&lt;jwt&gt;</code> to img
+                src<br />
+                2. Caddy <code>forward_auth</code> → auth_verifier.py<br />
+                3. Verifier extracts token from
+                <code>X-Forwarded-Uri</code> header<br />
+                4. JWT validated (RS256, expiry, kid)<br />
+                5. On refresh (~14 min), auth.js auto-updates all
+                <code>img[src*="token="]</code>
+              </div>
+              <div class="callout">
+                <strong>Tradeoff:</strong> Token in URL may be logged by
+                proxies. Acceptable — 15 min lifetime. Same pattern as S3 signed
+                URLs.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-javascript">["side", "top", "front"].forEach((cam) => {
+  document.getElementById("stream-" + cam).src =
+    CONFIG.API_BASE + "/api/viewfocus/stream/" + cam
+    + "?token=" + HerdAuth.getAccessToken();
+});</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Role-Based UI</h2>
+              <span class="tag pattern">Pattern</span>
+            </div>
+            <div class="annotation">
+              Admin links injected dynamically based on <code>user.role</code>.
+              Operators never see them.
+              <div class="info">
+                <strong>Defense in depth:</strong> Client-side role checks are
+                UX only. Server enforces <code>require_admin</code> on all
+                /auth/users endpoints.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-javascript">if (user.role === "admin") {
+  const link = document.createElement("a");
+  link.href = "admin.html";
+  link.textContent = "Admin";
+  headerRight.insertBefore(link, navUser);
+}</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Service-to-Service Auth (Pi → EC2)</h2>
+              <span class="tag arch">Architecture</span>
+            </div>
+            <div class="annotation">
+              <strong>Two independent auth layers:</strong><br />
+              &bull; <strong>User-level:</strong> Browser → Bearer JWT → Caddy
+              forward_auth<br />
+              &bull; <strong>Service-level:</strong> Pi → EC2 via
+              <code>X-API-Key</code> (shared secret in .env)<br /><br />
+              EC2 middleware <strong>fails closed</strong>: no key configured =
+              all non-health requests rejected.
+              <div class="info">
+                <strong>Network:</strong> Pi ↔ EC2 via Tailscale (WireGuard
+                encrypted).
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">Browser                    Pi (Caddy)                EC2
+  │── HerdAuth.fetch() ───→ │                         │
+  │   Authorization: Bearer  │── forward_auth → OK    │
+  │                          │── POST /analyze ──────→ │
+  │                          │   X-API-Key: &lt;secret&gt;   │ → validate (fail-closed)
+  │                          │←── grade result ───────│</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Password Change — Current Password Verification</h2>
+              <span class="tag feature">Feature</span>
+            </div>
+            <div class="annotation">
+              Available to ALL users. Verifies current password via login
+              attempt before allowing change.
+              <div class="callout">
+                <strong>Important:</strong> Verify step uses raw
+                <code>fetch()</code>, not <code>HerdAuth.fetch()</code>, to
+                avoid interfering with the active session. Update step uses
+                <code>HerdAuth.fetch()</code> for Bearer token.
+              </div>
+              <strong>Policy (client + server):</strong> 8+ chars, uppercase,
+              lowercase, number, special character.
+            </div>
+            <div class="code-block">
+              <pre><code class="language-javascript">// Step 1: Verify current password (raw fetch)
+await fetch(CONFIG.AUTH_BASE + "/auth/login", {
+  method: "POST", body: JSON.stringify({ username, password: currentPw })
+});
+// Step 2: Update password (HerdAuth.fetch for Bearer)
+await HerdAuth.fetch(CONFIG.AUTH_BASE + "/auth/users/" + id, {
+  method: "PUT", body: JSON.stringify({ password: newPw })
+});</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Full Architecture &amp; Security Summary</h2>
+              <span class="tag arch">Architecture</span>
+            </div>
+            <div class="annotation">
+              <strong>Complete request flow and security model.</strong>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">┌──────────────────────────────────────────────────────────────┐
+│  BROWSER (CloudFront)                                        │
+│  auth.js: access JWT (15min, sessionStorage)                 │
+│           refresh token (30d, localStorage, rotated)         │
+│  API calls:  HerdAuth.fetch() → Authorization: Bearer        │
+│  Img tags:   src="...?token=&lt;jwt&gt;"                           │
+└─────────────────────────┬────────────────────────────────────┘
+                          │ HTTPS
+┌─────────────────────────▼────────────────────────────────────┐
+│  PI — Caddy (:8443)                                          │
+│  forward_auth on EVERY /api/* → auth_verifier.py             │
+│    Checks Authorization header, then ?token= fallback        │
+│    On kid mismatch: refetches JWKS once, retries             │
+│  /api/viewfocus/*  → camera proxy (:8080)                    │
+│  /api/prod/*       → prod_server (:5000) → EC2 + X-API-Key  │
+│  /auth/*           → proxied to EC2 auth (:8001)             │
+└─────────────────────────┬────────────────────────────────────┘
+                          │ Tailscale (WireGuard)
+┌─────────────────────────▼────────────────────────────────────┐
+│  EC2 — Docker                                                │
+│  herdsync-auth (:8001)                                       │
+│    Login rate-limited (5 fails/5min → 15min lockout)         │
+│    Rate limit by IP AND username independently               │
+│    Passwords: bcrypt, strong policy enforced                 │
+│    JWTs: RS256 with kid for key rotation                     │
+│    Refresh tokens rotated on use                             │
+│    Deactivated users: immediate token rejection              │
+│  ec2-api (:8000)                                             │
+│    X-API-Key middleware (fail-closed)                         │
+│    Health endpoints exempt                                   │
+│  Postgres (RDS) — users, tokens, sslmode=require             │
+└──────────────────────────────────────────────────────────────┘
+
+HARDENING CHECKLIST:
+  ✓ EC2 API key middleware (fail-closed)
+  ✓ Camera streams: JWT via ?token= query param
+  ✓ Login rate limiting (IP + username, sliding window)
+  ✓ Refresh tokens rotated on every use
+  ✓ JWKS kid header for key rotation detection
+  ✓ Pi↔EC2: Tailscale encrypted transport
+  ✓ Passwords: strong policy, client + server
+  ✓ Deactivated users: immediate token rejection
+  ✓ Debug images: auth token required</code></pre>
             </div>
           </div>
         </div>
-        <div style="margin-top: 12px">
-          <button id="uploadGradeBtn" onclick="startUploadGrade()" disabled>
-            Grade with Uploaded Images
-          </button>
-          <span
-            id="upload-status"
-            style="margin-left: 10px; font-size: 11px; color: #666"
-          ></span>
-        </div>
       </div>
-
-      <!--
-    =====================================================================
-    GRADE FORM (live camera capture)
-    =====================================================================
-  -->
-      <h2>Grade (Live Capture)</h2>
-      <div class="form-row">
-        <input
-          type="text"
-          id="serialId"
-          placeholder="serial_id (e.g. GOAT001)"
-        />
-        <input
-          type="number"
-          id="liveWeight"
-          placeholder="live_weight (lbs)"
-          step="0.1"
-        />
-      </div>
-      <button id="gradeBtn" onclick="startGrade()">Grade</button>
-
-      <!--
-    =====================================================================
-    DEBUG IMAGES (shown after successful grade)
-    =====================================================================
-  -->
-      <div id="debug-section" style="display: none; margin-top: 20px">
-        <button onclick="">View Debug Images</button>
-        <div id="debug-images" class="streams" style="margin-top: 10px"></div>
-      </div>
-
-      <div id="log"></div>
     </div>
 
     <script>
+      function switchTab(name, btn) {
+        document
+          .querySelectorAll(".tab-content")
+          .forEach((t) => t.classList.remove("active"));
+        document
+          .querySelectorAll(".tab-btn")
+          .forEach((b) => b.classList.remove("active"));
+        document.getElementById("tab-" + name).classList.add("active");
+        btn.classList.add("active");
+        if (name === "notes")
+          document.querySelectorAll(".notes-tab pre code").forEach((el) => {
+            if (!el.dataset.highlighted) hljs.highlightElement(el);
+          });
+      }
+
+      let currentUser = null;
+
       function showApp(user) {
+        currentUser = user;
         document.getElementById("app").style.display = "block";
         document.getElementById("navUser").textContent =
           user.username + " (" + user.role + ")";
-
-        // Start streams
+        if (user.role === "admin") {
+          const adminLink = document.createElement("a");
+          adminLink.href = "admin.html";
+          adminLink.textContent = "Admin";
+          adminLink.className = "nav-link";
+          document.getElementById("adminLinkSlot").appendChild(adminLink);
+        }
         ["side", "top", "front"].forEach((cam) => {
           document.getElementById("stream-" + cam).src =
             CONFIG.API_BASE +
@@ -410,9 +916,6 @@
         });
       }
 
-      // =====================================================================
-      // LOGGING
-      // =====================================================================
       function log(msg, type = "info") {
         const el = document.getElementById("log");
         const time = new Date().toLocaleTimeString();
@@ -423,49 +926,28 @@
         el.scrollTop = el.scrollHeight;
       }
 
-      // =====================================================================
-      // MANUAL UPLOAD (testing only)
-      // =====================================================================
-      // Sends images to /api/prod/grade/test which forwards directly to EC2.
-      // No status polling — the endpoint returns the result synchronously.
-      //
-      // Field names must match prod_server.py /grade/test:
-      //   serial_id, live_weight, side_image, top_image, front_image
-
       const uploadedFiles = { side: null, top: null, front: null };
-
       function handleUpload(view, input) {
         const file = input.files[0];
         if (!file) return;
-
         uploadedFiles[view] = file;
-
         const drop = document.getElementById("drop-" + view);
         const existing = drop.querySelector("img");
         if (existing) existing.remove();
-
         const img = document.createElement("img");
         img.src = URL.createObjectURL(file);
         drop.appendChild(img);
         drop.classList.add("has-file");
         drop.querySelector(".placeholder").style.display = "none";
-
         updateUploadStatus();
       }
-
       function updateUploadStatus() {
         const filled = Object.values(uploadedFiles).filter(Boolean).length;
-        const status = document.getElementById("upload-status");
-        const btn = document.getElementById("uploadGradeBtn");
-
-        status.textContent = filled + "/3 images selected";
-        btn.disabled = filled < 3;
-
-        if (filled === 3) {
-          status.style.color = "#4caf50";
-        } else {
-          status.style.color = "#666";
-        }
+        document.getElementById("upload-status").textContent =
+          filled + "/3 images selected";
+        document.getElementById("uploadGradeBtn").disabled = filled < 3;
+        document.getElementById("upload-status").style.color =
+          filled === 3 ? "#4caf50" : "#666";
       }
 
       async function startUploadGrade() {
@@ -474,7 +956,6 @@
           document.getElementById("uploadLiveWeight").value,
         );
         const btn = document.getElementById("uploadGradeBtn");
-
         if (!serialId) {
           log("serial_id is required", "err");
           return;
@@ -483,7 +964,6 @@
           log("valid live_weight is required", "err");
           return;
         }
-
         btn.disabled = true;
         document.getElementById("log").innerHTML = "";
         document.getElementById("debug-section").style.display = "none";
@@ -491,38 +971,18 @@
           "Starting upload grade for " + serialId + " @ " + liveWeight + " lbs",
         );
         log("Uploading 3 images to Pi → EC2...", "info");
-
         try {
-          // -----------------------------------------------------------------
-          // POST /api/prod/grade/test — multipart with image files
-          // -----------------------------------------------------------------
-          // Hits prod_server.py /grade/test which forwards to EC2 /analyze.
-          // Returns result synchronously (no polling needed).
-          //
-          // Form fields (must match server expectations):
-          //   serial_id   — string
-          //   live_weight — number
-          //   side_image  — file (JPEG/PNG)
-          //   top_image   — file (JPEG/PNG)
-          //   front_image — file (JPEG/PNG)
-          // -----------------------------------------------------------------
           const formData = new FormData();
           formData.append("serial_id", serialId);
           formData.append("live_weight", liveWeight);
           formData.append("side_image", uploadedFiles.side);
           formData.append("top_image", uploadedFiles.top);
           formData.append("front_image", uploadedFiles.front);
-
           const resp = await HerdAuth.fetch(
             CONFIG.API_BASE + "/api/prod/grade/test",
-            {
-              method: "POST",
-              body: formData,
-            },
+            { method: "POST", body: formData },
           );
-
           const body = await resp.json();
-
           if (!resp.ok) {
             log(
               "Upload grade rejected: " +
@@ -533,11 +993,10 @@
             btn.disabled = false;
             return;
           }
-
           log("Grade complete!", "ok");
           log("  Grade:  " + (body.grade || "N/A"), "ok");
           log("  Views OK: " + body.all_views_successful, "info");
-          if (body.timing) {
+          if (body.timing)
             log(
               "  EC2: " +
                 body.timing.ec2_sec +
@@ -546,13 +1005,10 @@
                 "s",
               "info",
             );
-          }
-          if (body.measurements) {
+          if (body.measurements)
             log("  Measurements: " + JSON.stringify(body.measurements), "info");
-          }
-          if (body.warnings && body.warnings.length > 0) {
+          if (body.warnings && body.warnings.length > 0)
             body.warnings.forEach((w) => log("  Warning: " + w, "warn"));
-          }
           log("");
           log("Click button below to review measurement overlays", "info");
           showDebugButton(serialId);
@@ -564,16 +1020,12 @@
         }
       }
 
-      // =====================================================================
-      // GRADE FLOW (live capture)
-      // =====================================================================
       async function startGrade() {
         const serialId = document.getElementById("serialId").value.trim();
         const liveWeight = parseFloat(
           document.getElementById("liveWeight").value,
         );
         const btn = document.getElementById("gradeBtn");
-
         if (!serialId) {
           log("serial_id is required", "err");
           return;
@@ -582,15 +1034,12 @@
           log("valid live_weight is required", "err");
           return;
         }
-
         btn.disabled = true;
         document.getElementById("log").innerHTML = "";
         document.getElementById("debug-section").style.display = "none";
         log("Starting grade for " + serialId + " @ " + liveWeight + " lbs");
-
         try {
           log("POST /api/prod/grade ...", "info");
-
           const resp = await HerdAuth.fetch(
             CONFIG.API_BASE + "/api/prod/grade",
             {
@@ -602,9 +1051,7 @@
               }),
             },
           );
-
           const body = await resp.json();
-
           if (!resp.ok) {
             log(
               "Grade rejected: " +
@@ -616,16 +1063,13 @@
             btn.disabled = false;
             return;
           }
-
           log("Grade started — capturing images...", "ok");
-
           const result = await pollStatus();
-
           if (result && result.success) {
             log("Grade complete!", "ok");
             log("  Grade:  " + (result.grade || "N/A"), "ok");
             log("  Views OK: " + result.all_views_successful, "info");
-            if (result.timing) {
+            if (result.timing)
               log(
                 "  Capture: " +
                   result.timing.capture_sec +
@@ -636,16 +1080,13 @@
                   "s",
                 "info",
               );
-            }
-            if (result.measurements) {
+            if (result.measurements)
               log(
                 "  Measurements: " + JSON.stringify(result.measurements),
                 "info",
               );
-            }
-            if (result.warnings && result.warnings.length > 0) {
+            if (result.warnings && result.warnings.length > 0)
               result.warnings.forEach((w) => log("  Warning: " + w, "warn"));
-            }
             log("");
             log("Click button below to review measurement overlays", "info");
             showDebugButton(serialId);
@@ -663,10 +1104,8 @@
 
       async function pollStatus() {
         let lastProgress = null;
-
         for (let i = 0; i < 240; i++) {
           await new Promise((r) => setTimeout(r, 500));
-
           let data;
           try {
             const resp = await HerdAuth.fetch(
@@ -677,7 +1116,6 @@
             log("Lost connection to Pi, retrying...", "warn");
             continue;
           }
-
           if (data.progress && data.progress !== lastProgress) {
             lastProgress = data.progress;
             const msgs = {
@@ -688,29 +1126,21 @@
             };
             log(msgs[data.progress] || data.progress, "info");
           }
-
           if (!data.active) {
-            if (data.last_error) {
-              return { success: false, error: data.last_error };
-            }
-            return (
-              data.last_result || {
-                success: false,
-                error: "No result returned",
-              }
-            );
+            return data.last_error
+              ? { success: false, error: data.last_error }
+              : data.last_result || {
+                  success: false,
+                  error: "No result returned",
+                };
           }
         }
-
         return {
           success: false,
           error: "Timed out waiting for grade to complete",
         };
       }
 
-      // =====================================================================
-      // DEBUG IMAGES
-      // =====================================================================
       function showDebugButton(serialId) {
         const container = document.getElementById("debug-section");
         container.style.display = "block";
@@ -718,34 +1148,113 @@
           loadDebugImages(serialId);
         document.getElementById("debug-images").innerHTML = "";
       }
-
       async function loadDebugImages(serialId) {
         const container = document.getElementById("debug-images");
         container.innerHTML = "";
         log("Loading debug images...", "info");
-
         ["side", "top", "front"].forEach((view) => {
           const url =
-            CONFIG.API_BASE + "/api/prod/debug/" + serialId + "/" + view;
+            CONFIG.API_BASE +
+            "/api/prod/debug/" +
+            serialId +
+            "/" +
+            view +
+            "?token=" +
+            HerdAuth.getAccessToken();
           const div = document.createElement("div");
           div.className = "debug-box";
           div.innerHTML =
             "<label>" +
             view +
-            "</label>" +
-            '<img src="' +
+            '</label><img src="' +
             url +
             '" alt="' +
             view +
-            ' debug"' +
-            " onerror=\"this.alt='not available'; this.style.opacity=0.3\" />";
+            ' debug" onerror="this.alt=\'not available\'; this.style.opacity=0.3" />';
           container.appendChild(div);
         });
-
         log("Debug images loaded — review measurement overlays above", "ok");
       }
 
-      // Auth gate
+      async function changePassword() {
+        const currentPw = document.getElementById("currentPassword").value;
+        const newPw = document.getElementById("newPassword").value;
+        const confirmPw = document.getElementById("confirmPassword").value;
+        const msg = document.getElementById("pwMsg");
+        const btn = document.getElementById("changePwBtn");
+        msg.textContent = "";
+        msg.className = "pw-msg";
+        if (!currentPw) {
+          msg.textContent = "Current password is required";
+          msg.className = "pw-msg error";
+          return;
+        }
+        if (
+          !newPw ||
+          newPw.length < 8 ||
+          !/[A-Z]/.test(newPw) ||
+          !/[a-z]/.test(newPw) ||
+          !/[0-9]/.test(newPw) ||
+          !/[^A-Za-z0-9]/.test(newPw)
+        ) {
+          msg.textContent =
+            "Password must be 8+ chars with uppercase, lowercase, number, and special character";
+          msg.className = "pw-msg error";
+          return;
+        }
+        if (newPw !== confirmPw) {
+          msg.textContent = "Passwords do not match";
+          msg.className = "pw-msg error";
+          return;
+        }
+        if (currentPw === newPw) {
+          msg.textContent = "New password must be different";
+          msg.className = "pw-msg error";
+          return;
+        }
+        btn.disabled = true;
+        btn.textContent = "Updating...";
+        try {
+          const verifyResp = await fetch(CONFIG.AUTH_BASE + "/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              username: currentUser.username,
+              password: currentPw,
+            }),
+          });
+          if (!verifyResp.ok) {
+            const err = await verifyResp.json().catch(() => ({}));
+            msg.textContent = err.detail || "Current password is incorrect";
+            msg.className = "pw-msg error";
+            return;
+          }
+          const updateResp = await HerdAuth.fetch(
+            CONFIG.AUTH_BASE + "/auth/users/" + currentUser.id,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ password: newPw }),
+            },
+          );
+          if (!updateResp.ok) {
+            const err = await updateResp.json().catch(() => ({}));
+            throw new Error(err.detail || "Failed to update password");
+          }
+          msg.textContent = "Password updated successfully";
+          msg.className = "pw-msg success";
+          document.getElementById("currentPassword").value = "";
+          document.getElementById("newPassword").value = "";
+          document.getElementById("confirmPassword").value = "";
+        } catch (err) {
+          msg.textContent = err.message;
+          msg.className = "pw-msg error";
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Update Password";
+        }
+      }
+
       HerdAuth.requireAuth().then((user) => showApp(user));
     </script>
   </body>
