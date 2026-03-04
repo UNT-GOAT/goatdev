@@ -34,6 +34,7 @@ from .models import (
 from .grader import grader
 from .storage import storage
 from .grade_calculator import calculate_grade
+from .api_auth import APIKeyMiddleware, API_KEY
 
 
 # Maximum number of serial_id debug directories to keep.
@@ -195,6 +196,13 @@ async def lifespan(app: FastAPI):
             captures_bucket=S3_CAPTURES_BUCKET or '(not set)',
             processed_bucket=S3_PROCESSED_BUCKET or '(not set)')
     
+    # Log API key status
+    if not API_KEY:
+        log.critical('startup', 'API_KEY NOT SET — all non-health requests will be rejected',
+                    fix='Set API_KEY environment variable')
+    else:
+        log.info('startup', 'API key configured')
+
     # Log system info
     memory = psutil.virtual_memory()
     log.info('startup', 'System info',
@@ -230,6 +238,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# API key authentication — all non-health endpoints require X-API-Key header.
+# CORS middleware must be outermost (added first) so preflight OPTIONS
+# requests get CORS headers before hitting auth.
+app.add_middleware(APIKeyMiddleware)
 
 
 # =============================================================================
