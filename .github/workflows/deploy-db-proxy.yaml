@@ -1,16 +1,16 @@
-# .github/workflows/deploy-auth.yml
-name: Build and Deploy Auth Service
+name: Build and Deploy DB Proxy Service
+
 on:
   push:
     branches: [main]
     paths:
-      - "auth/**"
-      - ".github/workflows/deploy-auth.yml"
+      - "db-proxy/**"
+      - ".github/workflows/deploy-db-proxy.yml"
   workflow_dispatch:
 
 env:
   AWS_REGION: us-east-2
-  ECR_REPOSITORY: herdsync-auth
+  ECR_REPOSITORY: herdsync-db-proxy
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_uri: ${{ steps.build.outputs.image_uri }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -45,7 +46,7 @@ jobs:
         run: |
           IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           echo "Building $IMAGE_URI"
-          docker build -f auth/Dockerfile -t $IMAGE_URI auth/
+          docker build -f db-proxy/Dockerfile -t $IMAGE_URI db-proxy/
           docker tag $IMAGE_URI $ECR_REGISTRY/$ECR_REPOSITORY:latest
           echo "Pushing to ECR..."
           docker push $IMAGE_URI
@@ -55,6 +56,7 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
+
     steps:
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
@@ -64,45 +66,54 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -e
-            echo "=== Deploying Auth Service ==="
+            echo "=== Deploying herdsync-db-proxy ==="
 
-            # Ensure shared docker network exists
+            # ensure docker network exists
             docker network create herdsync-net >/dev/null 2>&1 || true
 
+            # login to ECR
             aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 937249941844.dkr.ecr.us-east-2.amazonaws.com
 
+            # pull image
             echo "Pulling latest image..."
-            docker pull 937249941844.dkr.ecr.us-east-2.amazonaws.com/herdsync-auth:latest
+            docker pull 937249941844.dkr.ecr.us-east-2.amazonaws.com/herdsync-db-proxy:latest
 
+            # stop old container
             echo "Stopping old container..."
-            docker stop herdsync-auth || true
-            docker rm herdsync-auth || true
+            docker stop db-proxy || true
+            docker rm db-proxy || true
 
+            # start container
             echo "Starting new container..."
             docker run -d \
-              --name herdsync-auth \
+              --name db-proxy \
               --restart unless-stopped \
               --network herdsync-net \
-              -p 8001:8001 \
-              -v auth-keys:/app/keys \
-              --env-file /home/ubuntu/auth.env \
+              -p 8003:8003 \
+              --env-file /home/ubuntu/db-proxy.env \
               --log-driver=awslogs \
               --log-opt awslogs-region=us-east-2 \
               --log-opt awslogs-group=/goatdev \
-              --log-opt awslogs-stream=ec2/auth \
-              937249941844.dkr.ecr.us-east-2.amazonaws.com/herdsync-auth:latest
+              --log-opt awslogs-stream=ec2/db-proxy \
+              937249941844.dkr.ecr.us-east-2.amazonaws.com/herdsync-db-proxy:latest
 
+            # health check
             echo "Waiting for health check..."
             sleep 10
             docker ps
-            curl -f http://localhost:8001/auth/health || echo "Health check failed"
+            curl -f http://localhost:8003/health || echo "Health check failed"
 
+            # cleanup
             echo "Cleaning up old images..."
             docker image prune -af
 
-            echo "=== Auth deployment complete ==="
+            echo "=== DB proxy deployment complete ==="
 
       - name: Verify deployment
-        run: |
-          sleep 5
-          curl -f http://${{ secrets.EC2_HOST }}:8001/auth/health
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            curl -f http://localhost:8003/health || echo "Health check failed"

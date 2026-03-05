@@ -60,36 +60,43 @@ jobs:
           script: |
             set -e
             echo "=== Deploying herdsync-db ==="
+
+            # Ensure shared docker network exists
+            docker network create herdsync-net >/dev/null 2>&1 || true
+
             aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 937249941844.dkr.ecr.us-east-2.amazonaws.com
+
             echo "Pulling latest image..."
             docker pull 937249941844.dkr.ecr.us-east-2.amazonaws.com/herdsync-db:latest
+
             echo "Stopping old container..."
             docker stop db || true
             docker rm db || true
+
             echo "Starting new container..."
             docker run -d \
               --name db \
               --restart unless-stopped \
-              -p 8002:8002 \
+              --network herdsync-net \
+              -p 127.0.0.1:8002:8002 \
               --env-file /home/ubuntu/db.env \
               --log-driver=awslogs \
               --log-opt awslogs-region=us-east-2 \
               --log-opt awslogs-group=/goatdev \
               --log-opt awslogs-stream=ec2/db \
               937249941844.dkr.ecr.us-east-2.amazonaws.com/herdsync-db:latest
+
             echo "Waiting for health check..."
             sleep 10
             docker ps
             curl -f http://localhost:8002/health || echo "Health check failed"
+
             echo "Cleaning up old images..."
             docker image prune -af
+
             echo "=== Deployment complete ==="
 
       - name: Verify deployment
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            curl -f http://localhost:8002/health || echo "Health check failed"
+        run: |
+          sleep 5
+          curl -f http://${{ secrets.EC2_HOST }}:8001/auth/health
