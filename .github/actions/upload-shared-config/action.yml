@@ -28,7 +28,7 @@ runs:
         cat > frontend/config.js << 'EOF'
         const CONFIG = {
           AUTH_BASE: "__AUTH_BASE__",
-          DB_BASE: "__DB_BASE__"+"/api",
+          DB_BASE: "__DB_BASE__/api",
           API_BASE: "__API_BASE__",
           S3_BUCKET: "__S3_TRAINING_BUCKET__",
           S3_REGION: "__S3_REGION__",
