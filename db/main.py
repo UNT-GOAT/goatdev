@@ -13,7 +13,7 @@ import asyncpg
 import os
 import json
 
-from routes import providers, chickens, goats, lambs, grading
+from routes import providers, animals, chickens, goats, lambs, grading
 
 
 # ============================================================
@@ -64,6 +64,7 @@ app = FastAPI(title="herdsync-db", version="1.0.0", lifespan=lifespan)
 app.state.get_pool = get_pool
 
 # Mount routes
+app.include_router(animals.router, prefix="/animals", tags=["animals"])
 app.include_router(providers.router, prefix="/providers", tags=["providers"])
 app.include_router(chickens.router, prefix="/chickens", tags=["chickens"])
 app.include_router(goats.router, prefix="/goats", tags=["goats"])

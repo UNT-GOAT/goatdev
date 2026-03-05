@@ -86,6 +86,10 @@ jobs:
             echo "=== Deployment complete ==="
 
       - name: Verify deployment
-        run: |
-          sleep 5
-          curl -f http://${{ secrets.EC2_HOST }}:8002/health
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            curl -f http://localhost:8002/health || echo "Health check failed"

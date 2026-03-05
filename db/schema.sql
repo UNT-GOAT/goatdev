@@ -17,9 +17,17 @@ CREATE TABLE IF NOT EXISTS providers (
     updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Animals (unified serial_id sequence across all species)
+CREATE TABLE IF NOT EXISTS animals (
+    serial_id   SERIAL PRIMARY KEY,
+    species     VARCHAR(20) NOT NULL CHECK (species IN ('chicken', 'goat', 'lamb')),
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_animals_species ON animals(species);
+
 -- Chickens
 CREATE TABLE IF NOT EXISTS chickens (
-    serial_id       INTEGER PRIMARY KEY,
+    serial_id       INTEGER PRIMARY KEY REFERENCES animals(serial_id),
     live_weight     NUMERIC(10,2),
     hang_weight     NUMERIC(10,2),
     hang_portion    NUMERIC(10,4),
@@ -35,7 +43,7 @@ CREATE TABLE IF NOT EXISTS chickens (
 
 -- Goats
 CREATE TABLE IF NOT EXISTS goats (
-    serial_id       INTEGER PRIMARY KEY,
+    serial_id       INTEGER PRIMARY KEY REFERENCES animals(serial_id),
     hook_id         VARCHAR(50),
     description     TEXT,
     live_weight     NUMERIC(10,2),
@@ -54,7 +62,7 @@ CREATE TABLE IF NOT EXISTS goats (
 
 -- Lambs
 CREATE TABLE IF NOT EXISTS lambs (
-    serial_id       INTEGER PRIMARY KEY,
+    serial_id       INTEGER PRIMARY KEY REFERENCES animals(serial_id),
     description     TEXT,
     live_weight     NUMERIC(10,2),
     hang_weight     NUMERIC(10,2),

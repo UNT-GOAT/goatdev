@@ -4,6 +4,9 @@ Generic CRUD factory for animal tables (chickens, goats, lambs).
 Each table has the same core fields (serial_id, weights, dates, prov_id)
 with minor differences (goats have hook_id, lambs/goats have description + grade).
 This factory generates a full CRUD router for any of them.
+
+serial_id is always auto-assigned from the unified `animals` table.
+No manual ID assignment — the system owns the sequence.
 """
 
 from fastapi import APIRouter, HTTPException, Request
@@ -47,19 +50,27 @@ TABLE_FIELDS = {
     ],
 }
 
+# Map table name to species value in animals table
+TABLE_TO_SPECIES = {
+    "chickens": "chicken",
+    "goats": "goat",
+    "lambs": "lamb",
+}
+
 
 def build_animal_router(table: str) -> APIRouter:
     """Build a full CRUD router for an animal table."""
     router = APIRouter()
     fields = TABLE_FIELDS[table]
     singular = table.rstrip("s")  # "chickens" -> "chicken"
+    species = TABLE_TO_SPECIES[table]
 
     # Build pydantic models dynamically based on table fields
     field_defs = {f: ANIMAL_FIELDS[f] for f in fields}
 
+    # No serial_id on create — always auto-assigned
     CreateModel = create_model(
         f"{singular.title()}Create",
-        serial_id=(int, ...),  # required
         **field_defs,
     )
 
@@ -95,20 +106,28 @@ def build_animal_router(table: str) -> APIRouter:
     async def create_animal(request: Request, body: CreateModel):
         pool = await get_conn(request)
         data = body.model_dump()
-        cols = [k for k, v in data.items() if v is not None]
-        vals = [data[k] for k in cols]
-        placeholders = ", ".join(f"${i+1}" for i in range(len(cols)))
-        col_names = ", ".join(cols)
 
         async with pool.acquire() as conn:
-            try:
+            async with conn.transaction():
+                # Auto-assign serial_id from animals table
+                row = await conn.fetchrow(
+                    "INSERT INTO animals (species) VALUES ($1) RETURNING serial_id",
+                    species,
+                )
+                serial_id = row["serial_id"]
+
+                # Build species-specific insert
+                data["serial_id"] = serial_id
+                cols = [k for k, v in data.items() if v is not None]
+                vals = [data[k] for k in cols]
+                placeholders = ", ".join(f"${i+1}" for i in range(len(cols)))
+                col_names = ", ".join(cols)
+
                 row = await conn.fetchrow(
                     f"INSERT INTO {table} ({col_names}) VALUES ({placeholders}) RETURNING *",
                     *vals,
                 )
                 return dict(row)
-            except asyncpg.UniqueViolationError:
-                raise HTTPException(409, f"{singular.title()} with serial_id {data['serial_id']} already exists")
 
     @router.put("/{serial_id}")
     async def update_animal(request: Request, serial_id: int, body: UpdateModel):
@@ -132,15 +151,21 @@ def build_animal_router(table: str) -> APIRouter:
     async def delete_animal(request: Request, serial_id: int):
         pool = await get_conn(request)
         async with pool.acquire() as conn:
-            result = await conn.execute(
-                f"DELETE FROM {table} WHERE serial_id = $1", serial_id
-            )
-            if result == "DELETE 0":
-                raise HTTPException(404, f"{singular.title()} not found")
-            return {"deleted": serial_id}
+            async with conn.transaction():
+                result = await conn.execute(
+                    f"DELETE FROM {table} WHERE serial_id = $1", serial_id
+                )
+                if result == "DELETE 0":
+                    raise HTTPException(404, f"{singular.title()} not found")
+
+                # Also delete from animals table
+                await conn.execute(
+                    "DELETE FROM animals WHERE serial_id = $1", serial_id
+                )
+
+                return {"deleted": serial_id}
 
     return router
 
 
-# Needed for the dynamic route closures to capture `table` correctly
 import asyncpg
