@@ -64,8 +64,8 @@ jobs:
             echo "Pulling latest image..."
             docker pull 937249941844.dkr.ecr.us-east-2.amazonaws.com/herdsync-db:latest
             echo "Stopping old container..."
-            docker stop herdsync-db || true
-            docker rm herdsync-db || true
+            docker stop db || true
+            docker rm db || true
             echo "Starting new container..."
             docker run -d \
               --name db \
