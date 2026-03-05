@@ -66,24 +66,23 @@ jobs:
             set -e
             echo "=== Deploying Auth Service ==="
 
-            # Login to ECR
+            # Ensure shared docker network exists
+            docker network create herdsync-net >/dev/null 2>&1 || true
+
             aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 937249941844.dkr.ecr.us-east-2.amazonaws.com
 
-            # Pull latest image
             echo "Pulling latest image..."
             docker pull 937249941844.dkr.ecr.us-east-2.amazonaws.com/herdsync-auth:latest
 
-            # Stop and remove old container
             echo "Stopping old container..."
             docker stop herdsync-auth || true
             docker rm herdsync-auth || true
 
-            # Run new container
-            # Keys volume persists RSA key pair across deploys
             echo "Starting new container..."
             docker run -d \
               --name herdsync-auth \
               --restart unless-stopped \
+              --network herdsync-net \
               -p 8001:8001 \
               -v auth-keys:/app/keys \
               --env-file /home/ubuntu/auth.env \
@@ -93,13 +92,11 @@ jobs:
               --log-opt awslogs-stream=ec2/auth \
               937249941844.dkr.ecr.us-east-2.amazonaws.com/herdsync-auth:latest
 
-            # Wait and check health
             echo "Waiting for health check..."
             sleep 10
             docker ps
             curl -f http://localhost:8001/auth/health || echo "Health check failed"
 
-            # Cleanup old images
             echo "Cleaning up old images..."
             docker image prune -af
 
