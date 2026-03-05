@@ -454,6 +454,57 @@
         padding: 40px;
         color: #666;
       }
+      .db-schema-wrap {
+        display: none;
+        margin-top: 16px;
+        border: 1px solid #222;
+        border-radius: 6px;
+        background: #000;
+        overflow: auto;
+        max-height: 700px;
+      }
+      .db-schema-toolbar {
+        display: none;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+      }
+      .db-schema-meta {
+        color: #888;
+        font-size: 11px;
+      }
+      .db-schema-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .db-schema-actions button,
+      .db-schema-actions a {
+        padding: 8px 12px;
+        background: #1a1a2e;
+        border: 1px solid #333;
+        color: #ccc;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 12px;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+      }
+      .db-schema-actions button:hover,
+      .db-schema-actions a:hover {
+        border-color: #4caf50;
+        color: #fff;
+      }
+      .db-schema-img {
+        display: block;
+        width: 100%;
+        max-width: none;
+        height: auto;
+      }
 
       /* Detail panel */
       .detail-panel {
@@ -831,6 +882,7 @@
               Grading Results
             </button>
             <span class="separator">|</span>
+            <button onclick="dbToggleSchema(this)">Schema</button>
             <input
               type="text"
               id="dbSearch"
@@ -844,9 +896,36 @@
               Refresh
             </button>
           </div>
+
+          <div class="db-schema-toolbar" id="dbSchemaToolbar">
+            <div class="db-schema-meta">HerdSync RDS schema diagram</div>
+            <div class="db-schema-actions">
+              <button onclick="dbSchemaZoom(1)">100%</button>
+              <button onclick="dbSchemaZoom(1.5)">150%</button>
+              <button onclick="dbSchemaZoom(2)">200%</button>
+              <a
+                href="../../readme_assets/db_schema.png"
+                target="_blank"
+                rel="noopener"
+              >
+                Open Full Size
+              </a>
+            </div>
+          </div>
+
+          <div class="db-schema-wrap" id="dbSchemaWrap">
+            <img
+              id="dbSchemaImg"
+              class="db-schema-img"
+              src="../../readme_assets/db_schema.png"
+              alt="HerdSync DB schema diagram"
+            />
+          </div>
+
           <div class="db-stats" id="dbStats"></div>
           <div
             class="db-table-wrap"
+            id="dbTableWrap"
             style="max-height: 500px; overflow-y: auto"
           >
             <table class="db-table" id="dbTable">
@@ -1133,6 +1212,8 @@ HARDENING CHECKLIST:
       }
 
       let currentUser = null;
+      let dbSchemaVisible = false;
+      let dbSchemaScale = 1;
 
       // =================================================================
       // APP INIT
@@ -1516,10 +1597,6 @@ HARDENING CHECKLIST:
       // =================================================================
       // DATABASE BROWSER
       // =================================================================
-      // CONFIG.DB_BASE must be set in config.js — the herdsync-db URL
-      // reachable from the browser (via CloudFront or direct).
-      // Example: CONFIG.DB_BASE = "https://your-cloudfront.net"
-
       let dbCurrentTable = null;
       let dbData = [];
       let dbProviderCache = {};
@@ -1583,12 +1660,56 @@ HARDENING CHECKLIST:
       };
 
       async function dbFetch(path) {
-        // Use CONFIG.DB_BASE if available, fallback for dev
         const base =
           typeof CONFIG !== "undefined" && CONFIG.DB_BASE ? CONFIG.DB_BASE : "";
         const resp = await HerdAuth.fetch(base + path);
         if (!resp.ok) throw new Error("API error: " + resp.status);
         return resp.json();
+      }
+
+      function dbToggleSchema(btn) {
+        dbSchemaVisible = !dbSchemaVisible;
+
+        const wrap = document.getElementById("dbSchemaWrap");
+        const toolbar = document.getElementById("dbSchemaToolbar");
+        const tableWrap = document.getElementById("dbTableWrap");
+        const stats = document.getElementById("dbStats");
+        const empty = document.getElementById("dbEmpty");
+        const loading = document.getElementById("dbLoading");
+        const detail = document.getElementById("detailPanel");
+
+        wrap.style.display = dbSchemaVisible ? "block" : "none";
+        toolbar.style.display = dbSchemaVisible ? "flex" : "none";
+        tableWrap.style.display = dbSchemaVisible ? "none" : "block";
+        stats.style.display = dbSchemaVisible ? "none" : "block";
+        empty.style.display = dbSchemaVisible ? "none" : empty.style.display;
+        loading.style.display = dbSchemaVisible
+          ? "none"
+          : loading.style.display;
+        detail.style.display = dbSchemaVisible ? "none" : detail.style.display;
+
+        if (btn) {
+          const isActive = btn.classList.contains("active");
+          if (dbSchemaVisible && !isActive) btn.classList.add("active");
+          if (!dbSchemaVisible) btn.classList.remove("active");
+        }
+
+        if (!dbSchemaVisible) {
+          const activeTableBtn = document.querySelector(
+            '.db-controls button.active:not([onclick*="dbToggleSchema"])',
+          );
+          if (activeTableBtn) activeTableBtn.classList.add("active");
+        }
+
+        if (dbSchemaVisible) {
+          dbSchemaZoom(dbSchemaScale);
+        }
+      }
+
+      function dbSchemaZoom(scale) {
+        dbSchemaScale = scale;
+        const img = document.getElementById("dbSchemaImg");
+        img.style.width = scale * 100 + "%";
       }
 
       async function dbLoadProviderCache() {
@@ -1604,10 +1725,25 @@ HARDENING CHECKLIST:
       }
 
       async function dbLoadTable(table, btn) {
-        // Update button styles
-        document
-          .querySelectorAll(".db-controls button")
-          .forEach((b) => b.classList.remove("active"));
+        if (dbSchemaVisible) {
+          const schemaBtn = document.querySelector(
+            '.db-controls button[onclick*="dbToggleSchema"]',
+          );
+          if (schemaBtn) schemaBtn.classList.remove("active");
+          dbSchemaVisible = false;
+          document.getElementById("dbSchemaWrap").style.display = "none";
+          document.getElementById("dbSchemaToolbar").style.display = "none";
+          document.getElementById("dbTableWrap").style.display = "block";
+          document.getElementById("dbStats").style.display = "block";
+        }
+
+        document.querySelectorAll(".db-controls button").forEach((b) => {
+          if (
+            !String(b.getAttribute("onclick") || "").includes("dbToggleSchema")
+          ) {
+            b.classList.remove("active");
+          }
+        });
         if (btn) btn.classList.add("active");
 
         dbCurrentTable = table;
@@ -1641,13 +1777,11 @@ HARDENING CHECKLIST:
           const cols = DB_COLUMNS[table] || Object.keys(dbData[0]).slice(0, 10);
           stats.textContent = dbData.length + " records";
 
-          // Header
           thead.innerHTML =
             "<tr>" +
             cols.map((c) => "<th>" + c.replace(/_/g, " ") + "</th>").join("") +
             "</tr>";
 
-          // Rows
           dbRenderRows(cols);
         } catch (err) {
           loading.style.display = "none";
@@ -1678,19 +1812,15 @@ HARDENING CHECKLIST:
                   let val = row[c];
                   const style = COL_STYLES[c] || "";
 
-                  // Resolve provider name
                   if (c === "prov_id" && val && dbProviderCache[val]) {
                     val = dbProviderCache[val];
                   }
-                  // Format dates
                   if (c === "graded_at" && val) {
                     val = new Date(val).toLocaleString();
                   }
-                  // Format nulls
                   if (val === null || val === undefined) {
                     return '<td class="null">—</td>';
                   }
-                  // Format booleans
                   if (typeof val === "boolean") {
                     val = val ? "✓" : "✗";
                   }
@@ -1718,15 +1848,17 @@ HARDENING CHECKLIST:
       }
 
       function dbRefresh() {
+        if (dbSchemaVisible) return;
         if (dbCurrentTable) {
           const activeBtn = document.querySelector(
-            ".db-controls button.active",
+            '.db-controls button.active:not([onclick*="dbToggleSchema"])',
           );
           dbLoadTable(dbCurrentTable, activeBtn);
         }
       }
 
       function dbShowDetail(index) {
+        if (dbSchemaVisible) return;
         const search = document.getElementById("dbSearch").value.toLowerCase();
         const filtered = search
           ? dbData.filter((r) =>
@@ -1751,17 +1883,14 @@ HARDENING CHECKLIST:
 
         grid.innerHTML = Object.entries(row)
           .map(([key, val]) => {
-            // Resolve provider
             if (key === "prov_id" && val && dbProviderCache[val]) {
               val = dbProviderCache[val] + " (id: " + val + ")";
             }
-            // Format measurements object
             if (key === "measurements" && val && typeof val === "object") {
               val = Object.entries(val)
                 .map(([k, v]) => k.replace(/_cm$/, "") + ": " + v + "cm")
                 .join(", ");
             }
-            // Format arrays
             if (Array.isArray(val)) {
               val = val.join(", ") || "—";
             }
