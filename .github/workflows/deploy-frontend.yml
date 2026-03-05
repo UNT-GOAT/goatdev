@@ -36,6 +36,7 @@ jobs:
         with:
           s3_bucket: goat-web-937249941844
           aws_region: us-east-2
+          auth_base: ${{ secrets.AUTH_BASE }}
           api_base: ${{ secrets.API_BASE }}
           s3_training_bucket: ${{ secrets.S3_TRAINING_BUCKET }}
 
@@ -96,6 +97,7 @@ jobs:
         with:
           s3_bucket: goat-web-937249941844
           aws_region: us-east-2
+          auth_base: ${{ secrets.AUTH_BASE }}
           api_base: ${{ secrets.API_BASE }}
           s3_training_bucket: ${{ secrets.S3_TRAINING_BUCKET }}
 
