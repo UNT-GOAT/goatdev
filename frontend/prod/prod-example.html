@@ -333,6 +333,179 @@
         color: #4caf50;
       }
 
+      /* Database tab */
+      .db-tab {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .db-tab h1 {
+        color: #4caf50;
+        font-size: 18px;
+        margin-bottom: 16px;
+      }
+      .db-controls {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .db-controls button {
+        padding: 8px 16px;
+        background: #1a1a2e;
+        border: 1px solid #333;
+        color: #ccc;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .db-controls button:hover {
+        border-color: #4caf50;
+        color: #fff;
+      }
+      .db-controls button.active {
+        background: #4caf50;
+        color: #fff;
+        border-color: #4caf50;
+      }
+      .db-controls .separator {
+        color: #333;
+        margin: 0 4px;
+      }
+      .db-controls input {
+        padding: 8px 12px;
+        background: #1a1a2e;
+        border: 1px solid #333;
+        border-radius: 4px;
+        color: white;
+        font-family: monospace;
+        font-size: 12px;
+        width: 180px;
+      }
+      .db-controls input:focus {
+        outline: none;
+        border-color: #4caf50;
+      }
+      .db-stats {
+        font-size: 11px;
+        color: #555;
+        margin-bottom: 16px;
+      }
+      .db-table-wrap {
+        overflow-x: auto;
+        border: 1px solid #222;
+        border-radius: 6px;
+      }
+      .db-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .db-table th {
+        text-align: left;
+        padding: 8px 10px;
+        background: #0a0a0a;
+        color: #666;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 1px solid #333;
+        position: sticky;
+        top: 0;
+        white-space: nowrap;
+      }
+      .db-table td {
+        padding: 6px 10px;
+        border-bottom: 1px solid #1a1a2e;
+        white-space: nowrap;
+      }
+      .db-table tr:hover td {
+        background: #1a1a2e;
+      }
+      .db-table .null {
+        color: #444;
+        font-style: italic;
+      }
+      .db-table .id-col {
+        color: #4caf50;
+        font-weight: 600;
+      }
+      .db-table .date-col {
+        color: #888;
+      }
+      .db-table .num-col {
+        color: #a5d6ff;
+        text-align: right;
+      }
+      .db-table .grade-col {
+        color: #e3b341;
+        font-weight: 600;
+      }
+      .db-empty {
+        text-align: center;
+        padding: 40px;
+        color: #444;
+        font-size: 13px;
+      }
+      .db-loading {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+      }
+
+      /* Detail panel */
+      .detail-panel {
+        background: #0a0a1a;
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 16px;
+        margin-top: 16px;
+        display: none;
+      }
+      .detail-panel h3 {
+        color: #888;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 12px;
+      }
+      .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 8px;
+      }
+      .detail-field label {
+        display: block;
+        font-size: 10px;
+        color: #555;
+        text-transform: uppercase;
+      }
+      .detail-field span {
+        font-size: 13px;
+        color: #ccc;
+      }
+      .detail-field .val-null {
+        color: #444;
+        font-style: italic;
+      }
+      .detail-close {
+        float: right;
+        background: none;
+        border: 1px solid #333;
+        color: #666;
+        padding: 4px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: monospace;
+        font-size: 11px;
+      }
+      .detail-close:hover {
+        border-color: #666;
+        color: #888;
+      }
+
       /* Notes tab */
       .notes-tab {
         max-width: 1000px;
@@ -467,6 +640,9 @@
         <span class="brand">HerdSync</span>
         <button class="tab-btn active" onclick="switchTab('main', this)">
           Prod
+        </button>
+        <button class="tab-btn" onclick="switchTab('db', this)">
+          Database
         </button>
         <button class="tab-btn" onclick="switchTab('notes', this)">
           Notes
@@ -638,7 +814,63 @@
       </div>
 
       <!-- ============================================================= -->
-      <!-- NOTES TAB -->
+      <!-- DATABASE TAB -->
+      <!-- ============================================================= -->
+      <div id="tab-db" class="tab-content">
+        <div class="db-tab">
+          <h1>Database Browser</h1>
+          <div class="db-controls">
+            <button class="active" onclick="dbLoadTable('goats', this)">
+              Goats
+            </button>
+            <button onclick="dbLoadTable('chickens', this)">Chickens</button>
+            <button onclick="dbLoadTable('lambs', this)">Lambs</button>
+            <span class="separator">|</span>
+            <button onclick="dbLoadTable('providers', this)">Providers</button>
+            <button onclick="dbLoadTable('grading', this)">
+              Grading Results
+            </button>
+            <span class="separator">|</span>
+            <input
+              type="text"
+              id="dbSearch"
+              placeholder="Search serial_id..."
+              onkeyup="dbFilter()"
+            />
+            <button
+              onclick="dbRefresh()"
+              style="background: none; border: 1px solid #333; color: #666"
+            >
+              Refresh
+            </button>
+          </div>
+          <div class="db-stats" id="dbStats"></div>
+          <div
+            class="db-table-wrap"
+            style="max-height: 500px; overflow-y: auto"
+          >
+            <table class="db-table" id="dbTable">
+              <thead id="dbThead"></thead>
+              <tbody id="dbTbody"></tbody>
+            </table>
+          </div>
+          <div id="dbEmpty" class="db-empty" style="display: none">
+            No records found
+          </div>
+          <div id="dbLoading" class="db-loading" style="display: none">
+            Loading...
+          </div>
+
+          <div class="detail-panel" id="detailPanel">
+            <button class="detail-close" onclick="closeDetail()">Close</button>
+            <h3 id="detailTitle">Record Detail</h3>
+            <div class="detail-grid" id="detailGrid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================================= -->
+      <!-- NOTES TAB (unchanged) -->
       <!-- ============================================================= -->
       <div id="tab-notes" class="tab-content">
         <div class="notes-tab">
@@ -857,7 +1089,10 @@ await HerdAuth.fetch(CONFIG.AUTH_BASE + "/auth/users/" + id, {
 │  ec2-api (:8000)                                             │
 │    X-API-Key middleware (fail-closed)                         │
 │    Health endpoints exempt                                   │
-│  Postgres (RDS) — users, tokens, sslmode=require             │
+│  herdsync-db (:8002)                                         │
+│    Animal/provider CRUD, grading results                     │
+│    Unified serial_id sequence across species                 │
+│  Postgres (RDS) — users, tokens, animals, sslmode=require    │
 └──────────────────────────────────────────────────────────────┘
 
 HARDENING CHECKLIST:
@@ -877,6 +1112,9 @@ HARDENING CHECKLIST:
     </div>
 
     <script>
+      // =================================================================
+      // TAB SWITCHING
+      // =================================================================
       function switchTab(name, btn) {
         document
           .querySelectorAll(".tab-content")
@@ -890,10 +1128,15 @@ HARDENING CHECKLIST:
           document.querySelectorAll(".notes-tab pre code").forEach((el) => {
             if (!el.dataset.highlighted) hljs.highlightElement(el);
           });
+        if (name === "db" && !dbCurrentTable)
+          dbLoadTable("goats", document.querySelector(".db-controls button"));
       }
 
       let currentUser = null;
 
+      // =================================================================
+      // APP INIT
+      // =================================================================
       function showApp(user) {
         currentUser = user;
         document.getElementById("app").style.display = "block";
@@ -916,6 +1159,9 @@ HARDENING CHECKLIST:
         });
       }
 
+      // =================================================================
+      // LOGGING
+      // =================================================================
       function log(msg, type = "info") {
         const el = document.getElementById("log");
         const time = new Date().toLocaleTimeString();
@@ -926,6 +1172,9 @@ HARDENING CHECKLIST:
         el.scrollTop = el.scrollHeight;
       }
 
+      // =================================================================
+      // MANUAL UPLOAD
+      // =================================================================
       const uploadedFiles = { side: null, top: null, front: null };
       function handleUpload(view, input) {
         const file = input.files[0];
@@ -1020,6 +1269,9 @@ HARDENING CHECKLIST:
         }
       }
 
+      // =================================================================
+      // GRADE FLOW (live capture)
+      // =================================================================
       async function startGrade() {
         const serialId = document.getElementById("serialId").value.trim();
         const liveWeight = parseFloat(
@@ -1141,6 +1393,9 @@ HARDENING CHECKLIST:
         };
       }
 
+      // =================================================================
+      // DEBUG IMAGES
+      // =================================================================
       function showDebugButton(serialId) {
         const container = document.getElementById("debug-section");
         container.style.display = "block";
@@ -1176,6 +1431,9 @@ HARDENING CHECKLIST:
         log("Debug images loaded — review measurement overlays above", "ok");
       }
 
+      // =================================================================
+      // CHANGE PASSWORD
+      // =================================================================
       async function changePassword() {
         const currentPw = document.getElementById("currentPassword").value;
         const newPw = document.getElementById("newPassword").value;
@@ -1255,6 +1513,285 @@ HARDENING CHECKLIST:
         }
       }
 
+      // =================================================================
+      // DATABASE BROWSER
+      // =================================================================
+      // CONFIG.DB_BASE must be set in config.js — the herdsync-db URL
+      // reachable from the browser (via CloudFront or direct).
+      // Example: CONFIG.DB_BASE = "https://your-cloudfront.net"
+
+      let dbCurrentTable = null;
+      let dbData = [];
+      let dbProviderCache = {};
+
+      const DB_COLUMNS = {
+        goats: [
+          "serial_id",
+          "hook_id",
+          "description",
+          "live_weight",
+          "hang_weight",
+          "whole_hw",
+          "grade",
+          "prov_id",
+          "kill_date",
+          "process_date",
+        ],
+        chickens: [
+          "serial_id",
+          "live_weight",
+          "hang_weight",
+          "whole_hw",
+          "prov_id",
+          "kill_date",
+          "process_date",
+        ],
+        lambs: [
+          "serial_id",
+          "description",
+          "live_weight",
+          "hang_weight",
+          "whole_hw",
+          "grade",
+          "prov_id",
+          "kill_date",
+          "process_date",
+        ],
+        providers: ["id", "name", "phone", "email", "status"],
+        grading: [
+          "id",
+          "serial_id",
+          "grade",
+          "live_weight",
+          "all_views_ok",
+          "ec2_sec",
+          "graded_at",
+        ],
+      };
+
+      const COL_STYLES = {
+        serial_id: "id-col",
+        id: "id-col",
+        grade: "grade-col",
+        live_weight: "num-col",
+        hang_weight: "num-col",
+        whole_hw: "num-col",
+        ec2_sec: "num-col",
+        kill_date: "date-col",
+        process_date: "date-col",
+        graded_at: "date-col",
+      };
+
+      async function dbFetch(path) {
+        // Use CONFIG.DB_BASE if available, fallback for dev
+        const base =
+          typeof CONFIG !== "undefined" && CONFIG.DB_BASE ? CONFIG.DB_BASE : "";
+        const resp = await HerdAuth.fetch(base + path);
+        if (!resp.ok) throw new Error("API error: " + resp.status);
+        return resp.json();
+      }
+
+      async function dbLoadProviderCache() {
+        if (Object.keys(dbProviderCache).length > 0) return;
+        try {
+          const providers = await dbFetch("/providers");
+          providers.forEach((p) => {
+            dbProviderCache[p.id] = p.name;
+          });
+        } catch (e) {
+          /* ignore */
+        }
+      }
+
+      async function dbLoadTable(table, btn) {
+        // Update button styles
+        document
+          .querySelectorAll(".db-controls button")
+          .forEach((b) => b.classList.remove("active"));
+        if (btn) btn.classList.add("active");
+
+        dbCurrentTable = table;
+        const tbody = document.getElementById("dbTbody");
+        const thead = document.getElementById("dbThead");
+        const stats = document.getElementById("dbStats");
+        const empty = document.getElementById("dbEmpty");
+        const loading = document.getElementById("dbLoading");
+
+        tbody.innerHTML = "";
+        thead.innerHTML = "";
+        stats.textContent = "";
+        empty.style.display = "none";
+        loading.style.display = "block";
+        closeDetail();
+
+        try {
+          await dbLoadProviderCache();
+          const endpoint =
+            "/" + table + (table === "grading" ? "?limit=200" : "");
+          dbData = await dbFetch(endpoint);
+
+          loading.style.display = "none";
+
+          if (dbData.length === 0) {
+            empty.style.display = "block";
+            stats.textContent = "0 records";
+            return;
+          }
+
+          const cols = DB_COLUMNS[table] || Object.keys(dbData[0]).slice(0, 10);
+          stats.textContent = dbData.length + " records";
+
+          // Header
+          thead.innerHTML =
+            "<tr>" +
+            cols.map((c) => "<th>" + c.replace(/_/g, " ") + "</th>").join("") +
+            "</tr>";
+
+          // Rows
+          dbRenderRows(cols);
+        } catch (err) {
+          loading.style.display = "none";
+          empty.style.display = "block";
+          empty.textContent = "Error loading data: " + err.message;
+        }
+      }
+
+      function dbRenderRows(cols) {
+        const tbody = document.getElementById("dbTbody");
+        const search = document.getElementById("dbSearch").value.toLowerCase();
+        const filtered = search
+          ? dbData.filter((r) =>
+              Object.values(r).some((v) =>
+                String(v).toLowerCase().includes(search),
+              ),
+            )
+          : dbData;
+
+        tbody.innerHTML = filtered
+          .map(
+            (row, i) =>
+              '<tr onclick="dbShowDetail(' +
+              i +
+              ')" style="cursor: pointer;">' +
+              cols
+                .map((c) => {
+                  let val = row[c];
+                  const style = COL_STYLES[c] || "";
+
+                  // Resolve provider name
+                  if (c === "prov_id" && val && dbProviderCache[val]) {
+                    val = dbProviderCache[val];
+                  }
+                  // Format dates
+                  if (c === "graded_at" && val) {
+                    val = new Date(val).toLocaleString();
+                  }
+                  // Format nulls
+                  if (val === null || val === undefined) {
+                    return '<td class="null">—</td>';
+                  }
+                  // Format booleans
+                  if (typeof val === "boolean") {
+                    val = val ? "✓" : "✗";
+                  }
+
+                  return '<td class="' + style + '">' + val + "</td>";
+                })
+                .join("") +
+              "</tr>",
+          )
+          .join("");
+
+        document.getElementById("dbStats").textContent =
+          filtered.length +
+          (filtered.length !== dbData.length ? " / " + dbData.length : "") +
+          " records";
+        document.getElementById("dbEmpty").style.display =
+          filtered.length === 0 ? "block" : "none";
+      }
+
+      function dbFilter() {
+        if (!dbCurrentTable || !dbData.length) return;
+        const cols =
+          DB_COLUMNS[dbCurrentTable] || Object.keys(dbData[0]).slice(0, 10);
+        dbRenderRows(cols);
+      }
+
+      function dbRefresh() {
+        if (dbCurrentTable) {
+          const activeBtn = document.querySelector(
+            ".db-controls button.active",
+          );
+          dbLoadTable(dbCurrentTable, activeBtn);
+        }
+      }
+
+      function dbShowDetail(index) {
+        const search = document.getElementById("dbSearch").value.toLowerCase();
+        const filtered = search
+          ? dbData.filter((r) =>
+              Object.values(r).some((v) =>
+                String(v).toLowerCase().includes(search),
+              ),
+            )
+          : dbData;
+        const row = filtered[index];
+        if (!row) return;
+
+        const panel = document.getElementById("detailPanel");
+        const grid = document.getElementById("detailGrid");
+        const title = document.getElementById("detailTitle");
+
+        title.textContent =
+          (dbCurrentTable === "providers"
+            ? "Provider"
+            : dbCurrentTable.slice(0, -1)) +
+          " #" +
+          (row.serial_id || row.id);
+
+        grid.innerHTML = Object.entries(row)
+          .map(([key, val]) => {
+            // Resolve provider
+            if (key === "prov_id" && val && dbProviderCache[val]) {
+              val = dbProviderCache[val] + " (id: " + val + ")";
+            }
+            // Format measurements object
+            if (key === "measurements" && val && typeof val === "object") {
+              val = Object.entries(val)
+                .map(([k, v]) => k.replace(/_cm$/, "") + ": " + v + "cm")
+                .join(", ");
+            }
+            // Format arrays
+            if (Array.isArray(val)) {
+              val = val.join(", ") || "—";
+            }
+
+            const display =
+              val === null || val === undefined
+                ? '<span class="val-null">null</span>'
+                : String(val);
+
+            return (
+              '<div class="detail-field"><label>' +
+              key.replace(/_/g, " ") +
+              "</label><span>" +
+              display +
+              "</span></div>"
+            );
+          })
+          .join("");
+
+        panel.style.display = "block";
+        panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+
+      function closeDetail() {
+        document.getElementById("detailPanel").style.display = "none";
+      }
+
+      // =================================================================
+      // AUTH GATE
+      // =================================================================
       HerdAuth.requireAuth().then((user) => showApp(user));
     </script>
   </body>
