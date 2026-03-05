@@ -1586,7 +1586,7 @@ HARDENING CHECKLIST:
         // Use CONFIG.DB_BASE if available, fallback for dev
         const base =
           typeof CONFIG !== "undefined" && CONFIG.DB_BASE ? CONFIG.DB_BASE : "";
-        const resp = await HerdAuth.fetch(base + path);
+        const resp = await fetch(base + path, { credentials: "omit" }); // TODO TEMP FOR SPRINT MEETING CHANGE AFTER
         if (!resp.ok) throw new Error("API error: " + resp.status);
         return resp.json();
       }
