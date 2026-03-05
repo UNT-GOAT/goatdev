@@ -1,0 +1,119 @@
+name: Build and Deploy DB Proxy Service
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "db-proxy/**"
+      - ".github/workflows/deploy-db-proxy.yml"
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-2
+  ECR_REPOSITORY: herdsync-db-proxy
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image_uri: ${{ steps.build.outputs.image_uri }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Create ECR repository if not exists
+        run: |
+          aws ecr describe-repositories --repository-names $ECR_REPOSITORY 2>/dev/null || \
+          aws ecr create-repository --repository-name $ECR_REPOSITORY
+
+      - name: Build, tag, and push image
+        id: build
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "Building $IMAGE_URI"
+          docker build -f db-proxy/Dockerfile -t $IMAGE_URI db-proxy/
+          docker tag $IMAGE_URI $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "Pushing to ECR..."
+          docker push $IMAGE_URI
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            echo "=== Deploying herdsync-db-proxy ==="
+
+            # ensure docker network exists
+            docker network create herdsync-net >/dev/null 2>&1 || true
+
+            # login to ECR
+            aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 937249941844.dkr.ecr.us-east-2.amazonaws.com
+
+            # pull image
+            echo "Pulling latest image..."
+            docker pull 937249941844.dkr.ecr.us-east-2.amazonaws.com/herdsync-db-proxy:latest
+
+            # stop old container
+            echo "Stopping old container..."
+            docker stop db-proxy || true
+            docker rm db-proxy || true
+
+            # start container
+            echo "Starting new container..."
+            docker run -d \
+              --name db-proxy \
+              --restart unless-stopped \
+              --network herdsync-net \
+              -p 8003:8003 \
+              --env-file /home/ubuntu/db-proxy.env \
+              --log-driver=awslogs \
+              --log-opt awslogs-region=us-east-2 \
+              --log-opt awslogs-group=/goatdev \
+              --log-opt awslogs-stream=ec2/db-proxy \
+              937249941844.dkr.ecr.us-east-2.amazonaws.com/herdsync-db-proxy:latest
+
+            # health check
+            echo "Waiting for health check..."
+            sleep 10
+            docker ps
+            curl -f http://localhost:8003/health || echo "Health check failed"
+
+            # cleanup
+            echo "Cleaning up old images..."
+            docker image prune -af
+
+            echo "=== DB proxy deployment complete ==="
+
+      - name: Verify deployment
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            curl -f http://localhost:8003/health || echo "Health check failed"
