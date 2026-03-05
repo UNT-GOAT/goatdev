@@ -43,8 +43,11 @@ const HerdAuth = (() => {
     // CONFIG
     // ==========================================================================
 
-    // Auth API is on CloudFront (routed to EC2:8001)
-    const AUTH_BASE = '';
+    // Auth API base (always-on; EC2/ALB/CloudFront, NOT the Pi)
+    const AUTH_BASE =
+        (typeof CONFIG !== "undefined" && CONFIG.AUTH_BASE)
+            ? CONFIG.AUTH_BASE
+            : "";
 
     // How many seconds before expiry to trigger a refresh
     const REFRESH_BUFFER_SEC = 120; // 2 minutes before expiry
