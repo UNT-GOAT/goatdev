@@ -68,14 +68,14 @@ jobs:
             docker rm herdsync-db || true
             echo "Starting new container..."
             docker run -d \
-              --name herdsync-db \
+              --name db \
               --restart unless-stopped \
               -p 8002:8002 \
               --env-file /home/ubuntu/db.env \
               --log-driver=awslogs \
               --log-opt awslogs-region=us-east-2 \
               --log-opt awslogs-group=/goatdev \
-              --log-opt awslogs-stream=ec2/herdsync-db \
+              --log-opt awslogs-stream=ec2/db \
               937249941844.dkr.ecr.us-east-2.amazonaws.com/herdsync-db:latest
             echo "Waiting for health check..."
             sleep 10
