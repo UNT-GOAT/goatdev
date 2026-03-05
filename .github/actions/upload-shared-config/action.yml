@@ -27,7 +27,7 @@ runs:
         mkdir -p frontend
         cat > frontend/config.js << 'EOF'
         const CONFIG = {
-          AUTH_BASE: "__AUTH_BASE__",
+          AUTH_BASE: "__AUTH_BASE__/db",
           DB_BASE: "__DB_BASE__",
           API_BASE: "__API_BASE__",
           S3_BUCKET: "__S3_TRAINING_BUCKET__",
