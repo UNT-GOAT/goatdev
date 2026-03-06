@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "frontend/**"
+      - "readme_assets/db_schema.png"
       - ".github/workflows/deploy-frontend.yml"
       - ".github/actions/upload-shared-config/**"
   workflow_dispatch:
@@ -112,6 +113,16 @@ jobs:
         run: |
           aws s3 sync frontend/js/ s3://goat-web-937249941844/js/
           echo "Auth JS deployed"
+
+      - name: Deploy assets to S3
+        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-2
+        run: |
+          aws s3 cp readme_assets/db_schema.png s3://goat-web-937249941844/
+          echo "Prod assets deployed"
 
       - name: Deploy prod
         if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
