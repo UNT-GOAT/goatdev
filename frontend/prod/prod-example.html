@@ -2145,10 +2145,16 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
         const grid = document.getElementById("detailGrid");
         const title = document.getElementById("detailTitle");
 
+        const LABELS = {
+          goats: "Goat",
+          chickens: "Chicken",
+          lambs: "Lamb",
+          providers: "Provider",
+          grading: "Grading",
+        };
+
         title.textContent =
-          (dbCurrentTable === "providers"
-            ? "Provider"
-            : dbCurrentTable.slice(0, -1)) +
+          (LABELS[dbCurrentTable] || "Record") +
           " #" +
           (row.serial_id || row.id);
 
