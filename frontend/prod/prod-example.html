@@ -945,10 +945,51 @@
       </div>
 
       <!-- ============================================================= -->
-      <!-- NOTES TAB (unchanged) -->
+      <!-- NOTES TAB -->
       <!-- ============================================================= -->
       <div id="tab-notes" class="tab-content">
         <div class="notes-tab">
+          <div class="section">
+            <div class="section-header">
+              <h2>Prod Request Flow</h2>
+              <span class="tag arch">Architecture</span>
+            </div>
+            <div class="annotation">
+              <strong
+                >This page is a production integration example, not a direct DB
+                client.</strong
+              >
+              The browser talks to the Pi, and the Pi fans requests out to the
+              correct backend service.
+              <div class="info">
+                <strong>Flow:</strong><br />
+                &bull; Browser loads static frontend<br />
+                &bull; Frontend sends authenticated requests to Pi routes under
+                <code>/api/*</code><br />
+                &bull; Pi services handle camera access, grade orchestration,
+                and internal forwarding<br />
+                &bull; DB reads/writes happen through backend services only<br />
+                &bull; The browser never connects directly to Postgres or holds
+                DB credentials
+              </div>
+              <div class="callout">
+                <strong>Rule:</strong> Keep database structure, credentials, and
+                write logic server-side. Frontend should only consume backend
+                APIs.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">Browser
+  │
+  ├─ /api/viewfocus/*  → camera proxy on Pi
+  ├─ /api/prod/*       → prod server on Pi
+  ├─ /auth/*           → auth service
+  └─ /db/*             → DB / DB-proxy backed routes
+
+Pi services and EC2 services then handle grading, auth, and DB access internally.</code></pre>
+            </div>
+          </div>
+
           <div class="section">
             <div class="section-header">
               <h2>Auth Gate Pattern</h2>
@@ -991,23 +1032,68 @@ HerdAuth.requireAuth().then((user) => showApp(user));</code></pre>
                 &bull; <code>requireAuth()</code> — Gate a page. Returns
                 Promise&lt;user&gt; or redirects.<br />
                 &bull; <code>getAccessToken()</code> — Current JWT from
-                sessionStorage (15 min).<br />
-                &bull; <code>fetch(url, opts)</code> — Drop-in for fetch().
-                Attaches Bearer, auto-refreshes, redirects if refresh fails.<br />
+                sessionStorage.<br />
+                &bull; <code>fetch(url, opts)</code> — Drop-in for
+                <code>fetch()</code>. Attaches Bearer token, refreshes when
+                needed, redirects if refresh fails.<br />
                 &bull; <code>logout()</code> — Clears tokens, revokes refresh
-                server-side, redirects.<br />
-                &bull; <code>getUser()</code> — Cached {id, username, role}.
+                token server-side, redirects.<br />
+                &bull; <code>getUser()</code> — Cached
+                <code>{ id, username, role }</code>.
               </div>
               <div class="callout">
-                <strong>Token storage:</strong> Refresh tokens (30-day) in
-                localStorage — XSS-extractable. Mitigated by rotation: each use
-                invalidates old token. Stolen token = single use.
+                <strong>Token model:</strong> Access token is short-lived and
+                used for normal requests. Refresh token is longer-lived and
+                rotated when used.
               </div>
             </div>
             <div class="code-block">
-              <pre><code class="language-plaintext">Access token:  JWT (RS256 + kid), 15 min, sessionStorage
-Refresh token: opaque, 30 days, localStorage, rotated on every use
-Stream imgs:   auto-updated on refresh (img[src*="token="])</code></pre>
+              <pre><code class="language-plaintext">Access token:  JWT, short-lived, sessionStorage
+Refresh token: longer-lived, localStorage, rotated on use
+Authenticated requests: HerdAuth.fetch(...)
+Image routes: ?token=&lt;jwt&gt; fallback for &lt;img&gt; tags</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Pi Routes Used By This Page</h2>
+              <span class="tag feature">Feature</span>
+            </div>
+            <div class="annotation">
+              This page uses two main Pi-facing route groups.
+              <div class="info">
+                <strong>Camera routes:</strong><br />
+                &bull;
+                <code>/api/viewfocus/stream/{cam}</code> —
+                live MJPEG stream for <code>side</code>, <code>top</code>, and
+                <code>front</code><br /><br />
+                <strong>Production grading routes:</strong><br />
+                &bull; <code>/api/prod/grade</code> — capture live images on the
+                Pi and start a grading run<br />
+                &bull; <code>/api/prod/grade/test</code> — manual-upload test
+                path; bypasses Pi camera capture and sends uploaded images into
+                the grading pipeline<br />
+                &bull; <code>/api/prod/status</code> — polling endpoint for the
+                active grade job<br />
+                &bull; <code>/api/prod/debug/{serial_id}/{view}</code> —
+                returns debug overlay images for a completed run
+              </div>
+              <div class="callout">
+                <strong>Important:</strong> The browser only talks to the Pi
+                surface routes. The Pi then handles internal forwarding and
+                service-to-service calls.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">GET  /api/viewfocus/stream/side
+GET  /api/viewfocus/stream/top
+GET  /api/viewfocus/stream/front
+
+POST /api/prod/grade
+POST /api/prod/grade/test
+GET  /api/prod/status
+GET  /api/prod/debug/{serial_id}/{view}</code></pre>
             </div>
           </div>
 
@@ -1017,30 +1103,181 @@ Stream imgs:   auto-updated on refresh (img[src*="token="])</code></pre>
               <span class="tag security">Security</span>
             </div>
             <div class="annotation">
-              <strong>&lt;img&gt; tags cannot set HTTP headers.</strong> JWT
-              passed as <code>?token=</code> in the URL.
+              <strong>&lt;img&gt; tags cannot set HTTP headers.</strong> For
+              stream and debug image endpoints, the JWT is passed as
+              <code>?token=</code> in the URL.
               <div class="info">
-                1. Frontend appends <code>?token=&lt;jwt&gt;</code> to img
-                src<br />
-                2. Caddy <code>forward_auth</code> → auth_verifier.py<br />
-                3. Verifier extracts token from
-                <code>X-Forwarded-Uri</code> header<br />
-                4. JWT validated (RS256, expiry, kid)<br />
-                5. On refresh (~14 min), auth.js auto-updates all
-                <code>img[src*="token="]</code>
+                1. Frontend appends <code>?token=&lt;jwt&gt;</code> to the image
+                URL<br />
+                2. Caddy/auth verification inspects the request<br />
+                3. Token is validated before stream/debug access is allowed<br />
+                4. When tokens refresh, image URLs are reissued with the new
+                token
               </div>
               <div class="callout">
-                <strong>Tradeoff:</strong> Token in URL may be logged by
-                proxies. Acceptable — 15 min lifetime. Same pattern as S3 signed
-                URLs.
+                <strong>Tradeoff:</strong> Query-token auth is used because
+                standard image tags cannot attach Bearer headers.
               </div>
             </div>
             <div class="code-block">
               <pre><code class="language-javascript">["side", "top", "front"].forEach((cam) => {
   document.getElementById("stream-" + cam).src =
-    CONFIG.API_BASE + "/api/viewfocus/stream/" + cam
-    + "?token=" + HerdAuth.getAccessToken();
+    CONFIG.API_BASE +
+    "/api/viewfocus/stream/" +
+    cam +
+    "?token=" +
+    HerdAuth.getAccessToken();
 });</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Database Browser Routes</h2>
+              <span class="tag arch">Architecture</span>
+            </div>
+            <div class="annotation">
+              The Database tab is a backend-powered browser over domain routes.
+              It does not query tables directly from the frontend.
+              <div class="info">
+                <strong>Routes used by this page:</strong><br />
+                &bull; <code>/goats</code><br />
+                &bull; <code>/chickens</code><br />
+                &bull; <code>/lambs</code><br />
+                &bull; <code>/providers</code><br />
+                &bull; <code>/grading?limit=200</code>
+              </div>
+              <div class="callout">
+                <strong>Pattern:</strong> Frontend asks for domain resources.
+                Backend owns SQL, schema mapping, validation, and any future
+                business rules.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-javascript">const endpoint =
+  "/" + table + (table === "grading" ? "?limit=200" : "");
+dbData = await dbFetch(endpoint);</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>DB Service Structure</h2>
+              <span class="tag arch">Architecture</span>
+            </div>
+            <div class="annotation">
+              Backend DB access is split into domain-specific route modules so
+              the API matches the schema at a business level instead of exposing
+              raw SQL patterns.
+              <div class="info">
+                <strong>Current DB route modules:</strong><br />
+                &bull; <code>animal_factory.py</code><br />
+                &bull; <code>animals.py</code><br />
+                &bull; <code>goats.py</code><br />
+                &bull; <code>chickens.py</code><br />
+                &bull; <code>lambs.py</code><br />
+                &bull; <code>grading.py</code><br />
+                &bull; <code>providers.py</code>
+              </div>
+              <div class="callout">
+                <strong>Why this matters:</strong> It keeps species-specific
+                logic, grading logic, and provider logic separate instead of
+                overloading one generic route file.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">db/
+  main.py
+  schema.sql
+  routes/
+    animal_factory.py
+    animals.py
+    goats.py
+    chickens.py
+    lambs.py
+    grading.py
+    providers.py</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>What Each DB Route Group Represents</h2>
+              <span class="tag pattern">Pattern</span>
+            </div>
+            <div class="annotation">
+              These route groups map to clear functional areas in the system.
+              <div class="info">
+                <strong>Meaning of the route groups:</strong><br />
+                &bull; <code>animals</code> — shared animal-level operations<br />
+                &bull; <code>animal_factory</code> — common creation/routing
+                logic across species<br />
+                &bull; <code>goats</code> — goat-specific records and fields<br />
+                &bull; <code>chickens</code> — chicken-specific records and
+                fields<br />
+                &bull; <code>lambs</code> — lamb-specific records and fields<br />
+                &bull; <code>grading</code> — grading runs, outcomes, timing,
+                view success, measurements<br />
+                &bull; <code>providers</code> — provider/farm/source records
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">Frontend table buttons → backend domain routes → DB queries → formatted JSON back to UI</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Schema Diagram</h2>
+              <span class="tag feature">Feature</span>
+            </div>
+            <div class="annotation">
+              The Database tab's Schema view displays the current schema
+              diagram from the static asset file:
+              <code>db_schema.png</code>.
+              <div class="info">
+                This image is the visual reference for how animal, provider, and
+                grading data relate in the system.
+              </div>
+              <div class="callout">
+                <strong>Maintenance rule:</strong> If the schema changes, update
+                the image and redeploy the asset so the Notes page and Database
+                tab stay accurate.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">Schema image path used by this page:
+db_schema.png</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Static Asset Deployment</h2>
+              <span class="tag pattern">Pattern</span>
+            </div>
+            <div class="annotation">
+              Single-file documentation assets should be uploaded with
+              <code>aws s3 cp</code>, not <code>aws s3 sync</code>.
+              <div class="info">
+                <strong>Why:</strong> <code>sync</code> expects a directory or
+                prefix. Using it on one file makes the CLI treat the file path
+                like a folder.
+              </div>
+              <div class="callout">
+                <strong>Correct for one file:</strong>
+                <code
+                  >aws s3 cp readme_assets/db_schema.png
+                  s3://goat-web-937249941844/db_schema.png</code
+                >
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">Single file:
+  aws s3 cp readme_assets/db_schema.png s3://goat-web-937249941844/db_schema.png
+
+Whole directory:
+  aws s3 sync readme_assets/ s3://goat-web-937249941844/</code></pre>
             </div>
           </div>
 
@@ -1050,141 +1287,112 @@ Stream imgs:   auto-updated on refresh (img[src*="token="])</code></pre>
               <span class="tag pattern">Pattern</span>
             </div>
             <div class="annotation">
-              Admin links injected dynamically based on <code>user.role</code>.
-              Operators never see them.
+              Admin-only navigation is injected dynamically based on
+              <code>user.role</code>. Non-admin users do not see admin links.
               <div class="info">
                 <strong>Defense in depth:</strong> Client-side role checks are
-                UX only. Server enforces <code>require_admin</code> on all
-                /auth/users endpoints.
+                for UX only. Backend must still enforce admin-only routes
+                server-side.
               </div>
             </div>
             <div class="code-block">
               <pre><code class="language-javascript">if (user.role === "admin") {
-  const link = document.createElement("a");
-  link.href = "admin.html";
-  link.textContent = "Admin";
-  headerRight.insertBefore(link, navUser);
+  const adminLink = document.createElement("a");
+  adminLink.href = "admin.html";
+  adminLink.textContent = "Admin";
+  adminLink.className = "nav-link";
+  document.getElementById("adminLinkSlot").appendChild(adminLink);
 }</code></pre>
             </div>
           </div>
 
           <div class="section">
             <div class="section-header">
-              <h2>Service-to-Service Auth (Pi → EC2)</h2>
-              <span class="tag arch">Architecture</span>
-            </div>
-            <div class="annotation">
-              <strong>Two independent auth layers:</strong><br />
-              &bull; <strong>User-level:</strong> Browser → Bearer JWT → Caddy
-              forward_auth<br />
-              &bull; <strong>Service-level:</strong> Pi → EC2 via
-              <code>X-API-Key</code> (shared secret in .env)<br /><br />
-              EC2 middleware <strong>fails closed</strong>: no key configured =
-              all non-health requests rejected.
-              <div class="info">
-                <strong>Network:</strong> Pi ↔ EC2 via Tailscale (WireGuard
-                encrypted).
-              </div>
-            </div>
-            <div class="code-block">
-              <pre><code class="language-plaintext">Browser                    Pi (Caddy)                EC2
-  │── HerdAuth.fetch() ───→ │                         │
-  │   Authorization: Bearer  │── forward_auth → OK    │
-  │                          │── POST /analyze ──────→ │
-  │                          │   X-API-Key: &lt;secret&gt;   │ → validate (fail-closed)
-  │                          │←── grade result ───────│</code></pre>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-header">
-              <h2>Password Change — Current Password Verification</h2>
+              <h2>Password Change Flow</h2>
               <span class="tag feature">Feature</span>
             </div>
             <div class="annotation">
-              Available to ALL users. Verifies current password via login
-              attempt before allowing change.
-              <div class="callout">
-                <strong>Important:</strong> Verify step uses raw
-                <code>fetch()</code>, not <code>HerdAuth.fetch()</code>, to
-                avoid interfering with the active session. Update step uses
-                <code>HerdAuth.fetch()</code> for Bearer token.
+              Password changes are available to authenticated users from this
+              page.
+              <div class="info">
+                <strong>Flow:</strong><br />
+                &bull; First, verify the current password via
+                <code>/auth/login</code> using raw <code>fetch()</code><br />
+                &bull; Then update the password via
+                <code>/auth/users/{id}</code> using
+                <code>HerdAuth.fetch()</code>
               </div>
-              <strong>Policy (client + server):</strong> 8+ chars, uppercase,
-              lowercase, number, special character.
+              <div class="callout">
+                <strong>Why raw fetch first:</strong> The current-password check
+                should not interfere with the active session lifecycle.
+              </div>
             </div>
             <div class="code-block">
-              <pre><code class="language-javascript">// Step 1: Verify current password (raw fetch)
+              <pre><code class="language-javascript">// Verify current password
 await fetch(CONFIG.AUTH_BASE + "/auth/login", {
-  method: "POST", body: JSON.stringify({ username, password: currentPw })
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    username: currentUser.username,
+    password: currentPw,
+  }),
 });
-// Step 2: Update password (HerdAuth.fetch for Bearer)
-await HerdAuth.fetch(CONFIG.AUTH_BASE + "/auth/users/" + id, {
-  method: "PUT", body: JSON.stringify({ password: newPw })
+
+// Update password on success
+await HerdAuth.fetch(CONFIG.AUTH_BASE + "/auth/users/" + currentUser.id, {
+  method: "PUT",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ password: newPw }),
 });</code></pre>
             </div>
           </div>
 
           <div class="section">
             <div class="section-header">
-              <h2>Full Architecture &amp; Security Summary</h2>
+              <h2>Full Architecture Summary</h2>
               <span class="tag arch">Architecture</span>
             </div>
             <div class="annotation">
-              <strong>Complete request flow and security model.</strong>
+              <strong>This page sits on top of a layered backend.</strong>
             </div>
             <div class="code-block">
               <pre><code class="language-plaintext">┌──────────────────────────────────────────────────────────────┐
-│  BROWSER (CloudFront)                                        │
-│  auth.js: access JWT (15min, sessionStorage)                 │
-│           refresh token (30d, localStorage, rotated)         │
-│  API calls:  HerdAuth.fetch() → Authorization: Bearer        │
-│  Img tags:   src="...?token=&lt;jwt&gt;"                           │
+│  BROWSER / STATIC FRONTEND                                   │
+│  - requireAuth() gates page                                  │
+│  - HerdAuth.fetch() for authenticated API calls              │
+│  - img src uses ?token=... for stream/debug routes           │
 └─────────────────────────┬────────────────────────────────────┘
-                          │ HTTPS
-┌─────────────────────────▼────────────────────────────────────┐
-│  PI — Caddy (:8443)                                          │
-│  forward_auth on EVERY /api/* → auth_verifier.py             │
-│    Checks Authorization header, then ?token= fallback        │
-│    On kid mismatch: refetches JWKS once, retries             │
-│  /api/viewfocus/*  → camera proxy (:8080)                    │
-│  /api/prod/*       → prod_server (:5000) → EC2 + X-API-Key  │
-│  /auth/*           → proxied to EC2 auth (:8001)             │
+                          │
+                          ▼
+┌──────────────────────────────────────────────────────────────┐
+│  PI SURFACE ROUTES                                           │
+│  /api/viewfocus/*  → camera proxy                            │
+│  /api/prod/*       → prod server / grading orchestration     │
+│  /auth/*           → auth backend                            │
+│  /db/* or DB base  → DB-facing backend routes                │
 └─────────────────────────┬────────────────────────────────────┘
-                          │ Tailscale (WireGuard)
-┌─────────────────────────▼────────────────────────────────────┐
-│  EC2 — Docker                                                │
-│  herdsync-auth (:8001)                                       │
-│    Login rate-limited (5 fails/5min → 15min lockout)         │
-│    Rate limit by IP AND username independently               │
-│    Passwords: bcrypt, strong policy enforced                 │
-│    JWTs: RS256 with kid for key rotation                     │
-│    Refresh tokens rotated on use                             │
-│    Deactivated users: immediate token rejection              │
-│  ec2-api (:8000)                                             │
-│    X-API-Key middleware (fail-closed)                         │
-│    Health endpoints exempt                                   │
-│  herdsync-db (:8002)                                         │
-│    Animal/provider CRUD, grading results                     │
-│    Unified serial_id sequence across species                 │
-│  Postgres (RDS) — users, tokens, animals, sslmode=require    │
-└──────────────────────────────────────────────────────────────┘
-
-HARDENING CHECKLIST:
-  ✓ EC2 API key middleware (fail-closed)
-  ✓ Camera streams: JWT via ?token= query param
-  ✓ Login rate limiting (IP + username, sliding window)
-  ✓ Refresh tokens rotated on every use
-  ✓ JWKS kid header for key rotation detection
-  ✓ Pi↔EC2: Tailscale encrypted transport
-  ✓ Passwords: strong policy, client + server
-  ✓ Deactivated users: immediate token rejection
-  ✓ Debug images: auth token required</code></pre>
+                          │
+                          ▼
+┌──────────────────────────────────────────────────────────────┐
+│  BACKEND SERVICES                                            │
+│  auth/      → login, verification, users                     │
+│  db/        → domain-specific DB routes                      │
+│  db-proxy/  → controlled DB access layer                     │
+│  ec2-api/   → grading and measurement pipeline               │
+└─────────────────────────┬────────────────────────────────────┘
+                          │
+                          ▼
+┌──────────────────────────────────────────────────────────────┐
+│  POSTGRES / RDS                                              │
+│  - animal records                                            │
+│  - providers                                                 │
+│  - grading results                                           │
+│  - auth-related data                                         │
+└──────────────────────────────────────────────────────────────┘</code></pre>
             </div>
           </div>
         </div>
       </div>
-    </div>
 
     <script>
       // =================================================================
