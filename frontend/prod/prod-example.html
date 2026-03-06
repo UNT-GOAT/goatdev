@@ -945,246 +945,521 @@
       </div>
 
       <!-- ============================================================= -->
-      <!-- NOTES TAB (unchanged) -->
+      <!-- NOTES TAB -->
       <!-- ============================================================= -->
       <div id="tab-notes" class="tab-content">
         <div class="notes-tab">
           <div class="section">
             <div class="section-header">
-              <h2>Auth Gate Pattern</h2>
-              <span class="tag security">Security</span>
+              <h2>System Overview</h2>
+              <span class="tag arch">Architecture</span>
             </div>
             <div class="annotation">
-              <strong
-                >Every authenticated page MUST follow this pattern.</strong
-              >
-              The app starts hidden. No content renders until
-              <code>HerdAuth.requireAuth()</code> confirms a valid session. If
-              no session exists, the user is redirected to
-              <code>/login.html</code>.
+              <strong>HerdSync is a frontend-to-Pi-to-backend system.</strong>
+              A frontend should treat the Pi-facing API surface as the main
+              integration layer for live production workflows, while auth and
+              database services remain backend-owned.
+              <div class="info">
+                <strong>Core layers:</strong><br />
+                &bull; Frontend — authenticated browser UI<br />
+                &bull; Pi routes — live camera access and grading orchestration<br />
+                &bull; Auth service — login, session validation, users<br />
+                &bull; DB service — animal/provider/grading data access<br />
+                &bull; EC2 grading service — measurement and grade pipeline
+              </div>
               <div class="callout">
-                <strong>Rule:</strong> Never show page content before
-                <code>requireAuth()</code> resolves.
-                <code>showApp(user)</code> is the single entry point. This call
-                must be the LAST line in every page's script.
+                <strong>Frontend rule:</strong> never connect directly to the
+                database, never own grading logic, and never assume camera
+                access exists outside the Pi surface routes.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">Frontend
+  │
+  ├─ Authenticated API calls
+  │
+  ▼
+Pi-facing routes
+  ├─ live camera streams
+  ├─ grading orchestration
+  ├─ debug image access
+  │
+  ▼
+Backend services
+  ├─ auth
+  ├─ db
+  └─ ec2 grading
+
+Database and grading internals stay backend-side.</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Authentication Model</h2>
+              <span class="tag auth">Auth</span>
+            </div>
+            <div class="annotation">
+              Every new frontend page should be built around the
+              <code>HerdAuth</code> client contract.
+              <div class="info">
+                <strong>Required behaviors:</strong><br />
+                &bull; Gate page rendering with
+                <code>HerdAuth.requireAuth()</code><br />
+                &bull; Use <code>HerdAuth.fetch()</code> for authenticated API
+                requests<br />
+                &bull; Read current identity from the resolved user object or
+                <code>HerdAuth.getUser()</code><br />
+                &bull; Use <code>HerdAuth.logout()</code> for session exit
+              </div>
+              <div class="callout">
+                <strong>Frontend rule:</strong> do not hand-roll token
+                attachment or refresh behavior for normal API requests. Treat
+                <code>HerdAuth.fetch()</code> as the default transport.
               </div>
             </div>
             <div class="code-block">
               <pre><code class="language-javascript">function showApp(user) {
   document.getElementById("app").style.display = "block";
 }
-// LAST line — gates everything
+
 HerdAuth.requireAuth().then((user) => showApp(user));</code></pre>
             </div>
           </div>
 
           <div class="section">
             <div class="section-header">
-              <h2>HerdAuth API &amp; Token Lifecycle</h2>
-              <span class="tag auth">Auth</span>
-            </div>
-            <div class="annotation">
-              <code>auth.js</code> provides the <code>HerdAuth</code> global.
-              All authenticated requests MUST use <code>HerdAuth.fetch()</code>.
-              <div class="info">
-                <strong>Methods:</strong><br />
-                &bull; <code>requireAuth()</code> — Gate a page. Returns
-                Promise&lt;user&gt; or redirects.<br />
-                &bull; <code>getAccessToken()</code> — Current JWT from
-                sessionStorage (15 min).<br />
-                &bull; <code>fetch(url, opts)</code> — Drop-in for fetch().
-                Attaches Bearer, auto-refreshes, redirects if refresh fails.<br />
-                &bull; <code>logout()</code> — Clears tokens, revokes refresh
-                server-side, redirects.<br />
-                &bull; <code>getUser()</code> — Cached {id, username, role}.
-              </div>
-              <div class="callout">
-                <strong>Token storage:</strong> Refresh tokens (30-day) in
-                localStorage — XSS-extractable. Mitigated by rotation: each use
-                invalidates old token. Stolen token = single use.
-              </div>
-            </div>
-            <div class="code-block">
-              <pre><code class="language-plaintext">Access token:  JWT (RS256 + kid), 15 min, sessionStorage
-Refresh token: opaque, 30 days, localStorage, rotated on every use
-Stream imgs:   auto-updated on refresh (img[src*="token="])</code></pre>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-header">
-              <h2>Camera Streams — Token-in-URL Auth</h2>
-              <span class="tag security">Security</span>
-            </div>
-            <div class="annotation">
-              <strong>&lt;img&gt; tags cannot set HTTP headers.</strong> JWT
-              passed as <code>?token=</code> in the URL.
-              <div class="info">
-                1. Frontend appends <code>?token=&lt;jwt&gt;</code> to img
-                src<br />
-                2. Caddy <code>forward_auth</code> → auth_verifier.py<br />
-                3. Verifier extracts token from
-                <code>X-Forwarded-Uri</code> header<br />
-                4. JWT validated (RS256, expiry, kid)<br />
-                5. On refresh (~14 min), auth.js auto-updates all
-                <code>img[src*="token="]</code>
-              </div>
-              <div class="callout">
-                <strong>Tradeoff:</strong> Token in URL may be logged by
-                proxies. Acceptable — 15 min lifetime. Same pattern as S3 signed
-                URLs.
-              </div>
-            </div>
-            <div class="code-block">
-              <pre><code class="language-javascript">["side", "top", "front"].forEach((cam) => {
-  document.getElementById("stream-" + cam).src =
-    CONFIG.API_BASE + "/api/viewfocus/stream/" + cam
-    + "?token=" + HerdAuth.getAccessToken();
-});</code></pre>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-header">
-              <h2>Role-Based UI</h2>
+              <h2>Identity and Role Usage</h2>
               <span class="tag pattern">Pattern</span>
             </div>
             <div class="annotation">
-              Admin links injected dynamically based on <code>user.role</code>.
-              Operators never see them.
+              The authenticated user object is the frontend source of truth for
+              identity-aware UI.
               <div class="info">
-                <strong>Defense in depth:</strong> Client-side role checks are
-                UX only. Server enforces <code>require_admin</code> on all
-                /auth/users endpoints.
+                <strong>Expected user shape:</strong><br />
+                &bull; <code>id</code><br />
+                &bull; <code>username</code><br />
+                &bull; <code>role</code>
+              </div>
+              Role checks in the frontend are primarily for navigation and UI
+              shaping. They do not replace backend authorization.
+              <div class="callout">
+                <strong>Frontend rule:</strong> use role checks to show or hide
+                admin/operator experiences, but assume backend routes still own
+                final permission enforcement.
               </div>
             </div>
             <div class="code-block">
               <pre><code class="language-javascript">if (user.role === "admin") {
-  const link = document.createElement("a");
-  link.href = "admin.html";
-  link.textContent = "Admin";
-  headerRight.insertBefore(link, navUser);
+  // show admin navigation
 }</code></pre>
             </div>
           </div>
 
           <div class="section">
             <div class="section-header">
-              <h2>Service-to-Service Auth (Pi → EC2)</h2>
-              <span class="tag arch">Architecture</span>
+              <h2>Image and Stream Authentication</h2>
+              <span class="tag security">Security</span>
             </div>
             <div class="annotation">
-              <strong>Two independent auth layers:</strong><br />
-              &bull; <strong>User-level:</strong> Browser → Bearer JWT → Caddy
-              forward_auth<br />
-              &bull; <strong>Service-level:</strong> Pi → EC2 via
-              <code>X-API-Key</code> (shared secret in .env)<br /><br />
-              EC2 middleware <strong>fails closed</strong>: no key configured =
-              all non-health requests rejected.
+              Stream and debug image routes are consumed through
+              <code>&lt;img&gt;</code> tags, which cannot attach Bearer headers.
+              Because of that, image-based routes use a token-in-URL pattern.
               <div class="info">
-                <strong>Network:</strong> Pi ↔ EC2 via Tailscale (WireGuard
-                encrypted).
+                <strong>Pattern:</strong><br />
+                &bull; normal API requests → <code>HerdAuth.fetch()</code><br />
+                &bull; image/stream routes → append
+                <code>?token=&lt;jwt&gt;</code>
+              </div>
+              <div class="callout">
+                <strong>Frontend rule:</strong> any new UI that renders live
+                streams or protected images must use the query-token pattern
+                rather than trying to fetch them as normal authenticated JSON
+                endpoints.
               </div>
             </div>
             <div class="code-block">
-              <pre><code class="language-plaintext">Browser                    Pi (Caddy)                EC2
-  │── HerdAuth.fetch() ───→ │                         │
-  │   Authorization: Bearer  │── forward_auth → OK    │
-  │                          │── POST /analyze ──────→ │
-  │                          │   X-API-Key: &lt;secret&gt;   │ → validate (fail-closed)
-  │                          │←── grade result ───────│</code></pre>
+              <pre><code class="language-javascript">img.src =
+  CONFIG.API_BASE +
+  "/api/viewfocus/stream/side?token=" +
+  HerdAuth.getAccessToken();</code></pre>
             </div>
           </div>
 
           <div class="section">
             <div class="section-header">
-              <h2>Password Change — Current Password Verification</h2>
+              <h2>Pi Integration Surface</h2>
+              <span class="tag arch">Architecture</span>
+            </div>
+            <div class="annotation">
+              A new frontend integrating production functionality should treat
+              the Pi as the entry point for all live grading interactions.
+              <div class="info">
+                <strong>Main Pi-facing route groups:</strong><br />
+                &bull; <code>/api/viewfocus/*</code> — live camera stream
+                access<br />
+                &bull; <code>/api/prod/*</code> — live capture, grading
+                orchestration, status, debug artifacts
+              </div>
+              <div class="callout">
+                <strong>Frontend rule:</strong> for live operational flows,
+                build against Pi routes, not directly against EC2 grading
+                internals.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">Pi route groups used by a production frontend:
+
+/api/viewfocus/stream/{cam}
+/api/prod/grade
+/api/prod/grade/test
+/api/prod/status
+/api/prod/debug/{serial_id}/{view}</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Live Camera Integration</h2>
               <span class="tag feature">Feature</span>
             </div>
             <div class="annotation">
-              Available to ALL users. Verifies current password via login
-              attempt before allowing change.
-              <div class="callout">
-                <strong>Important:</strong> Verify step uses raw
-                <code>fetch()</code>, not <code>HerdAuth.fetch()</code>, to
-                avoid interfering with the active session. Update step uses
-                <code>HerdAuth.fetch()</code> for Bearer token.
+              The live production UI is built around three camera views:
+              <code>side</code>, <code>top</code>, and <code>front</code>.
+              These should be treated as fixed named views across the system.
+              <div class="info">
+                <strong>Expected frontend behavior:</strong><br />
+                &bull; render all three streams when available<br />
+                &bull; keep view names consistent across live preview, upload,
+                debug, and measurement displays<br />
+                &bull; assume downstream grading and debug logic also use the
+                same three-view naming contract
               </div>
-              <strong>Policy (client + server):</strong> 8+ chars, uppercase,
-              lowercase, number, special character.
             </div>
             <div class="code-block">
-              <pre><code class="language-javascript">// Step 1: Verify current password (raw fetch)
-await fetch(CONFIG.AUTH_BASE + "/auth/login", {
-  method: "POST", body: JSON.stringify({ username, password: currentPw })
-});
-// Step 2: Update password (HerdAuth.fetch for Bearer)
-await HerdAuth.fetch(CONFIG.AUTH_BASE + "/auth/users/" + id, {
-  method: "PUT", body: JSON.stringify({ password: newPw })
+              <pre><code class="language-javascript">["side", "top", "front"].forEach((cam) => {
+  document.getElementById("stream-" + cam).src =
+    CONFIG.API_BASE +
+    "/api/viewfocus/stream/" +
+    cam +
+    "?token=" +
+    HerdAuth.getAccessToken();
 });</code></pre>
             </div>
           </div>
 
           <div class="section">
             <div class="section-header">
-              <h2>Full Architecture &amp; Security Summary</h2>
+              <h2>Grading Workflow Contract</h2>
+              <span class="tag feature">Feature</span>
+            </div>
+            <div class="annotation">
+              A production frontend should support two grading entry modes:
+              <div class="info">
+                <strong>1. Live capture mode</strong><br />
+                Uses <code>/api/prod/grade</code> and lets the Pi capture
+                images from connected cameras.<br /><br />
+                <strong>2. Manual upload mode</strong><br />
+                Uses <code>/api/prod/grade/test</code> and submits uploaded
+                images directly for grading without requiring live camera
+                capture.
+              </div>
+              Both modes are built around a shared grading input shape centered
+              on animal identity and live weight.
+              <div class="callout">
+                <strong>Frontend rule:</strong> treat upload mode as a testing
+                or fallback path, and live capture mode as the primary
+                production workflow.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">Shared grading concepts:
+  serial_id
+  live_weight
+  side image
+  top image
+  front image</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Status Polling Model</h2>
+              <span class="tag pattern">Pattern</span>
+            </div>
+            <div class="annotation">
+              Live grading is asynchronous from the frontend point of view.
+              After starting a grade job, the UI should poll the status endpoint
+              until the job becomes inactive and returns a final result or
+              error.
+              <div class="info">
+                <strong>Status concepts surfaced to frontend:</strong><br />
+                &bull; active / inactive state<br />
+                &bull; progress stage<br />
+                &bull; final result payload<br />
+                &bull; last error payload
+              </div>
+              <strong>Typical progress stages:</strong>
+              <code>starting</code>, <code>capturing</code>,
+              <code>grading</code>, <code>archiving</code>.
+              <div class="callout">
+                <strong>Frontend rule:</strong> build the UI around progress
+                states, not around assumptions of instant completion.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-javascript">const resp = await HerdAuth.fetch(CONFIG.API_BASE + "/api/prod/status");
+const data = await resp.json();</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Grading Result Shape</h2>
+              <span class="tag feature">Feature</span>
+            </div>
+            <div class="annotation">
+              Frontends should expect a grading result to include both the final
+              business result and diagnostic metadata.
+              <div class="info">
+                <strong>Important result fields used by this page:</strong
+                ><br />
+                &bull; <code>grade</code><br />
+                &bull; <code>all_views_successful</code><br />
+                &bull; <code>timing</code><br />
+                &bull; <code>measurements</code><br />
+                &bull; <code>warnings</code>
+              </div>
+              This lets the frontend support both operator-friendly output and
+              deeper troubleshooting views.
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">Grade result should be treated as:
+  outcome
+  measurement payload
+  timing metadata
+  warning list
+  view success metadata</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Debug Image Contract</h2>
+              <span class="tag feature">Feature</span>
+            </div>
+            <div class="annotation">
+              Debug imagery is a first-class part of the grading workflow. A new
+              frontend should be able to request view-specific debug overlays
+              after a completed run.
+              <div class="info">
+                <strong>Route pattern:</strong><br />
+                <code>/api/prod/debug/{serial_id}/{view}</code>
+              </div>
+              These images are useful for reviewing measurement overlays and
+              confirming view-level grading behavior.
+              <div class="callout">
+                <strong>Frontend rule:</strong> keep the same canonical view
+                names for debug rendering:
+                <code>side</code>, <code>top</code>, <code>front</code>.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-javascript">const url =
+  CONFIG.API_BASE +
+  "/api/prod/debug/" +
+  serialId +
+  "/" +
+  view +
+  "?token=" +
+  HerdAuth.getAccessToken();</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Database Integration Model</h2>
               <span class="tag arch">Architecture</span>
             </div>
             <div class="annotation">
-              <strong>Complete request flow and security model.</strong>
+              A frontend should integrate with animal and grading data through
+              backend domain routes, not table-level assumptions.
+              <div class="info">
+                <strong>Domain resources already exposed to frontend:</strong
+                ><br />
+                &bull; <code>/goats</code><br />
+                &bull; <code>/chickens</code><br />
+                &bull; <code>/lambs</code><br />
+                &bull; <code>/providers</code><br />
+                &bull; <code>/grading</code>
+              </div>
+              <div class="callout">
+                <strong>Frontend rule:</strong> think in terms of domain
+                resources, not joins, raw SQL, or direct table ownership.
+              </div>
             </div>
             <div class="code-block">
-              <pre><code class="language-plaintext">┌──────────────────────────────────────────────────────────────┐
-│  BROWSER (CloudFront)                                        │
-│  auth.js: access JWT (15min, sessionStorage)                 │
-│           refresh token (30d, localStorage, rotated)         │
-│  API calls:  HerdAuth.fetch() → Authorization: Bearer        │
-│  Img tags:   src="...?token=&lt;jwt&gt;"                           │
-└─────────────────────────┬────────────────────────────────────┘
-                          │ HTTPS
-┌─────────────────────────▼────────────────────────────────────┐
-│  PI — Caddy (:8443)                                          │
-│  forward_auth on EVERY /api/* → auth_verifier.py             │
-│    Checks Authorization header, then ?token= fallback        │
-│    On kid mismatch: refetches JWKS once, retries             │
-│  /api/viewfocus/*  → camera proxy (:8080)                    │
-│  /api/prod/*       → prod_server (:5000) → EC2 + X-API-Key  │
-│  /auth/*           → proxied to EC2 auth (:8001)             │
-└─────────────────────────┬────────────────────────────────────┘
-                          │ Tailscale (WireGuard)
-┌─────────────────────────▼────────────────────────────────────┐
-│  EC2 — Docker                                                │
-│  herdsync-auth (:8001)                                       │
-│    Login rate-limited (5 fails/5min → 15min lockout)         │
-│    Rate limit by IP AND username independently               │
-│    Passwords: bcrypt, strong policy enforced                 │
-│    JWTs: RS256 with kid for key rotation                     │
-│    Refresh tokens rotated on use                             │
-│    Deactivated users: immediate token rejection              │
-│  ec2-api (:8000)                                             │
-│    X-API-Key middleware (fail-closed)                         │
-│    Health endpoints exempt                                   │
-│  herdsync-db (:8002)                                         │
-│    Animal/provider CRUD, grading results                     │
-│    Unified serial_id sequence across species                 │
-│  Postgres (RDS) — users, tokens, animals, sslmode=require    │
-└──────────────────────────────────────────────────────────────┘
+              <pre><code class="language-javascript">const endpoint =
+  "/" + table + (table === "grading" ? "?limit=200" : "");
+const data = await dbFetch(endpoint);</code></pre>
+            </div>
+          </div>
 
-HARDENING CHECKLIST:
-  ✓ EC2 API key middleware (fail-closed)
-  ✓ Camera streams: JWT via ?token= query param
-  ✓ Login rate limiting (IP + username, sliding window)
-  ✓ Refresh tokens rotated on every use
-  ✓ JWKS kid header for key rotation detection
-  ✓ Pi↔EC2: Tailscale encrypted transport
-  ✓ Passwords: strong policy, client + server
-  ✓ Deactivated users: immediate token rejection
-  ✓ Debug images: auth token required</code></pre>
+          <div class="section">
+            <div class="section-header">
+              <h2>Backend Domain Model</h2>
+              <span class="tag pattern">Pattern</span>
+            </div>
+            <div class="annotation">
+              The DB/backend layer is organized around domain route groups rather
+              than a single generic data handler.
+              <div class="info">
+                <strong>Current route groups:</strong><br />
+                &bull; <code>animals</code> — shared animal operations<br />
+                &bull; <code>animal_factory</code> — common creation/routing
+                logic<br />
+                &bull; <code>goats</code> — goat-specific data<br />
+                &bull; <code>chickens</code> — chicken-specific data<br />
+                &bull; <code>lambs</code> — lamb-specific data<br />
+                &bull; <code>grading</code> — grading records and outcomes<br />
+                &bull; <code>providers</code> — provider/source records
+              </div>
+              This structure is the conceptual model a frontend should mirror
+              when building navigation, filters, views, or forms.
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">db/routes/
+  animal_factory.py
+  animals.py
+  goats.py
+  chickens.py
+  lambs.py
+  grading.py
+  providers.py</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Frontend Data Views</h2>
+              <span class="tag feature">Feature</span>
+            </div>
+            <div class="annotation">
+              This page demonstrates the minimum useful data views a new
+              frontend can build on top of the current system:
+              <div class="info">
+                <strong>Recommended core views:</strong><br />
+                &bull; live grading workflow<br />
+                &bull; manual-upload grading workflow<br />
+                &bull; animal record browser by species<br />
+                &bull; provider browser<br />
+                &bull; grading results browser<br />
+                &bull; debug overlay viewer
+              </div>
+              These views map naturally to the current API and route design.
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">Core frontend surface areas:
+  operations
+  records
+  grading history
+  providers
+  diagnostics</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Schema Awareness</h2>
+              <span class="tag arch">Architecture</span>
+            </div>
+            <div class="annotation">
+              Frontends should be schema-aware enough to present meaningful
+              records, but not schema-dependent in a way that bypasses backend
+              contracts.
+              <div class="info">
+                The schema diagram is useful for understanding relationships
+                between animal records, providers, and grading results, but the
+                frontend should still consume backend-shaped JSON rather than
+                re-implementing relational logic itself.
+              </div>
+              <div class="callout">
+                <strong>Frontend rule:</strong> use schema knowledge for UI
+                design and mental model only. Let backend routes own relational
+                behavior.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">Use schema knowledge to understand:
+  which resources relate
+  which details belong in record views
+  which cross-links make sense in the UI
+
+Do not use schema knowledge to bypass backend APIs.</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Password Management Flow</h2>
+              <span class="tag auth">Auth</span>
+            </div>
+            <div class="annotation">
+              User account settings belong to the auth service boundary.
+              Password-change UX should preserve the currently authenticated
+              session while validating the user's current password.
+              <div class="info">
+                <strong>Current pattern:</strong><br />
+                &bull; verify current password through
+                <code>/auth/login</code><br />
+                &bull; submit the actual password update through
+                <code>/auth/users/{id}</code>
+              </div>
+              This split is useful when building account settings pages in other
+              frontends too.
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">Account settings frontend flow:
+  verify identity with current credentials
+  then submit authenticated account update</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>New Frontend Build Checklist</h2>
+              <span class="tag pattern">Pattern</span>
+            </div>
+            <div class="annotation">
+              A new frontend integrating the full system should preserve these
+              invariants:
+              <div class="info">
+                &bull; Gate all pages with <code>HerdAuth.requireAuth()</code
+                ><br />
+                &bull; Use <code>HerdAuth.fetch()</code> for authenticated JSON
+                requests<br />
+                &bull; Use query-token auth for image/stream routes<br />
+                &bull; Integrate live workflows through Pi routes<br />
+                &bull; Treat grading as asynchronous and poll status<br />
+                &bull; Use canonical camera/view names:
+                <code>side</code>, <code>top</code>, <code>front</code><br />
+                &bull; Consume backend domain resources for records and grading
+                history<br />
+                &bull; Keep DB, auth, and grading logic server-owned
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">Build a new frontend like this:
+  auth-gated
+  Pi-integrated for live workflows
+  backend-driven for records
+  async-aware for grading
+  consistent in view naming
+  diagnostic-friendly</code></pre>
             </div>
           </div>
         </div>
       </div>
-    </div>
 
     <script>
       // =================================================================
@@ -1870,10 +2145,16 @@ HARDENING CHECKLIST:
         const grid = document.getElementById("detailGrid");
         const title = document.getElementById("detailTitle");
 
+        const LABELS = {
+          goats: "Goat",
+          chickens: "Chicken",
+          lambs: "Lamb",
+          providers: "Provider",
+          grading: "Grading",
+        };
+
         title.textContent =
-          (dbCurrentTable === "providers"
-            ? "Provider"
-            : dbCurrentTable.slice(0, -1)) +
+          (LABELS[dbCurrentTable] || "Record") +
           " #" +
           (row.serial_id || row.id);
 
