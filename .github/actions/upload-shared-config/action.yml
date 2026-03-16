@@ -50,4 +50,4 @@ runs:
         AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: ${{ inputs.aws_region }}
       run: |
-        aws s3 cp frontend/config.js s3://${{ inputs.s3_bucket }}/config.js
+        aws s3 cp frontend/config.js s3://${{ inputs.s3_bucket }}/js/config.js

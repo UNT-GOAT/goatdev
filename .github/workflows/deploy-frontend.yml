@@ -71,7 +71,7 @@ jobs:
         run: |
           aws cloudfront create-invalidation \
             --distribution-id EB8KCE4E7TGI4 \
-            --paths "/setup/*" "/config.js" "/js/*"
+            --paths "/setup/*" "/js/config.js" "/js/*"
 
   deploy-prod:
     runs-on: ubuntu-latest
@@ -143,4 +143,4 @@ jobs:
         run: |
           aws cloudfront create-invalidation \
             --distribution-id EB8KCE4E7TGI4 \
-            --paths "/*" "/config.js" "/js/*"
+            --paths "/*" "/js/config.js" "/js/*"
