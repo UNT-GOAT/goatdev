@@ -14,6 +14,9 @@ inputs:
   api_base:
     description: Base URL for pi api's
     required: true
+  db_base:
+    description: Base URL for db api
+    required: true
   s3_training_bucket:
     description: Training bucket name used by UI
     required: true
