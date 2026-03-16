@@ -1,5 +1,5 @@
 # Goat Grading API Dockerfile
-# Build from repo root: docker build -f ec2-api/Dockerfile -t ec2-api .
+# Build from repo root: docker build -f goat-api/Dockerfile -t goat-api .
 
 FROM python:3.11-slim
 
@@ -18,13 +18,13 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy requirements first for layer caching
-COPY ec2-api/requirements.txt .
+COPY goat-api/requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY ec2-api/api/ ./api/
+COPY goat-api/api/ ./api/
 
 # Copy model files (only .pt and calibration .json files)
 COPY model/side/best.pt ./model/side/

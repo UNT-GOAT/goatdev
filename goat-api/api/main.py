@@ -36,8 +36,6 @@ from .storage import storage
 from .grade_calculator import calculate_grade
 from .api_auth import APIKeyMiddleware, API_KEY
 
-HERDSYNC_DB_URL = os.environ.get("HERDSYNC_DB_URL", "http://localhost:8002")
-
 
 # Maximum number of serial_id debug directories to keep.
 # Once exceeded, oldest directories (by mtime) are pruned after each
@@ -160,58 +158,6 @@ def _archive_to_s3(
     except Exception as e:
         # Catch-all so the background thread never crashes silently
         log.warn('s3', 'Archival failed (non-fatal)', serial_id=serial_id, error=str(e))
-
-
-def _save_grade_to_db(
-    serial_id: str,
-    live_weight: float,
-    grade: Optional[str],
-    all_views_ok: bool,
-    measurements: dict,
-    warnings: Optional[list],
-    timing: dict,
-):
-    """
-    Save grade result to herdsync-db. Runs in background thread.
-    Non-fatal — grading works even if the DB service is down.
-    """
-    try:
-        import requests as http_requests
-
-        payload = {
-            "serial_id": int(serial_id) if serial_id.isdigit() else 0,
-            "grade": grade,
-            "live_weight": live_weight,
-            "all_views_ok": all_views_ok,
-            "measurements": measurements,
-            "warnings": warnings,
-            "side_raw_s3_key": f"{serial_id}/side.jpg" if S3_CAPTURES_BUCKET else None,
-            "top_raw_s3_key": f"{serial_id}/top.jpg" if S3_CAPTURES_BUCKET else None,
-            "front_raw_s3_key": f"{serial_id}/front.jpg" if S3_CAPTURES_BUCKET else None,
-            "side_debug_s3_key": f"{serial_id}/side_debug.jpg" if S3_PROCESSED_BUCKET else None,
-            "top_debug_s3_key": f"{serial_id}/top_debug.jpg" if S3_PROCESSED_BUCKET else None,
-            "front_debug_s3_key": f"{serial_id}/front_debug.jpg" if S3_PROCESSED_BUCKET else None,
-            "capture_sec": timing.get("capture_sec"),
-            "ec2_sec": timing.get("ec2_sec"),
-            "total_sec": timing.get("total_sec"),
-        }
-
-        resp = http_requests.post(
-            f"{HERDSYNC_DB_URL}/grading",
-            json=payload,
-            timeout=10,
-        )
-
-        if resp.ok:
-            log.info('db', 'Grade result saved', serial_id=serial_id)
-        else:
-            log.warn('db', 'Failed to save grade result',
-                     serial_id=serial_id, status=resp.status_code,
-                     body=resp.text[:200])
-
-    except Exception as e:
-        log.warn('db', 'herdsync-db unreachable (non-fatal)',
-                 serial_id=serial_id, error=str(e))
 
 
 # =============================================================================
@@ -738,27 +684,6 @@ async def analyze(
                 serial_id=serial_id,
                 success=response.success,
                 all_views_ok=response.all_views_successful)
-        
-    # =========================================================================
-    # SAVE TO HERDSYNC-DB (background, non-fatal)
-    # =========================================================================
-    if response.success and response.all_views_successful:
-        db_thread = threading.Thread(
-            target=_save_grade_to_db,
-            args=(
-                serial_id, live_weight, grade,
-                grader_result['all_views_successful'],
-                grader_result['measurements'],
-                grader_result.get('warnings'),
-                {
-                    "capture_sec": None,  # Pi knows this, EC2 doesn't
-                    "ec2_sec": round(time.time() - start_time, 2),
-                    "total_sec": None,    # Pi knows this, EC2 doesn't
-                },
-            ),
-            daemon=True,
-        )
-        db_thread.start()
 
     duration = round(time.time() - start_time, 2)
     log.info('analyze', 'Request complete',

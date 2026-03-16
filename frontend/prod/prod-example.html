@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prod Integration Example | HerdSync</title>
-    <script src="/js/config.js"></script>
+    <script src="/config.js"></script>
     <script src="/js/auth.js"></script>
     <link
       rel="stylesheet"
@@ -333,6 +333,165 @@
         color: #4caf50;
       }
 
+      /* ============================================================= */
+      /* CONFIRMATION PANEL                                             */
+      /* ============================================================= */
+      .confirm-panel {
+        display: none;
+        border: 2px solid #ff9800;
+        border-radius: 6px;
+        padding: 20px;
+        margin-top: 20px;
+        background: #0a0a1a;
+      }
+      .confirm-panel.visible {
+        display: block;
+      }
+      .confirm-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      .confirm-header h3 {
+        color: #ff9800;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin: 0;
+      }
+      .confirm-header .confirm-serial {
+        color: #4caf50;
+        font-size: 16px;
+        font-weight: 700;
+      }
+      .confirm-result {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+        padding: 12px;
+        background: #000;
+        border-radius: 4px;
+      }
+      .confirm-field label {
+        display: block;
+        font-size: 10px;
+        color: #555;
+        text-transform: uppercase;
+        margin-bottom: 2px;
+      }
+      .confirm-field .val {
+        font-size: 14px;
+        color: #ccc;
+      }
+      .confirm-field .val.grade {
+        color: #e3b341;
+        font-weight: 700;
+        font-size: 18px;
+      }
+      .confirm-field .val.ok {
+        color: #4caf50;
+      }
+      .confirm-field .val.bad {
+        color: #e53935;
+      }
+      .confirm-measurements {
+        margin-bottom: 16px;
+        padding: 12px;
+        background: #000;
+        border-radius: 4px;
+      }
+      .confirm-measurements h4 {
+        color: #666;
+        font-size: 11px;
+        text-transform: uppercase;
+        margin: 0 0 8px 0;
+      }
+      .confirm-meas-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 6px;
+      }
+      .confirm-meas-item {
+        font-size: 12px;
+        color: #a5d6ff;
+      }
+      .confirm-meas-item span {
+        color: #555;
+      }
+      .confirm-warnings {
+        margin-bottom: 16px;
+      }
+      .confirm-warnings .warn-item {
+        font-size: 12px;
+        color: #ff9800;
+        padding: 2px 0;
+      }
+      .confirm-debug {
+        margin-bottom: 16px;
+      }
+      .confirm-debug h4 {
+        color: #666;
+        font-size: 11px;
+        text-transform: uppercase;
+        margin: 0 0 8px 0;
+      }
+      .confirm-debug .streams {
+        margin-bottom: 0;
+      }
+      .confirm-actions {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      .confirm-actions .btn-confirm {
+        padding: 12px 32px;
+        background: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .confirm-actions .btn-confirm:hover {
+        background: #45a049;
+      }
+      .confirm-actions .btn-confirm:disabled {
+        background: #333;
+        color: #666;
+        cursor: not-allowed;
+      }
+      .confirm-actions .btn-reject {
+        padding: 12px 24px;
+        background: none;
+        border: 1px solid #e53935;
+        color: #e53935;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      .confirm-actions .btn-reject:hover {
+        background: rgba(229, 57, 53, 0.1);
+      }
+      .confirm-actions .confirm-status {
+        font-size: 12px;
+        color: #666;
+        margin-left: auto;
+      }
+      .confirm-actions .confirm-status.saving {
+        color: #ff9800;
+      }
+      .confirm-actions .confirm-status.saved {
+        color: #4caf50;
+      }
+      .confirm-actions .confirm-status.error {
+        color: #e53935;
+      }
+
       /* Database tab */
       .db-tab {
         max-width: 1000px;
@@ -505,8 +664,6 @@
         max-width: none;
         height: auto;
       }
-
-      /* Detail panel */
       .detail-panel {
         background: #0a0a1a;
         border: 1px solid #333;
@@ -682,6 +839,12 @@
           gap: 6px;
           align-items: flex-start;
         }
+        .confirm-actions {
+          flex-direction: column;
+        }
+        .confirm-actions .confirm-status {
+          margin-left: 0;
+        }
       }
     </style>
   </head>
@@ -712,33 +875,25 @@
           <h1>Prod Integration Example</h1>
           <p class="note">
             Reference implementation &mdash; camera streams, grade submission,
-            status polling, debug images.<br />
-            All requests go to the Pi. The Pi captures images and forwards to
-            EC2 internally.<br /><br />
-            <b>Backend services on the Pi used by this page:</b><br />
-            &bull; Camera proxy (port 8080) &mdash; MJPEG streams at
-            <code>/api/viewfocus/stream/{cam}</code><br />
-            &bull; Prod server (port 5000) &mdash; <code>/api/prod/grade</code>,
-            <code>/api/prod/status</code>,
-            <code>/api/prod/debug/{id}/{view}</code><br />
-            &bull; Caddy reverse proxy unifies both behind port 8443. It strips
-            the <code>/api/prod</code> prefix before forwarding to port 5000.<br />
-            &bull; See the included <code>Caddyfile</code> under pi/system/ for
-            the full routing config.
+            operator confirmation, database persistence.<br />
+            All grading requests go to the Pi. The Pi captures images and
+            forwards to EC2 internally. Results are reviewed by the operator
+            before saving to the database.
           </p>
 
           <h2>Camera Previews</h2>
           <div class="streams">
             <div class="stream-box">
-              <label>Side</label
-              ><img id="stream-side" src="" alt="side stream" />
+              <label>Side</label>
+              <img id="stream-side" src="" alt="side stream" />
             </div>
             <div class="stream-box">
-              <label>Top</label><img id="stream-top" src="" alt="top stream" />
+              <label>Top</label>
+              <img id="stream-top" src="" alt="top stream" />
             </div>
             <div class="stream-box">
-              <label>Front</label
-              ><img id="stream-front" src="" alt="front stream" />
+              <label>Front</label>
+              <img id="stream-front" src="" alt="front stream" />
             </div>
           </div>
 
@@ -752,7 +907,7 @@
               <input
                 type="text"
                 id="uploadSerialId"
-                placeholder="serial_id (e.g. GOAT001)"
+                placeholder="serial_id (e.g. 1443)"
               />
               <input
                 type="number"
@@ -765,8 +920,8 @@
               <div class="upload-box">
                 <label class="title">Side</label>
                 <div class="upload-drop" id="drop-side">
-                  <span class="placeholder">click or drop</span
-                  ><input
+                  <span class="placeholder">click or drop</span>
+                  <input
                     type="file"
                     accept="image/*"
                     onchange="handleUpload('side', this)"
@@ -776,8 +931,8 @@
               <div class="upload-box">
                 <label class="title">Top</label>
                 <div class="upload-drop" id="drop-top">
-                  <span class="placeholder">click or drop</span
-                  ><input
+                  <span class="placeholder">click or drop</span>
+                  <input
                     type="file"
                     accept="image/*"
                     onchange="handleUpload('top', this)"
@@ -787,8 +942,8 @@
               <div class="upload-box">
                 <label class="title">Front</label>
                 <div class="upload-drop" id="drop-front">
-                  <span class="placeholder">click or drop</span
-                  ><input
+                  <span class="placeholder">click or drop</span>
+                  <input
                     type="file"
                     accept="image/*"
                     onchange="handleUpload('front', this)"
@@ -812,7 +967,7 @@
             <input
               type="text"
               id="serialId"
-              placeholder="serial_id (e.g. GOAT001)"
+              placeholder="serial_id (e.g. 1443)"
             />
             <input
               type="number"
@@ -823,13 +978,48 @@
           </div>
           <button id="gradeBtn" onclick="startGrade()">Grade</button>
 
-          <div id="debug-section" style="display: none; margin-top: 20px">
-            <button onclick="">View Debug Images</button>
+          <!-- ========================================================= -->
+          <!-- CONFIRMATION PANEL                                         -->
+          <!-- ========================================================= -->
+          <div class="confirm-panel" id="confirmPanel">
+            <div class="confirm-header">
+              <h3>Review Grade Result</h3>
+              <span class="confirm-serial" id="confirmSerial"></span>
+            </div>
+
+            <div class="confirm-result" id="confirmResult"></div>
+
             <div
-              id="debug-images"
-              class="streams"
-              style="margin-top: 10px"
+              class="confirm-measurements"
+              id="confirmMeasWrap"
+              style="display: none"
+            >
+              <h4>Measurements</h4>
+              <div class="confirm-meas-grid" id="confirmMeas"></div>
+            </div>
+
+            <div
+              class="confirm-warnings"
+              id="confirmWarnings"
+              style="display: none"
             ></div>
+
+            <div class="confirm-debug">
+              <h4>Debug Overlays</h4>
+              <div class="streams" id="confirmDebugImages"></div>
+            </div>
+
+            <div class="confirm-actions">
+              <button
+                class="btn-confirm"
+                id="confirmBtn"
+                onclick="confirmGrade()"
+              >
+                Confirm &amp; Save
+              </button>
+              <button class="btn-reject" onclick="rejectGrade()">Reject</button>
+              <span class="confirm-status" id="confirmStatus"></span>
+            </div>
           </div>
 
           <h2>Account</h2>
@@ -886,7 +1076,7 @@
             <input
               type="text"
               id="dbSearch"
-              placeholder="Search serial_id..."
+              placeholder="Search..."
               onkeyup="dbFilter()"
             />
             <button
@@ -896,19 +1086,17 @@
               Refresh
             </button>
           </div>
-
           <div class="db-schema-toolbar" id="dbSchemaToolbar">
             <div class="db-schema-meta">HerdSync RDS schema diagram</div>
             <div class="db-schema-actions">
               <button onclick="dbSchemaZoom(1)">100%</button>
               <button onclick="dbSchemaZoom(1.5)">150%</button>
               <button onclick="dbSchemaZoom(2)">200%</button>
-              <a href="db_schema.png" target="_blank" rel="noopener">
-                Open Full Size
-              </a>
+              <a href="db_schema.png" target="_blank" rel="noopener"
+                >Open Full Size</a
+              >
             </div>
           </div>
-
           <div class="db-schema-wrap" id="dbSchemaWrap">
             <img
               id="dbSchemaImg"
@@ -917,7 +1105,6 @@
               alt="HerdSync DB schema diagram"
             />
           </div>
-
           <div class="db-stats" id="dbStats"></div>
           <div
             class="db-table-wrap"
@@ -935,7 +1122,6 @@
           <div id="dbLoading" class="db-loading" style="display: none">
             Loading...
           </div>
-
           <div class="detail-panel" id="detailPanel">
             <button class="detail-close" onclick="closeDetail()">Close</button>
             <h3 id="detailTitle">Record Detail</h3>
@@ -945,521 +1131,241 @@
       </div>
 
       <!-- ============================================================= -->
-      <!-- NOTES TAB -->
+      <!-- NOTES TAB                                                      -->
       <!-- ============================================================= -->
       <div id="tab-notes" class="tab-content">
         <div class="notes-tab">
           <div class="section">
             <div class="section-header">
-              <h2>System Overview</h2>
+              <h2>Config &amp; Endpoints</h2>
               <span class="tag arch">Architecture</span>
             </div>
             <div class="annotation">
-              <strong>HerdSync is a frontend-to-Pi-to-backend system.</strong>
-              A frontend should treat the Pi-facing API surface as the main
-              integration layer for live production workflows, while auth and
-              database services remain backend-owned.
+              All frontend routing is driven by <code>config.js</code>,
+              generated during CI/CD from GitHub secrets.
               <div class="info">
-                <strong>Core layers:</strong><br />
-                &bull; Frontend — authenticated browser UI<br />
-                &bull; Pi routes — live camera access and grading orchestration<br />
-                &bull; Auth service — login, session validation, users<br />
-                &bull; DB service — animal/provider/grading data access<br />
-                &bull; EC2 grading service — measurement and grade pipeline
+                <strong>CONFIG.AUTH_BASE</strong> &mdash; EC2 via ALB. Auth
+                endpoints: <code>/auth/login</code>, <code>/auth/refresh</code>,
+                <code>/auth/verify</code>, <code>/auth/me</code>,
+                <code>/auth/users</code><br />
+                <strong>CONFIG.DB_BASE</strong> &mdash; EC2 via ALB through
+                db-proxy. Data endpoints: <code>/db/goats</code>,
+                <code>/db/providers</code>, <code>/db/grading</code>, etc.<br />
+                <strong>CONFIG.API_BASE</strong> &mdash; Pi via Tailscale. Live
+                endpoints: <code>/api/prod/*</code>,
+                <code>/api/viewfocus/*</code>, <code>/api/heater/*</code>,
+                <code>/api/capture/*</code>
               </div>
               <div class="callout">
-                <strong>Frontend rule:</strong> never connect directly to the
-                database, never own grading logic, and never assume camera
-                access exists outside the Pi surface routes.
+                Auth and DB never go through the Pi. The Pi is only for live
+                camera/grading workflows.
               </div>
             </div>
             <div class="code-block">
-              <pre><code class="language-plaintext">Frontend
-  │
-  ├─ Authenticated API calls
-  │
-  ▼
-Pi-facing routes
-  ├─ live camera streams
-  ├─ grading orchestration
-  ├─ debug image access
-  │
-  ▼
-Backend services
-  ├─ auth
-  ├─ db
-  └─ ec2 grading
-
-Database and grading internals stay backend-side.</code></pre>
+              <pre><code class="language-javascript">const CONFIG = {
+  AUTH_BASE: "https://api.herd-sync.com",      // EC2 via ALB
+  DB_BASE:   "https://api.herd-sync.com/db",   // EC2 via ALB → db-proxy
+  API_BASE:  "https://pi.herd-sync.com",       // Pi via Tailscale
+};</code></pre>
             </div>
           </div>
 
           <div class="section">
             <div class="section-header">
-              <h2>Authentication Model</h2>
-              <span class="tag auth">Auth</span>
+              <h2>Auth Gate Pattern</h2>
+              <span class="tag security">Security</span>
             </div>
             <div class="annotation">
-              Every new frontend page should be built around the
-              <code>HerdAuth</code> client contract.
+              Every page starts hidden. No content renders until
+              <code>HerdAuth.requireAuth()</code> resolves.
               <div class="info">
-                <strong>Required behaviors:</strong><br />
-                &bull; Gate page rendering with
-                <code>HerdAuth.requireAuth()</code><br />
-                &bull; Use <code>HerdAuth.fetch()</code> for authenticated API
-                requests<br />
-                &bull; Read current identity from the resolved user object or
-                <code>HerdAuth.getUser()</code><br />
-                &bull; Use <code>HerdAuth.logout()</code> for session exit
+                <strong>HerdAuth.fetch(url, opts)</strong> &mdash; drop-in for
+                fetch(). Attaches Bearer token, auto-refreshes on 401.<br />
+                <strong>HerdAuth.getAccessToken()</strong> &mdash; raw JWT for
+                <code>?token=</code> URLs (img tags).<br />
+                <strong>HerdAuth.getUser()</strong> &mdash; cached {id,
+                username, role}.<br />
+                <strong>HerdAuth.logout()</strong> &mdash; clears tokens,
+                revokes refresh server-side.
               </div>
               <div class="callout">
-                <strong>Frontend rule:</strong> do not hand-roll token
-                attachment or refresh behavior for normal API requests. Treat
-                <code>HerdAuth.fetch()</code> as the default transport.
+                Never show page content before requireAuth() resolves. Never
+                hand-roll token attachment for normal API requests.
               </div>
             </div>
             <div class="code-block">
               <pre><code class="language-javascript">function showApp(user) {
   document.getElementById("app").style.display = "block";
 }
-
+// Must be LAST line in every page
 HerdAuth.requireAuth().then((user) => showApp(user));</code></pre>
             </div>
           </div>
 
           <div class="section">
             <div class="section-header">
-              <h2>Identity and Role Usage</h2>
-              <span class="tag pattern">Pattern</span>
-            </div>
-            <div class="annotation">
-              The authenticated user object is the frontend source of truth for
-              identity-aware UI.
-              <div class="info">
-                <strong>Expected user shape:</strong><br />
-                &bull; <code>id</code><br />
-                &bull; <code>username</code><br />
-                &bull; <code>role</code>
-              </div>
-              Role checks in the frontend are primarily for navigation and UI
-              shaping. They do not replace backend authorization.
-              <div class="callout">
-                <strong>Frontend rule:</strong> use role checks to show or hide
-                admin/operator experiences, but assume backend routes still own
-                final permission enforcement.
-              </div>
-            </div>
-            <div class="code-block">
-              <pre><code class="language-javascript">if (user.role === "admin") {
-  // show admin navigation
-}</code></pre>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-header">
-              <h2>Image and Stream Authentication</h2>
+              <h2>Image Auth (?token= pattern)</h2>
               <span class="tag security">Security</span>
             </div>
             <div class="annotation">
-              Stream and debug image routes are consumed through
-              <code>&lt;img&gt;</code> tags, which cannot attach Bearer headers.
-              Because of that, image-based routes use a token-in-URL pattern.
-              <div class="info">
-                <strong>Pattern:</strong><br />
-                &bull; normal API requests → <code>HerdAuth.fetch()</code><br />
-                &bull; image/stream routes → append
-                <code>?token=&lt;jwt&gt;</code>
-              </div>
-              <div class="callout">
-                <strong>Frontend rule:</strong> any new UI that renders live
-                streams or protected images must use the query-token pattern
-                rather than trying to fetch them as normal authenticated JSON
-                endpoints.
-              </div>
+              <code>&lt;img&gt;</code> tags cannot set HTTP headers. JWT is
+              passed as a query parameter instead. The Pi's Caddy forward_auth
+              extracts it from <code>X-Forwarded-Uri</code>. Tokens auto-refresh
+              every ~14 min via <code>auth.js</code> which updates all
+              <code>img[src*="token="]</code> elements.
             </div>
             <div class="code-block">
-              <pre><code class="language-javascript">img.src =
-  CONFIG.API_BASE +
-  "/api/viewfocus/stream/side?token=" +
-  HerdAuth.getAccessToken();</code></pre>
+              <pre><code class="language-javascript">img.src = CONFIG.API_BASE + "/api/viewfocus/stream/side"
+  + "?token=" + HerdAuth.getAccessToken();</code></pre>
             </div>
           </div>
 
           <div class="section">
             <div class="section-header">
-              <h2>Pi Integration Surface</h2>
+              <h2>Grading &amp; Confirmation Flow</h2>
+              <span class="tag feature">Feature</span>
+            </div>
+            <div class="annotation">
+              Grading is a multi-step process. The CV model is not perfect
+              &mdash; operators must review results before they hit the
+              database.
+              <div class="info">
+                <strong>1.</strong> Operator enters serial_id + live_weight,
+                clicks Grade<br />
+                <strong>2.</strong> Pi captures images &rarr; sends to EC2
+                &rarr; EC2 returns grade + measurements + debug images<br />
+                <strong>3.</strong> Confirmation panel shows results + debug
+                overlays for review<br />
+                <strong>4.</strong> Operator clicks
+                <strong>Confirm</strong> &rarr; frontend POSTs to
+                <code>CONFIG.DB_BASE + "/grading"</code><br />
+                <strong>5.</strong> Or clicks <strong>Reject</strong> &rarr;
+                result discarded, no DB write
+              </div>
+              <div class="callout">
+                EC2 never auto-saves to the database. The frontend owns the
+                confirm/reject decision. This is intentional.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-javascript">// On confirm — save to DB through db-proxy
+const resp = await HerdAuth.fetch(CONFIG.DB_BASE + "/grading", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(pendingResult),
+});
+// On reject — just clear the panel, nothing saved</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Pi Route Surface</h2>
               <span class="tag arch">Architecture</span>
             </div>
             <div class="annotation">
-              A new frontend integrating production functionality should treat
-              the Pi as the entry point for all live grading interactions.
-              <div class="info">
-                <strong>Main Pi-facing route groups:</strong><br />
-                &bull; <code>/api/viewfocus/*</code> — live camera stream
-                access<br />
-                &bull; <code>/api/prod/*</code> — live capture, grading
-                orchestration, status, debug artifacts
-              </div>
-              <div class="callout">
-                <strong>Frontend rule:</strong> for live operational flows,
-                build against Pi routes, not directly against EC2 grading
-                internals.
-              </div>
+              All live operational flows go through Pi routes, never directly to
+              EC2.
             </div>
             <div class="code-block">
-              <pre><code class="language-plaintext">Pi route groups used by a production frontend:
-
-/api/viewfocus/stream/{cam}
-/api/prod/grade
-/api/prod/grade/test
-/api/prod/status
-/api/prod/debug/{serial_id}/{view}</code></pre>
+              <pre><code class="language-plaintext">/api/viewfocus/stream/{cam}        MJPEG live stream
+/api/viewfocus/settings            Camera focus settings
+/api/prod/grade                    Live capture → grade
+/api/prod/grade/test               Upload images → grade (no cameras)
+/api/prod/status                   Poll grading progress
+/api/prod/debug/{serial_id}/{view} Debug overlay images
+/api/heater/status                 Heater dashboard data
+/api/capture/record                Training capture</code></pre>
             </div>
           </div>
 
           <div class="section">
             <div class="section-header">
-              <h2>Live Camera Integration</h2>
-              <span class="tag feature">Feature</span>
-            </div>
-            <div class="annotation">
-              The live production UI is built around three camera views:
-              <code>side</code>, <code>top</code>, and <code>front</code>.
-              These should be treated as fixed named views across the system.
-              <div class="info">
-                <strong>Expected frontend behavior:</strong><br />
-                &bull; render all three streams when available<br />
-                &bull; keep view names consistent across live preview, upload,
-                debug, and measurement displays<br />
-                &bull; assume downstream grading and debug logic also use the
-                same three-view naming contract
-              </div>
-            </div>
-            <div class="code-block">
-              <pre><code class="language-javascript">["side", "top", "front"].forEach((cam) => {
-  document.getElementById("stream-" + cam).src =
-    CONFIG.API_BASE +
-    "/api/viewfocus/stream/" +
-    cam +
-    "?token=" +
-    HerdAuth.getAccessToken();
-});</code></pre>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-header">
-              <h2>Grading Workflow Contract</h2>
-              <span class="tag feature">Feature</span>
-            </div>
-            <div class="annotation">
-              A production frontend should support two grading entry modes:
-              <div class="info">
-                <strong>1. Live capture mode</strong><br />
-                Uses <code>/api/prod/grade</code> and lets the Pi capture
-                images from connected cameras.<br /><br />
-                <strong>2. Manual upload mode</strong><br />
-                Uses <code>/api/prod/grade/test</code> and submits uploaded
-                images directly for grading without requiring live camera
-                capture.
-              </div>
-              Both modes are built around a shared grading input shape centered
-              on animal identity and live weight.
-              <div class="callout">
-                <strong>Frontend rule:</strong> treat upload mode as a testing
-                or fallback path, and live capture mode as the primary
-                production workflow.
-              </div>
-            </div>
-            <div class="code-block">
-              <pre><code class="language-plaintext">Shared grading concepts:
-  serial_id
-  live_weight
-  side image
-  top image
-  front image</code></pre>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-header">
-              <h2>Status Polling Model</h2>
-              <span class="tag pattern">Pattern</span>
-            </div>
-            <div class="annotation">
-              Live grading is asynchronous from the frontend point of view.
-              After starting a grade job, the UI should poll the status endpoint
-              until the job becomes inactive and returns a final result or
-              error.
-              <div class="info">
-                <strong>Status concepts surfaced to frontend:</strong><br />
-                &bull; active / inactive state<br />
-                &bull; progress stage<br />
-                &bull; final result payload<br />
-                &bull; last error payload
-              </div>
-              <strong>Typical progress stages:</strong>
-              <code>starting</code>, <code>capturing</code>,
-              <code>grading</code>, <code>archiving</code>.
-              <div class="callout">
-                <strong>Frontend rule:</strong> build the UI around progress
-                states, not around assumptions of instant completion.
-              </div>
-            </div>
-            <div class="code-block">
-              <pre><code class="language-javascript">const resp = await HerdAuth.fetch(CONFIG.API_BASE + "/api/prod/status");
-const data = await resp.json();</code></pre>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-header">
-              <h2>Grading Result Shape</h2>
-              <span class="tag feature">Feature</span>
-            </div>
-            <div class="annotation">
-              Frontends should expect a grading result to include both the final
-              business result and diagnostic metadata.
-              <div class="info">
-                <strong>Important result fields used by this page:</strong
-                ><br />
-                &bull; <code>grade</code><br />
-                &bull; <code>all_views_successful</code><br />
-                &bull; <code>timing</code><br />
-                &bull; <code>measurements</code><br />
-                &bull; <code>warnings</code>
-              </div>
-              This lets the frontend support both operator-friendly output and
-              deeper troubleshooting views.
-            </div>
-            <div class="code-block">
-              <pre><code class="language-plaintext">Grade result should be treated as:
-  outcome
-  measurement payload
-  timing metadata
-  warning list
-  view success metadata</code></pre>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-header">
-              <h2>Debug Image Contract</h2>
-              <span class="tag feature">Feature</span>
-            </div>
-            <div class="annotation">
-              Debug imagery is a first-class part of the grading workflow. A new
-              frontend should be able to request view-specific debug overlays
-              after a completed run.
-              <div class="info">
-                <strong>Route pattern:</strong><br />
-                <code>/api/prod/debug/{serial_id}/{view}</code>
-              </div>
-              These images are useful for reviewing measurement overlays and
-              confirming view-level grading behavior.
-              <div class="callout">
-                <strong>Frontend rule:</strong> keep the same canonical view
-                names for debug rendering:
-                <code>side</code>, <code>top</code>, <code>front</code>.
-              </div>
-            </div>
-            <div class="code-block">
-              <pre><code class="language-javascript">const url =
-  CONFIG.API_BASE +
-  "/api/prod/debug/" +
-  serialId +
-  "/" +
-  view +
-  "?token=" +
-  HerdAuth.getAccessToken();</code></pre>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-header">
-              <h2>Database Integration Model</h2>
+              <h2>DB Routes (via db-proxy)</h2>
               <span class="tag arch">Architecture</span>
             </div>
             <div class="annotation">
-              A frontend should integrate with animal and grading data through
-              backend domain routes, not table-level assumptions.
-              <div class="info">
-                <strong>Domain resources already exposed to frontend:</strong
-                ><br />
-                &bull; <code>/goats</code><br />
-                &bull; <code>/chickens</code><br />
-                &bull; <code>/lambs</code><br />
-                &bull; <code>/providers</code><br />
-                &bull; <code>/grading</code>
-              </div>
-              <div class="callout">
-                <strong>Frontend rule:</strong> think in terms of domain
-                resources, not joins, raw SQL, or direct table ownership.
-              </div>
+              All database access goes through <code>CONFIG.DB_BASE</code> which
+              hits the auth-gated db-proxy. The proxy validates the JWT, then
+              forwards to the internal db service. Only whitelisted prefixes are
+              allowed.
             </div>
             <div class="code-block">
-              <pre><code class="language-javascript">const endpoint =
-  "/" + table + (table === "grading" ? "?limit=200" : "");
-const data = await dbFetch(endpoint);</code></pre>
+              <pre><code class="language-plaintext">GET    /goats                List all goats
+GET    /goats/{serial_id}    Get one goat
+POST   /goats                Create goat (serial_id auto-assigned)
+PUT    /goats/{serial_id}    Update goat
+
+GET    /grading              Recent grade results
+GET    /grading/{serial_id}  Grade history for a goat
+POST   /grading              Save a confirmed grade result
+
+GET    /providers             List providers
+GET    /animals/next          Preview next serial_id
+
+Same pattern for /chickens, /lambs.</code></pre>
             </div>
           </div>
 
           <div class="section">
             <div class="section-header">
-              <h2>Backend Domain Model</h2>
+              <h2>Security Model</h2>
+              <span class="tag security">Security</span>
+            </div>
+            <div class="annotation">
+              Two independent auth layers protect the system.
+              <div class="info">
+                <strong>User-level:</strong> Browser &rarr; Bearer JWT &rarr;
+                Caddy forward_auth (Pi) or db-proxy verify (EC2)<br />
+                <strong>Service-level:</strong> Pi &rarr; EC2 via
+                <code>X-API-Key</code> header (shared secret in .env)
+              </div>
+              EC2 API middleware fails closed: no key configured = all
+              non-health requests rejected. Pi&harr;EC2 traffic goes over
+              Tailscale (WireGuard encrypted).
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">Browser → Pi (Caddy forward_auth) → EC2 (X-API-Key)
+Browser → ALB → auth service (login/refresh/verify)
+Browser → ALB → db-proxy (JWT verify) → db service</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>New Page Checklist</h2>
               <span class="tag pattern">Pattern</span>
             </div>
             <div class="annotation">
-              The DB/backend layer is organized around domain route groups rather
-              than a single generic data handler.
+              Every new page must follow these rules:
               <div class="info">
-                <strong>Current route groups:</strong><br />
-                &bull; <code>animals</code> — shared animal operations<br />
-                &bull; <code>animal_factory</code> — common creation/routing
-                logic<br />
-                &bull; <code>goats</code> — goat-specific data<br />
-                &bull; <code>chickens</code> — chicken-specific data<br />
-                &bull; <code>lambs</code> — lamb-specific data<br />
-                &bull; <code>grading</code> — grading records and outcomes<br />
-                &bull; <code>providers</code> — provider/source records
-              </div>
-              This structure is the conceptual model a frontend should mirror
-              when building navigation, filters, views, or forms.
-            </div>
-            <div class="code-block">
-              <pre><code class="language-plaintext">db/routes/
-  animal_factory.py
-  animals.py
-  goats.py
-  chickens.py
-  lambs.py
-  grading.py
-  providers.py</code></pre>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-header">
-              <h2>Frontend Data Views</h2>
-              <span class="tag feature">Feature</span>
-            </div>
-            <div class="annotation">
-              This page demonstrates the minimum useful data views a new
-              frontend can build on top of the current system:
-              <div class="info">
-                <strong>Recommended core views:</strong><br />
-                &bull; live grading workflow<br />
-                &bull; manual-upload grading workflow<br />
-                &bull; animal record browser by species<br />
-                &bull; provider browser<br />
-                &bull; grading results browser<br />
-                &bull; debug overlay viewer
-              </div>
-              These views map naturally to the current API and route design.
-            </div>
-            <div class="code-block">
-              <pre><code class="language-plaintext">Core frontend surface areas:
-  operations
-  records
-  grading history
-  providers
-  diagnostics</code></pre>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-header">
-              <h2>Schema Awareness</h2>
-              <span class="tag arch">Architecture</span>
-            </div>
-            <div class="annotation">
-              Frontends should be schema-aware enough to present meaningful
-              records, but not schema-dependent in a way that bypasses backend
-              contracts.
-              <div class="info">
-                The schema diagram is useful for understanding relationships
-                between animal records, providers, and grading results, but the
-                frontend should still consume backend-shaped JSON rather than
-                re-implementing relational logic itself.
-              </div>
-              <div class="callout">
-                <strong>Frontend rule:</strong> use schema knowledge for UI
-                design and mental model only. Let backend routes own relational
-                behavior.
-              </div>
-            </div>
-            <div class="code-block">
-              <pre><code class="language-plaintext">Use schema knowledge to understand:
-  which resources relate
-  which details belong in record views
-  which cross-links make sense in the UI
-
-Do not use schema knowledge to bypass backend APIs.</code></pre>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-header">
-              <h2>Password Management Flow</h2>
-              <span class="tag auth">Auth</span>
-            </div>
-            <div class="annotation">
-              User account settings belong to the auth service boundary.
-              Password-change UX should preserve the currently authenticated
-              session while validating the user's current password.
-              <div class="info">
-                <strong>Current pattern:</strong><br />
-                &bull; verify current password through
-                <code>/auth/login</code><br />
-                &bull; submit the actual password update through
-                <code>/auth/users/{id}</code>
-              </div>
-              This split is useful when building account settings pages in other
-              frontends too.
-            </div>
-            <div class="code-block">
-              <pre><code class="language-plaintext">Account settings frontend flow:
-  verify identity with current credentials
-  then submit authenticated account update</code></pre>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-header">
-              <h2>New Frontend Build Checklist</h2>
-              <span class="tag pattern">Pattern</span>
-            </div>
-            <div class="annotation">
-              A new frontend integrating the full system should preserve these
-              invariants:
-              <div class="info">
-                &bull; Gate all pages with <code>HerdAuth.requireAuth()</code
-                ><br />
-                &bull; Use <code>HerdAuth.fetch()</code> for authenticated JSON
+                &bull; Include <code>/config.js</code> and
+                <code>/js/auth.js</code><br />
+                &bull; Gate with
+                <code>HerdAuth.requireAuth().then(showApp)</code> as last
+                line<br />
+                &bull; Use <code>HerdAuth.fetch()</code> for all authenticated
                 requests<br />
-                &bull; Use query-token auth for image/stream routes<br />
-                &bull; Integrate live workflows through Pi routes<br />
-                &bull; Treat grading as asynchronous and poll status<br />
-                &bull; Use canonical camera/view names:
-                <code>side</code>, <code>top</code>, <code>front</code><br />
-                &bull; Consume backend domain resources for records and grading
-                history<br />
-                &bull; Keep DB, auth, and grading logic server-owned
+                &bull; Use <code>?token=</code> for img/stream src attributes<br />
+                &bull; Use <code>CONFIG.API_BASE</code> for Pi,
+                <code>CONFIG.AUTH_BASE</code> for auth,
+                <code>CONFIG.DB_BASE</code> for data<br />
+                &bull; Role checks are UI-only &mdash; backend enforces actual
+                permissions
               </div>
             </div>
             <div class="code-block">
-              <pre><code class="language-plaintext">Build a new frontend like this:
-  auth-gated
-  Pi-integrated for live workflows
-  backend-driven for records
-  async-aware for grading
-  consistent in view naming
-  diagnostic-friendly</code></pre>
+              <pre><code class="language-html">&lt;script src="/config.js"&gt;&lt;/script&gt;
+&lt;script src="/js/auth.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  function showApp(user) { /* render page */ }
+  HerdAuth.requireAuth().then(showApp);
+&lt;/script&gt;</code></pre>
             </div>
           </div>
         </div>
       </div>
+    </div>
 
     <script>
       // =================================================================
@@ -1565,13 +1471,15 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
           log("valid live_weight is required", "err");
           return;
         }
+
         btn.disabled = true;
         document.getElementById("log").innerHTML = "";
-        document.getElementById("debug-section").style.display = "none";
+        hideConfirmPanel();
         log(
           "Starting upload grade for " + serialId + " @ " + liveWeight + " lbs",
         );
         log("Uploading 3 images to Pi → EC2...", "info");
+
         try {
           const formData = new FormData();
           formData.append("serial_id", serialId);
@@ -1579,11 +1487,13 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
           formData.append("side_image", uploadedFiles.side);
           formData.append("top_image", uploadedFiles.top);
           formData.append("front_image", uploadedFiles.front);
+
           const resp = await HerdAuth.fetch(
             CONFIG.API_BASE + "/api/prod/grade/test",
             { method: "POST", body: formData },
           );
           const body = await resp.json();
+
           if (!resp.ok) {
             log(
               "Upload grade rejected: " +
@@ -1594,25 +1504,9 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
             btn.disabled = false;
             return;
           }
-          log("Grade complete!", "ok");
-          log("  Grade:  " + (body.grade || "N/A"), "ok");
-          log("  Views OK: " + body.all_views_successful, "info");
-          if (body.timing)
-            log(
-              "  EC2: " +
-                body.timing.ec2_sec +
-                "s, Total: " +
-                body.timing.total_sec +
-                "s",
-              "info",
-            );
-          if (body.measurements)
-            log("  Measurements: " + JSON.stringify(body.measurements), "info");
-          if (body.warnings && body.warnings.length > 0)
-            body.warnings.forEach((w) => log("  Warning: " + w, "warn"));
-          log("");
-          log("Click button below to review measurement overlays", "info");
-          showDebugButton(serialId);
+
+          log("Grade returned — review below", "ok");
+          showConfirmPanel(serialId, liveWeight, body);
         } catch (err) {
           log("Network error: " + err.message, "err");
           log("Is the Pi reachable at " + CONFIG.API_BASE + "?", "warn");
@@ -1638,10 +1532,12 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
           log("valid live_weight is required", "err");
           return;
         }
+
         btn.disabled = true;
         document.getElementById("log").innerHTML = "";
-        document.getElementById("debug-section").style.display = "none";
+        hideConfirmPanel();
         log("Starting grade for " + serialId + " @ " + liveWeight + " lbs");
+
         try {
           log("POST /api/prod/grade ...", "info");
           const resp = await HerdAuth.fetch(
@@ -1656,6 +1552,7 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
             },
           );
           const body = await resp.json();
+
           if (!resp.ok) {
             log(
               "Grade rejected: " +
@@ -1667,33 +1564,13 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
             btn.disabled = false;
             return;
           }
+
           log("Grade started — capturing images...", "ok");
           const result = await pollStatus();
+
           if (result && result.success) {
-            log("Grade complete!", "ok");
-            log("  Grade:  " + (result.grade || "N/A"), "ok");
-            log("  Views OK: " + result.all_views_successful, "info");
-            if (result.timing)
-              log(
-                "  Capture: " +
-                  result.timing.capture_sec +
-                  "s, EC2: " +
-                  result.timing.ec2_sec +
-                  "s, Total: " +
-                  result.timing.total_sec +
-                  "s",
-                "info",
-              );
-            if (result.measurements)
-              log(
-                "  Measurements: " + JSON.stringify(result.measurements),
-                "info",
-              );
-            if (result.warnings && result.warnings.length > 0)
-              result.warnings.forEach((w) => log("  Warning: " + w, "warn"));
-            log("");
-            log("Click button below to review measurement overlays", "info");
-            showDebugButton(serialId);
+            log("Grade returned — review below", "ok");
+            showConfirmPanel(serialId, liveWeight, result);
           } else {
             log("Grade failed: " + (result?.error || "unknown"), "err");
             if (result?.fix) log("Fix: " + result.fix, "warn");
@@ -1720,6 +1597,7 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
             log("Lost connection to Pi, retrying...", "warn");
             continue;
           }
+
           if (data.progress && data.progress !== lastProgress) {
             lastProgress = data.progress;
             const msgs = {
@@ -1746,19 +1624,81 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
       }
 
       // =================================================================
-      // DEBUG IMAGES
+      // CONFIRMATION PANEL
       // =================================================================
-      function showDebugButton(serialId) {
-        const container = document.getElementById("debug-section");
-        container.style.display = "block";
-        container.querySelector("button").onclick = () =>
-          loadDebugImages(serialId);
-        document.getElementById("debug-images").innerHTML = "";
-      }
-      async function loadDebugImages(serialId) {
-        const container = document.getElementById("debug-images");
-        container.innerHTML = "";
-        log("Loading debug images...", "info");
+      let pendingGradeResult = null;
+      let pendingSerialId = null;
+      let pendingLiveWeight = null;
+
+      function showConfirmPanel(serialId, liveWeight, result) {
+        pendingGradeResult = result;
+        pendingSerialId = serialId;
+        pendingLiveWeight = liveWeight;
+
+        const panel = document.getElementById("confirmPanel");
+        document.getElementById("confirmSerial").textContent = "#" + serialId;
+
+        // Result summary
+        const grid = document.getElementById("confirmResult");
+        const allOk = result.all_views_successful || result.all_views_ok;
+        grid.innerHTML =
+          '<div class="confirm-field"><label>Grade</label><div class="val grade">' +
+          (result.grade || "N/A") +
+          "</div></div>" +
+          '<div class="confirm-field"><label>Views OK</label><div class="val ' +
+          (allOk ? "ok" : "bad") +
+          '">' +
+          (allOk ? "Yes" : "No") +
+          "</div></div>" +
+          '<div class="confirm-field"><label>Live Weight</label><div class="val">' +
+          liveWeight +
+          " lbs</div></div>" +
+          (result.timing
+            ? '<div class="confirm-field"><label>EC2 Time</label><div class="val">' +
+              (result.timing.ec2_sec || "—") +
+              "s</div></div>"
+            : "") +
+          (result.timing
+            ? '<div class="confirm-field"><label>Total Time</label><div class="val">' +
+              (result.timing.total_sec || "—") +
+              "s</div></div>"
+            : "");
+
+        // Measurements
+        const measWrap = document.getElementById("confirmMeasWrap");
+        const measGrid = document.getElementById("confirmMeas");
+        const meas = result.measurements;
+        if (meas && typeof meas === "object" && Object.keys(meas).length > 0) {
+          measGrid.innerHTML = Object.entries(meas)
+            .filter(([_, v]) => v !== null && v !== undefined)
+            .map(
+              ([k, v]) =>
+                '<div class="confirm-meas-item">' +
+                k.replace(/_cm$/, "").replace(/_/g, " ") +
+                ": <span>" +
+                v +
+                " cm</span></div>",
+            )
+            .join("");
+          measWrap.style.display = "block";
+        } else {
+          measWrap.style.display = "none";
+        }
+
+        // Warnings
+        const warnEl = document.getElementById("confirmWarnings");
+        if (result.warnings && result.warnings.length > 0) {
+          warnEl.innerHTML = result.warnings
+            .map((w) => '<div class="warn-item">⚠ ' + w + "</div>")
+            .join("");
+          warnEl.style.display = "block";
+        } else {
+          warnEl.style.display = "none";
+        }
+
+        // Debug images
+        const debugContainer = document.getElementById("confirmDebugImages");
+        debugContainer.innerHTML = "";
         ["side", "top", "front"].forEach((view) => {
           const url =
             CONFIG.API_BASE +
@@ -1778,9 +1718,85 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
             '" alt="' +
             view +
             ' debug" onerror="this.alt=\'not available\'; this.style.opacity=0.3" />';
-          container.appendChild(div);
+          debugContainer.appendChild(div);
         });
-        log("Debug images loaded — review measurement overlays above", "ok");
+
+        // Reset status
+        document.getElementById("confirmStatus").textContent = "";
+        document.getElementById("confirmStatus").className = "confirm-status";
+        document.getElementById("confirmBtn").disabled = false;
+
+        panel.classList.add("visible");
+        panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+
+      function hideConfirmPanel() {
+        document.getElementById("confirmPanel").classList.remove("visible");
+        pendingGradeResult = null;
+        pendingSerialId = null;
+        pendingLiveWeight = null;
+      }
+
+      async function confirmGrade() {
+        if (!pendingGradeResult || !pendingSerialId) return;
+
+        const btn = document.getElementById("confirmBtn");
+        const status = document.getElementById("confirmStatus");
+        btn.disabled = true;
+        status.textContent = "Saving to database...";
+        status.className = "confirm-status saving";
+
+        const allOk =
+          pendingGradeResult.all_views_successful ||
+          pendingGradeResult.all_views_ok;
+
+        const payload = {
+          serial_id: parseInt(pendingSerialId) || 0,
+          grade: pendingGradeResult.grade || null,
+          live_weight: pendingLiveWeight,
+          all_views_ok: allOk || false,
+          measurements: pendingGradeResult.measurements || null,
+          warnings: pendingGradeResult.warnings || null,
+          capture_sec: pendingGradeResult.timing?.capture_sec || null,
+          ec2_sec: pendingGradeResult.timing?.ec2_sec || null,
+          total_sec: pendingGradeResult.timing?.total_sec || null,
+        };
+
+        try {
+          const resp = await HerdAuth.fetch(CONFIG.DB_BASE + "/grading", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || err.error || "HTTP " + resp.status);
+          }
+
+          const saved = await resp.json();
+          status.textContent = "Saved (id: " + (saved.id || "ok") + ")";
+          status.className = "confirm-status saved";
+          log(
+            "Grade confirmed and saved to database (id: " +
+              (saved.id || "ok") +
+              ")",
+            "ok",
+          );
+
+          // Auto-hide after a moment
+          setTimeout(() => hideConfirmPanel(), 3000);
+        } catch (err) {
+          status.textContent = "Failed: " + err.message;
+          status.className = "confirm-status error";
+          log("Failed to save grade: " + err.message, "err");
+          btn.disabled = false;
+        }
+      }
+
+      function rejectGrade() {
+        log("Grade rejected by operator — not saved", "warn");
+        hideConfirmPanel();
       }
 
       // =================================================================
@@ -1794,6 +1810,7 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
         const btn = document.getElementById("changePwBtn");
         msg.textContent = "";
         msg.className = "pw-msg";
+
         if (!currentPw) {
           msg.textContent = "Current password is required";
           msg.className = "pw-msg error";
@@ -1822,6 +1839,7 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
           msg.className = "pw-msg error";
           return;
         }
+
         btn.disabled = true;
         btn.textContent = "Updating...";
         try {
@@ -1916,7 +1934,6 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
           "graded_at",
         ],
       };
-
       const COL_STYLES = {
         serial_id: "id-col",
         id: "id-col",
@@ -1940,47 +1957,32 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
 
       function dbToggleSchema(btn) {
         dbSchemaVisible = !dbSchemaVisible;
-
         const wrap = document.getElementById("dbSchemaWrap");
         const toolbar = document.getElementById("dbSchemaToolbar");
         const tableWrap = document.getElementById("dbTableWrap");
         const stats = document.getElementById("dbStats");
-        const empty = document.getElementById("dbEmpty");
-        const loading = document.getElementById("dbLoading");
-        const detail = document.getElementById("detailPanel");
-
         wrap.style.display = dbSchemaVisible ? "block" : "none";
         toolbar.style.display = dbSchemaVisible ? "flex" : "none";
         tableWrap.style.display = dbSchemaVisible ? "none" : "block";
         stats.style.display = dbSchemaVisible ? "none" : "block";
-        empty.style.display = dbSchemaVisible ? "none" : empty.style.display;
-        loading.style.display = dbSchemaVisible
+        document.getElementById("dbEmpty").style.display = dbSchemaVisible
           ? "none"
-          : loading.style.display;
-        detail.style.display = dbSchemaVisible ? "none" : detail.style.display;
-
+          : document.getElementById("dbEmpty").style.display;
+        document.getElementById("dbLoading").style.display = dbSchemaVisible
+          ? "none"
+          : document.getElementById("dbLoading").style.display;
+        document.getElementById("detailPanel").style.display = dbSchemaVisible
+          ? "none"
+          : document.getElementById("detailPanel").style.display;
         if (btn) {
-          const isActive = btn.classList.contains("active");
-          if (dbSchemaVisible && !isActive) btn.classList.add("active");
-          if (!dbSchemaVisible) btn.classList.remove("active");
+          if (dbSchemaVisible) btn.classList.add("active");
+          else btn.classList.remove("active");
         }
-
-        if (!dbSchemaVisible) {
-          const activeTableBtn = document.querySelector(
-            '.db-controls button.active:not([onclick*="dbToggleSchema"])',
-          );
-          if (activeTableBtn) activeTableBtn.classList.add("active");
-        }
-
-        if (dbSchemaVisible) {
-          dbSchemaZoom(dbSchemaScale);
-        }
+        if (dbSchemaVisible) dbSchemaZoom(dbSchemaScale);
       }
-
       function dbSchemaZoom(scale) {
         dbSchemaScale = scale;
-        const img = document.getElementById("dbSchemaImg");
-        img.style.width = scale * 100 + "%";
+        document.getElementById("dbSchemaImg").style.width = scale * 100 + "%";
       }
 
       async function dbLoadProviderCache() {
@@ -1990,9 +1992,7 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
           providers.forEach((p) => {
             dbProviderCache[p.id] = p.name;
           });
-        } catch (e) {
-          /* ignore */
-        }
+        } catch (e) {}
       }
 
       async function dbLoadTable(table, btn) {
@@ -2007,13 +2007,11 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
           document.getElementById("dbTableWrap").style.display = "block";
           document.getElementById("dbStats").style.display = "block";
         }
-
         document.querySelectorAll(".db-controls button").forEach((b) => {
           if (
             !String(b.getAttribute("onclick") || "").includes("dbToggleSchema")
-          ) {
+          )
             b.classList.remove("active");
-          }
         });
         if (btn) btn.classList.add("active");
 
@@ -2023,7 +2021,6 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
         const stats = document.getElementById("dbStats");
         const empty = document.getElementById("dbEmpty");
         const loading = document.getElementById("dbLoading");
-
         tbody.innerHTML = "";
         thead.innerHTML = "";
         stats.textContent = "";
@@ -2033,26 +2030,21 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
 
         try {
           await dbLoadProviderCache();
-          const endpoint =
-            "/" + table + (table === "grading" ? "?limit=200" : "");
-          dbData = await dbFetch(endpoint);
-
+          dbData = await dbFetch(
+            "/" + table + (table === "grading" ? "?limit=200" : ""),
+          );
           loading.style.display = "none";
-
           if (dbData.length === 0) {
             empty.style.display = "block";
             stats.textContent = "0 records";
             return;
           }
-
           const cols = DB_COLUMNS[table] || Object.keys(dbData[0]).slice(0, 10);
           stats.textContent = dbData.length + " records";
-
           thead.innerHTML =
             "<tr>" +
             cols.map((c) => "<th>" + c.replace(/_/g, " ") + "</th>").join("") +
             "</tr>";
-
           dbRenderRows(cols);
         } catch (err) {
           loading.style.display = "none";
@@ -2071,38 +2063,29 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
               ),
             )
           : dbData;
-
         tbody.innerHTML = filtered
           .map(
             (row, i) =>
               '<tr onclick="dbShowDetail(' +
               i +
-              ')" style="cursor: pointer;">' +
+              ')" style="cursor:pointer;">' +
               cols
                 .map((c) => {
                   let val = row[c];
                   const style = COL_STYLES[c] || "";
-
-                  if (c === "prov_id" && val && dbProviderCache[val]) {
+                  if (c === "prov_id" && val && dbProviderCache[val])
                     val = dbProviderCache[val];
-                  }
-                  if (c === "graded_at" && val) {
+                  if (c === "graded_at" && val)
                     val = new Date(val).toLocaleString();
-                  }
-                  if (val === null || val === undefined) {
+                  if (val === null || val === undefined)
                     return '<td class="null">—</td>';
-                  }
-                  if (typeof val === "boolean") {
-                    val = val ? "✓" : "✗";
-                  }
-
+                  if (typeof val === "boolean") val = val ? "✓" : "✗";
                   return '<td class="' + style + '">' + val + "</td>";
                 })
                 .join("") +
               "</tr>",
           )
           .join("");
-
         document.getElementById("dbStats").textContent =
           filtered.length +
           (filtered.length !== dbData.length ? " / " + dbData.length : "") +
@@ -2113,19 +2096,19 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
 
       function dbFilter() {
         if (!dbCurrentTable || !dbData.length) return;
-        const cols =
-          DB_COLUMNS[dbCurrentTable] || Object.keys(dbData[0]).slice(0, 10);
-        dbRenderRows(cols);
+        dbRenderRows(
+          DB_COLUMNS[dbCurrentTable] || Object.keys(dbData[0]).slice(0, 10),
+        );
       }
-
       function dbRefresh() {
         if (dbSchemaVisible) return;
-        if (dbCurrentTable) {
-          const activeBtn = document.querySelector(
-            '.db-controls button.active:not([onclick*="dbToggleSchema"])',
+        if (dbCurrentTable)
+          dbLoadTable(
+            dbCurrentTable,
+            document.querySelector(
+              '.db-controls button.active:not([onclick*="dbToggleSchema"])',
+            ),
           );
-          dbLoadTable(dbCurrentTable, activeBtn);
-        }
       }
 
       function dbShowDetail(index) {
@@ -2140,11 +2123,9 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
           : dbData;
         const row = filtered[index];
         if (!row) return;
-
         const panel = document.getElementById("detailPanel");
         const grid = document.getElementById("detailGrid");
         const title = document.getElementById("detailTitle");
-
         const LABELS = {
           goats: "Goat",
           chickens: "Chicken",
@@ -2152,31 +2133,23 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
           providers: "Provider",
           grading: "Grading",
         };
-
         title.textContent =
           (LABELS[dbCurrentTable] || "Record") +
           " #" +
           (row.serial_id || row.id);
-
         grid.innerHTML = Object.entries(row)
           .map(([key, val]) => {
-            if (key === "prov_id" && val && dbProviderCache[val]) {
+            if (key === "prov_id" && val && dbProviderCache[val])
               val = dbProviderCache[val] + " (id: " + val + ")";
-            }
-            if (key === "measurements" && val && typeof val === "object") {
+            if (key === "measurements" && val && typeof val === "object")
               val = Object.entries(val)
                 .map(([k, v]) => k.replace(/_cm$/, "") + ": " + v + "cm")
                 .join(", ");
-            }
-            if (Array.isArray(val)) {
-              val = val.join(", ") || "—";
-            }
-
+            if (Array.isArray(val)) val = val.join(", ") || "—";
             const display =
               val === null || val === undefined
                 ? '<span class="val-null">null</span>'
                 : String(val);
-
             return (
               '<div class="detail-field"><label>' +
               key.replace(/_/g, " ") +
@@ -2186,11 +2159,9 @@ Do not use schema knowledge to bypass backend APIs.</code></pre>
             );
           })
           .join("");
-
         panel.style.display = "block";
         panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
-
       function closeDetail() {
         document.getElementById("detailPanel").style.display = "none";
       }

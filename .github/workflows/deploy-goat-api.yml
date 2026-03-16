@@ -41,7 +41,7 @@ jobs:
         run: |
           IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           echo "Building $IMAGE_URI"
-          docker build -f ec2-api/Dockerfile -t $IMAGE_URI .
+          docker build -f goat-api/Dockerfile -t $IMAGE_URI .
           docker tag $IMAGE_URI $ECR_REGISTRY/$ECR_REPOSITORY:latest
           echo "Pushing to ECR..."
           docker push $IMAGE_URI
@@ -67,7 +67,7 @@ jobs:
 
             # Pull latest image
             echo "Pulling latest image..."
-            docker pull 937249941844.dkr.ecr.us-east-2.amazonaws.com/ec2-api:latest
+            docker pull 937249941844.dkr.ecr.us-east-2.amazonaws.com/goat-api:latest
 
             # Stop and remove old container
             echo "Stopping old container..."
