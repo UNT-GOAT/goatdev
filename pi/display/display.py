@@ -35,7 +35,7 @@ import board # type: ignore
 import adafruit_rgb_display.ili9341 as ili9341 # type: ignore
 
 from dotenv import load_dotenv
-load_dotenv("/home/pi/goatdev/pi/.env")
+load_dotenv("/home/pi/.env")
 
 # === PIN CONFIGURATION ===
 CS_PIN = board.CE0       # GPIO 8  / Pin 24

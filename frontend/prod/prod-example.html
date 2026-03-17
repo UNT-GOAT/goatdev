@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prod Integration Example | HerdSync</title>
-    <script src="/config.js"></script>
+    <script src="/js/config.js"></script>
     <script src="/js/auth.js"></script>
     <link
       rel="stylesheet"
@@ -897,11 +897,12 @@
             </div>
           </div>
 
-          <h2>Manual Upload (Testing)</h2>
+          <h2>Manual Upload (Testing Only)</h2>
           <div class="upload-section">
             <div class="upload-note">
-              Upload images manually while cameras aren't connected. Bypasses Pi
-              camera capture, sends straight to EC2.
+              For dataflow demonstration only — will not be part of the final
+              production page. Bypasses Pi camera capture and sends images
+              directly to EC2 for grading.
             </div>
             <div class="form-row" style="margin-bottom: 10px">
               <input
@@ -1141,8 +1142,9 @@
               <span class="tag arch">Architecture</span>
             </div>
             <div class="annotation">
-              All frontend routing is driven by <code>config.js</code>,
-              generated during CI/CD from GitHub secrets.
+              All frontend routing is driven by <code>/js/config.js</code>,
+              generated during CI/CD from GitHub secrets. Auth logic lives in
+              <code>/js/auth.js</code>. Both are served from S3 via CloudFront.
               <div class="info">
                 <strong>CONFIG.AUTH_BASE</strong> &mdash; EC2 via ALB. Auth
                 endpoints: <code>/auth/login</code>, <code>/auth/refresh</code>,
@@ -1339,7 +1341,7 @@ Browser → ALB → db-proxy (JWT verify) → db service</code></pre>
             <div class="annotation">
               Every new page must follow these rules:
               <div class="info">
-                &bull; Include <code>/config.js</code> and
+                &bull; Include <code>/js/config.js</code> and
                 <code>/js/auth.js</code><br />
                 &bull; Gate with
                 <code>HerdAuth.requireAuth().then(showApp)</code> as last
@@ -1355,7 +1357,7 @@ Browser → ALB → db-proxy (JWT verify) → db service</code></pre>
               </div>
             </div>
             <div class="code-block">
-              <pre><code class="language-html">&lt;script src="/config.js"&gt;&lt;/script&gt;
+              <pre><code class="language-html">&lt;script src="/js/config.js"&gt;&lt;/script&gt;
 &lt;script src="/js/auth.js"&gt;&lt;/script&gt;
 &lt;script&gt;
   function showApp(user) { /* render page */ }
