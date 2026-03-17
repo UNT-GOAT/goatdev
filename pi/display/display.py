@@ -50,7 +50,7 @@ ROTATION = 0  # 0=portrait, 90/180/270 to rotate
 
 # === SYSTEM CONFIG ===
 LOGO_PATH = "/home/pi/goatdev/pi/display/boot_logo.png"
-EC2_API = os.environ.get('EC2_API')
+EC2_GOAT_API = os.environ.get('EC2_GOAT_API')
 
 # Path to the shared state file written by camera_heating.py every 2s.
 # Contains filtered temps, heater on/off, failsafe state, overrides.
@@ -242,7 +242,7 @@ def check_servers():
     return {
         'PROD': _curl_ok('http://localhost:5000/health'),
         'CAM_PROXY': _curl_ok('http://localhost:8080/status'),
-        'EC2': _curl_ok(f'{EC2_API}/health', timeout=6),
+        'EC2': _curl_ok(f'{EC2_GOAT_API}/health', timeout=6),
     }
 
 

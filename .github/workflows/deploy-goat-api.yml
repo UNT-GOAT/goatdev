@@ -61,26 +61,13 @@ jobs:
           aws-region: us-east-2
 
       - name: Deploy via SSM
-        id: deploy
         run: |
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids ${{ secrets.EC2_INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
-            --parameters commands='[
-              "set -e",
-              "docker network create herdsync-net >/dev/null 2>&1 || true",
-              "aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 937249941844.dkr.ecr.us-east-2.amazonaws.com",
-              "docker pull 937249941844.dkr.ecr.us-east-2.amazonaws.com/goat-api:latest",
-              "docker stop goat-api || true",
-              "docker rm goat-api || true",
-              "docker run -d --name goat-api --restart unless-stopped --network herdsync-net -p 8000:8000 -v auth-keys:/app/keys --env-file /home/ubuntu/goat-api.env 937249941844.dkr.ecr.us-east-2.amazonaws.com/goat-api:latest",
-              "sleep 10",
-              "curl -f http://localhost:8000/health"
-            ]' \
+            --parameters commands='["/home/ubuntu/deploy-scripts/deploy-goat-api.sh"]' \
             --query "Command.CommandId" \
             --output text)
-
-          echo "Command ID: $COMMAND_ID"
 
           aws ssm wait command-executed \
             --command-id $COMMAND_ID \
