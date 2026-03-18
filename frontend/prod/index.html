@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>HerdSync</title>
+<meta name="description" content="HerdSync — Herd Management Dashboard">
+<link rel="icon" href="/favicon.ico">
+<script src="/js/config.js"></script>
+<script src="/js/auth.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-deep: #08080f;
+  --bg-base: #0c0c14;
+  --bg-surface: #111119;
+  --bg-raised: #16161f;
+  --bg-input: #0a0a12;
+  --border: #1c1c28;
+  --border-subtle: #141420;
+
+  --text-primary: #e0e0e8;
+  --text-secondary: #999;
+  --text-muted: #5a5a6e;
+  --text-faint: #3a3a48;
+
+  --accent: #4caf50;
+  --accent-dim: rgba(76,175,80,0.10);
+  --accent-hover: rgba(76,175,80,0.18);
+  --blue: #42a5f5;
+  --orange: #ff9800;
+  --red: #e53935;
+  --purple: #9c27b0;
+  --teal: #26a69a;
+
+  --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --sidebar-w: 210px;
+  --sidebar-collapsed: 64px;
+  --topbar-h: 56px;
+  --radius: 10px;
+  --radius-sm: 6px;
+}
+
+html, body {
+  height: 100%; font-family: var(--font-body);
+  background: var(--bg-deep); color: var(--text-primary);
+  -webkit-font-smoothing: antialiased; overflow: hidden;
+}
+#app { display: none; height: 100%; }
+button { font-family: inherit; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input, select, textarea { font-family: inherit; }
+
+.shell { display: flex; height: 100%; }
+
+.sidebar {
+  width: var(--sidebar-w); background: var(--bg-base);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; flex-shrink: 0;
+  transition: width 0.2s ease; overflow: hidden; z-index: 10;
+}
+.sidebar.collapsed { width: var(--sidebar-collapsed); }
+.sidebar-brand {
+  padding: 18px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer; min-height: 60px; user-select: none;
+}
+.brand-icon {
+  width: 34px; height: 34px; border-radius: 8px;
+  background: linear-gradient(135deg, #4caf50, #2e7d32);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 800; color: #fff; flex-shrink: 0;
+}
+.brand-text { white-space: nowrap; }
+.brand-name { font-size: 15px; font-weight: 700; color: var(--accent); letter-spacing: .4px; }
+.brand-ver { font-size: 10px; color: var(--text-faint); }
+.collapsed .brand-text { display: none; }
+
+.sidebar-nav {
+  flex: 1; padding: 10px 8px;
+  display: flex; flex-direction: column; gap: 2px; overflow-y: auto;
+}
+.nav-btn {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 10px 12px;
+  border: none; border-radius: 8px; background: transparent;
+  color: var(--text-muted); font-size: 13px; font-weight: 400;
+  text-align: left; transition: all .15s; white-space: nowrap;
+}
+.nav-btn:hover { color: var(--text-secondary); background: var(--bg-surface); }
+.nav-btn.active { color: var(--accent); background: var(--accent-dim); font-weight: 600; }
+.nav-btn svg { flex-shrink: 0; }
+.collapsed .nav-label { display: none; }
+.collapsed .nav-btn { justify-content: center; padding: 10px; }
+
+.sidebar-footer {
+  padding: 12px 16px; border-top: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.sidebar-footer span { font-size: 10px; color: var(--text-faint); white-space: nowrap; }
+.sidebar-footer .logout-btn {
+  border: 1px solid var(--border); background: none; color: var(--text-faint);
+  padding: 3px 8px; border-radius: 4px; font-size: 10px; cursor: pointer;
+}
+.sidebar-footer .logout-btn:hover { border-color: var(--red); color: var(--red); }
+.collapsed .sidebar-footer { justify-content: center; }
+.collapsed .sidebar-footer span { display: none; }
+
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+.topbar {
+  height: var(--topbar-h); padding: 0 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--bg-base); flex-shrink: 0;
+}
+.topbar h1 { font-size: 16px; font-weight: 600; color: var(--text-secondary); }
+.topbar-right { display: flex; align-items: center; gap: 14px; }
+.topbar-status { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); }
+.topbar-user { font-size: 11px; color: var(--text-faint); }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.dot.green { background: var(--accent); }
+.dot.orange { background: var(--orange); }
+.dot.red { background: var(--red); }
+.dot.pulse { animation: pulse 1.5s ease infinite; }
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
+
+.content { flex: 1; overflow-y: auto; padding: 24px; }
+.page { display: none; }
+.page.active { display: block; }
+
+/* SHARED */
+.stat-row { display: flex; gap: 14px; margin-bottom: 24px; flex-wrap: wrap; }
+.stat-card {
+  flex: 1; min-width: 140px; background: var(--bg-surface);
+  border-radius: var(--radius); padding: 18px 20px; border-left: 3px solid var(--accent);
+}
+.stat-card[data-accent="blue"]   { border-left-color: var(--blue); }
+.stat-card[data-accent="orange"] { border-left-color: var(--orange); }
+.stat-card[data-accent="purple"] { border-left-color: var(--purple); }
+.stat-card[data-accent="teal"]   { border-left-color: var(--teal); }
+.stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px; }
+.stat-value { font-size: 28px; font-weight: 700; color: var(--text-primary); font-family: var(--font-mono); line-height: 1; }
+.stat-sub { font-size: 11px; color: var(--text-faint); margin-top: 6px; }
+
+.badge {
+  display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: .5px;
+  text-transform: uppercase; padding: 3px 10px; border-radius: 20px; white-space: nowrap;
+}
+.badge.lg { font-size: 13px; padding: 5px 14px; }
+.badge-cabprime  { color: #c0a040; background: rgba(192,160,64,.12); }
+.badge-prime     { color: #4caf50; background: rgba(76,175,80,.12); }
+.badge-choice    { color: #42a5f5; background: rgba(66,165,245,.12); }
+.badge-select    { color: #ff9800; background: rgba(255,152,0,.12); }
+.badge-noroll    { color: #777; background: rgba(120,120,120,.12); }
+.badge-ungraded  { color: var(--text-faint); font-style: italic; background: none; padding: 0; }
+
+.type-goat    { color: var(--accent); background: var(--accent-dim); }
+.type-chicken { color: var(--orange); background: rgba(255,152,0,.10); }
+.type-lamb    { color: var(--blue);   background: rgba(66,165,245,.10); }
+
+.panel { background: var(--bg-surface); border-radius: var(--radius); overflow: hidden; }
+.panel-header {
+  padding: 14px 20px; border-bottom: 1px solid var(--border-subtle);
+  font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px;
+}
+.tbl-head {
+  display: grid; padding: 10px 20px; font-size: 10px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 1.5px; border-bottom: 1px solid var(--border-subtle);
+}
+.tbl-row {
+  display: grid; padding: 12px 20px; align-items: center;
+  border-bottom: 1px solid var(--border-subtle); cursor: pointer; transition: background .12s;
+}
+.tbl-row:hover { background: rgba(76,175,80,.03); }
+.tbl-row:last-child { border-bottom: none; }
+
+.conf-bar { width: 40px; height: 4px; background: var(--bg-input); border-radius: 2px; overflow: hidden; display: inline-block; vertical-align: middle; }
+.conf-fill { height: 100%; border-radius: 2px; }
+
+.btn {
+  padding: 10px 20px; border: 1px solid var(--border); border-radius: 8px;
+  background: transparent; color: var(--text-secondary); font-size: 12px; transition: all .15s;
+}
+.btn:hover { border-color: var(--text-muted); color: var(--text-primary); }
+.btn-accent { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); font-weight: 600; }
+.btn-accent:hover { background: var(--accent-hover); }
+.btn-solid { border: none; background: var(--accent); color: #fff; font-weight: 600; padding: 12px 28px; font-size: 14px; border-radius: 8px; }
+.btn-solid:hover { background: #43a047; }
+.btn-solid:disabled { background: #333; color: #666; cursor: not-allowed; }
+.btn-sm { padding: 6px 12px; font-size: 11px; }
+.btn-danger { border-color: var(--red); color: var(--red); }
+.btn-danger:hover { background: rgba(229,57,53,.08); }
+
+.search-bar {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 14px; flex: 1; transition: border-color .15s;
+}
+.search-bar:focus-within { border-color: var(--accent); }
+.search-bar svg { color: var(--text-muted); flex-shrink: 0; }
+.search-bar input {
+  border: none; background: transparent; color: var(--text-primary);
+  font-size: 14px; outline: none; width: 100%;
+}
+.search-bar input::placeholder { color: var(--text-muted); }
+.search-clear {
+  border: none; background: none; color: var(--text-faint);
+  font-size: 18px; line-height: 1; padding: 0 4px; display: none; cursor: pointer;
+}
+.search-clear.visible { display: block; }
+.result-count { font-size: 11px; color: var(--text-muted); padding: 0 4px; flex-shrink: 0; white-space: nowrap; }
+
+.filter-chip {
+  padding: 10px 16px; border: 1px solid var(--border); border-radius: 8px;
+  background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 500;
+  white-space: nowrap; transition: all .15s;
+}
+.filter-chip:hover { border-color: var(--text-muted); color: var(--text-secondary); }
+.filter-chip.active { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+.filter-chip.small { padding: 6px 12px; font-size: 11px; }
+
+.match { background: rgba(76,175,80,.18); color: var(--accent); border-radius: 2px; padding: 0 1px; }
+.no-results { padding: 48px 20px; text-align: center; color: var(--text-muted); font-size: 14px; }
+.no-results .hint { font-size: 12px; color: var(--text-faint); margin-top: 8px; }
+
+.cam-slot {
+  aspect-ratio: 4/3; background: var(--bg-input); border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border-subtle); color: var(--text-faint); font-size: 12px;
+  overflow: hidden; position: relative;
+}
+.cam-slot img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.cam-slot .cam-label {
+  position: absolute; top: 6px; left: 8px;
+  font-size: 9px; text-transform: uppercase; letter-spacing: 1px;
+  color: rgba(255,255,255,.5); background: rgba(0,0,0,.5);
+  padding: 2px 6px; border-radius: 3px;
+}
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+
+.detail-panel {
+  width: 310px; flex-shrink: 0; background: var(--bg-surface);
+  border-radius: var(--radius); padding: 20px;
+}
+.section-label {
+  font-size: 11px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 8px;
+}
+.row-item { padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
+.row-item:last-child { border-bottom: none; }
+.inset { background: var(--bg-input); border-radius: 8px; padding: 12px; }
+
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,.65); display: none;
+  align-items: center; justify-content: center; backdrop-filter: blur(4px);
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 14px; width: 600px; max-width: 94vw;
+  max-height: 90vh; overflow-y: auto; box-shadow: 0 24px 80px rgba(0,0,0,.5);
+}
+.modal.wide { width: 720px; }
+.modal-header {
+  padding: 20px 24px; border-bottom: 1px solid var(--border-subtle);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-header h2 { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+.modal-close {
+  border: none; background: none; color: var(--text-muted);
+  font-size: 22px; line-height: 1; padding: 4px 8px; cursor: pointer;
+}
+.modal-close:hover { color: var(--text-primary); }
+.modal-body { padding: 24px; }
+.modal-footer {
+  padding: 16px 24px; border-top: 1px solid var(--border-subtle);
+  display: flex; justify-content: flex-end; gap: 10px;
+}
+
+.field { margin-bottom: 18px; }
+.field:last-child { margin-bottom: 0; }
+.field-label {
+  display: block; font-size: 11px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; font-weight: 500;
+}
+.field-input {
+  width: 100%; padding: 11px 14px; font-size: 14px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg-input); color: var(--text-primary);
+  transition: border-color .15s; outline: none;
+}
+.field-input:focus { border-color: var(--accent); }
+.field-input::placeholder { color: var(--text-faint); }
+.field-input.error { border-color: var(--red); }
+.field-input:disabled { opacity: .5; cursor: not-allowed; }
+.field-error { font-size: 11px; color: var(--red); margin-top: 4px; display: none; }
+.field-error.visible { display: block; }
+.field-hint { font-size: 10px; color: var(--text-faint); margin-top: 3px; }
+.field-hint.valid { color: var(--accent); }
+.field-hint.invalid { color: var(--red); }
+.field-row { display: flex; gap: 14px; }
+.field-row .field { flex: 1; }
+
+.grade-log {
+  background: #000; border-radius: 6px; padding: 10px 12px;
+  max-height: 180px; overflow-y: auto; font-size: 11px; line-height: 1.8;
+  font-family: var(--font-mono);
+}
+.grade-log .ok   { color: var(--accent); }
+.grade-log .err  { color: var(--red); }
+.grade-log .warn { color: var(--orange); }
+.grade-log .info { color: var(--text-muted); }
+
+.preview-grade-badge {
+  font-size: 28px; font-weight: 700; font-family: var(--font-mono);
+  text-align: center; padding: 16px; border-radius: 10px; margin-bottom: 16px;
+}
+.preview-metric { text-align: center; padding: 10px; }
+.preview-metric .val { font-size: 20px; font-weight: 700; font-family: var(--font-mono); color: var(--text-primary); }
+.preview-metric .lbl { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+
+.toast {
+  position: fixed; bottom: 24px; right: 24px; z-index: 2000;
+  background: var(--bg-raised); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 20px; min-width: 260px;
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; color: var(--text-primary);
+  box-shadow: 0 8px 32px rgba(0,0,0,.4);
+  transform: translateY(100px); opacity: 0; transition: all .3s ease;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast .toast-icon { font-size: 18px; }
+.toast.success .toast-icon { color: var(--accent); }
+.toast.error .toast-icon { color: var(--red); }
+
+.spinner {
+  width: 18px; height: 18px; border: 2px solid var(--border);
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: spin .6s linear infinite; display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-row { padding: 32px; text-align: center; color: var(--text-muted); font-size: 13px; }
+.load-error { padding: 12px 16px; background: rgba(229,57,53,.06); border: 1px solid rgba(229,57,53,.15); border-radius: 8px; color: var(--red); font-size: 12px; margin-bottom: 16px; }
+
+.flex { display: flex; } .flex-col { flex-direction: column; } .flex-wrap { flex-wrap: wrap; }
+.gap-8 { gap: 8px; } .gap-10 { gap: 10px; } .gap-12 { gap: 12px; } .gap-14 { gap: 14px; } .gap-16 { gap: 16px; }
+.items-center { align-items: center; } .justify-between { justify-content: space-between; }
+.flex-1 { flex: 1; min-width: 0; } .ml-auto { margin-left: auto; }
+.mb-16 { margin-bottom: 16px; } .mb-24 { margin-bottom: 24px; }
+.mt-14 { margin-top: 14px; } .mt-16 { margin-top: 16px; }
+.p-20 { padding: 20px; }
+.text-mono { font-family: var(--font-mono); }
+.text-xs { font-size: 10px; } .text-sm { font-size: 11px; } .text-md { font-size: 12px; }
+.text-base { font-size: 13px; } .text-lg { font-size: 14px; }
+.text-muted { color: var(--text-muted); } .text-faint { color: var(--text-faint); }
+.text-secondary { color: var(--text-secondary); } .text-primary { color: var(--text-primary); }
+.text-accent { color: var(--accent); }
+.text-upper { text-transform: uppercase; letter-spacing: 1.5px; }
+.fw-500 { font-weight: 500; } .fw-600 { font-weight: 600; } .fw-700 { font-weight: 700; }
+
+@media (max-width: 900px) {
+  .grid-2 { grid-template-columns: 1fr; }
+  .grid-3 { grid-template-columns: 1fr 1fr; }
+  .detail-panel { display: none; }
+  .field-row { flex-direction: column; gap: 0; }
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand" onclick="toggleSidebar()">
+      <div class="brand-icon">H</div>
+      <div class="brand-text"><div class="brand-name">HerdSync</div><div class="brand-ver">v1.0</div></div>
+    </div>
+    <nav class="sidebar-nav">
+      <button class="nav-btn active" data-page="dashboard">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span class="nav-label">Dashboard</span>
+      </button>
+      <button class="nav-btn" data-page="animals">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+        <span class="nav-label">Animals</span>
+      </button>
+      <button class="nav-btn" data-page="providers">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        <span class="nav-label">Providers</span>
+      </button>
+      <button class="nav-btn" data-page="grading">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        <span class="nav-label">Grading</span>
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <span id="footerUser">—</span>
+      <button class="logout-btn" onclick="HerdAuth.logout()">Logout</button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <h1 id="pageTitle">Dashboard</h1>
+      <div class="topbar-right">
+        <div class="topbar-status" id="dbStatus"><span class="dot orange pulse"></span><span>Connecting...</span></div>
+        <div class="topbar-user" id="topbarUser"></div>
+      </div>
+    </header>
+    <div class="content">
+
+      <!-- Load errors banner -->
+      <div id="loadErrors" style="display:none;"></div>
+
+      <!-- DASHBOARD -->
+      <div class="page active" id="page-dashboard">
+        <div class="stat-row">
+          <div class="stat-card"><div class="stat-label">Goats</div><div class="stat-value" id="statGoats">—</div><div class="stat-sub" id="statGoatsSub">loading</div></div>
+          <div class="stat-card" data-accent="orange"><div class="stat-label">Chickens</div><div class="stat-value" id="statChickens">—</div><div class="stat-sub" id="statChickensSub">loading</div></div>
+          <div class="stat-card" data-accent="blue"><div class="stat-label">Lambs</div><div class="stat-value" id="statLambs">—</div><div class="stat-sub" id="statLambsSub">loading</div></div>
+          <div class="stat-card" data-accent="purple"><div class="stat-label">Providers</div><div class="stat-value" id="statProviders">—</div><div class="stat-sub">registered</div></div>
+          <div class="stat-card" data-accent="teal"><div class="stat-label">Grades Today</div><div class="stat-value" id="statGrades">—</div><div class="stat-sub" id="statGradesSub">loading</div></div>
+        </div>
+        <div class="grid-2 mb-24">
+          <div class="panel p-20"><div class="section-label" style="margin-bottom:14px;">Recent Grades</div><div id="dashRecentGrades"><div class="loading-row"><span class="spinner"></span></div></div></div>
+          <div class="panel p-20"><div class="section-label" style="margin-bottom:14px;">Providers</div><div id="dashProviders"><div class="loading-row"><span class="spinner"></span></div></div></div>
+        </div>
+        <div class="section-label" style="margin-bottom:8px;">Live Cameras</div>
+        <div class="grid-3" id="dashCams">
+          <div class="cam-slot"><div class="cam-label">Side</div>—</div>
+          <div class="cam-slot"><div class="cam-label">Top</div>—</div>
+          <div class="cam-slot"><div class="cam-label">Front</div>—</div>
+        </div>
+      </div>
+
+      <!-- ANIMALS -->
+      <div class="page" id="page-animals">
+        <div class="flex gap-10 mb-16 flex-wrap">
+          <div class="search-bar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="animalSearch" placeholder="Search serial ID, description, grade, provider..." oninput="filterAnimals()">
+            <button class="search-clear" id="animalClear" onclick="clearAnimalSearch()">&times;</button>
+            <span class="result-count" id="animalCount"></span>
+          </div>
+          <button class="filter-chip active" onclick="setAnimalFilter(this,'all')">All</button>
+          <button class="filter-chip" onclick="setAnimalFilter(this,'goats')">Goats</button>
+          <button class="filter-chip" onclick="setAnimalFilter(this,'chickens')">Chickens</button>
+          <button class="filter-chip" onclick="setAnimalFilter(this,'lambs')">Lambs</button>
+          <button class="filter-chip" onclick="setAnimalFilter(this,'graded')">Graded</button>
+          <button class="filter-chip" onclick="setAnimalFilter(this,'pending')">Pending</button>
+        </div>
+        <div class="flex gap-10 mb-16 items-center">
+          <span class="text-xs text-muted text-upper">Sort</span>
+          <button class="filter-chip small active" onclick="setAnimalSort(this,'id-desc')">ID ↓</button>
+          <button class="filter-chip small" onclick="setAnimalSort(this,'id-asc')">ID ↑</button>
+          <button class="filter-chip small" onclick="setAnimalSort(this,'weight-desc')">Weight ↓</button>
+          <button class="filter-chip small" onclick="setAnimalSort(this,'weight-asc')">Weight ↑</button>
+          <button class="filter-chip small" onclick="setAnimalSort(this,'grade')">Grade</button>
+        </div>
+        <div class="flex gap-16">
+          <div class="panel flex-1">
+            <div class="tbl-head" style="grid-template-columns:90px 80px 1fr 80px 100px 1fr;">
+              <span>Serial</span><span>Type</span><span>Description</span><span>Weight</span><span>Grade</span><span>Provider</span>
+            </div>
+            <div id="animalTableBody"><div class="loading-row"><span class="spinner"></span></div></div>
+          </div>
+          <div class="detail-panel" id="animalDetail" style="display:none;">
+            <div class="section-label">Animal Detail</div>
+            <div id="detailSerial" style="font-size:22px;font-weight:700;color:var(--text-primary);margin-bottom:2px;">—</div>
+            <div id="detailType" class="text-muted text-sm" style="margin-bottom:4px;">—</div>
+            <div id="detailDesc" class="text-secondary text-base" style="margin-bottom:16px;">—</div>
+            <div class="flex gap-10 mb-16">
+              <div class="inset flex-1" style="text-align:center;"><div id="detailHW" class="text-mono fw-700" style="font-size:20px;color:var(--text-primary);">—</div><div class="text-xs text-muted text-upper">hang wt</div></div>
+              <div class="inset flex-1" style="text-align:center;"><div id="detailLW" class="text-mono fw-700" style="font-size:20px;color:var(--text-primary);">—</div><div class="text-xs text-muted text-upper">live wt</div></div>
+            </div>
+            <div class="flex gap-10 mb-16"><div class="inset flex-1" style="text-align:center;"><div id="detailGrade">—</div><div class="text-xs text-muted text-upper" style="margin-top:4px;">grade</div></div></div>
+            <div class="section-label">Provider</div>
+            <div class="inset mb-16"><div id="detailProvider" class="text-secondary text-base">—</div></div>
+            <div class="section-label">Dates</div>
+            <div class="inset mb-16" style="font-size:12px;color:var(--text-muted);line-height:1.8;">
+              <div>Kill: <span id="detailKill" class="text-secondary">—</span></div>
+              <div>Process: <span id="detailProcess" class="text-secondary">—</span></div>
+            </div>
+            <div id="detailActions" class="flex gap-8" style="display:none;">
+              <button class="btn btn-accent flex-1" onclick="openGradeForAnimal()">Grade</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PROVIDERS -->
+      <div class="page" id="page-providers">
+        <div class="flex gap-10 mb-16">
+          <div class="search-bar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="provSearch" placeholder="Search name, company, email, phone..." oninput="filterProviders()">
+            <button class="search-clear" id="provClear" onclick="clearProvSearch()">&times;</button>
+            <span class="result-count" id="provCount"></span>
+          </div>
+          <button class="filter-chip active" onclick="setProvFilter(this,'all')">All</button>
+          <button class="filter-chip" onclick="setProvFilter(this,'active')">Active</button>
+          <button class="btn btn-accent" onclick="openAddProvider()">+ Add Provider</button>
+        </div>
+        <div class="grid-cards" id="provGrid"><div class="loading-row" style="grid-column:1/-1;"><span class="spinner"></span></div></div>
+      </div>
+
+      <!-- GRADING -->
+      <div class="page" id="page-grading">
+        <div class="panel p-20 mb-16" style="border:1px solid var(--border);">
+          <div class="flex justify-between items-center mb-16">
+            <div><div class="section-label" style="margin-bottom:4px;">New Grade</div><div class="text-secondary text-base">Capture from all 3 cameras, process on EC2, review before saving</div></div>
+          </div>
+          <div class="field-row mb-16">
+            <div class="field" style="margin-bottom:0;">
+              <label class="field-label" for="gradeSerial">Serial ID *</label>
+              <input class="field-input" id="gradeSerial" type="number" placeholder="e.g. 1042" oninput="validateGradeSerial()">
+              <div class="field-hint" id="gradeSerialHint">Enter an existing goat serial ID</div>
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label class="field-label" for="gradeLiveWeight">Live Weight (lbs) *</label>
+              <input class="field-input" id="gradeLiveWeight" type="number" step="0.1" placeholder="e.g. 85.5">
+            </div>
+            <div style="display:flex;align-items:flex-end;">
+              <button class="btn-solid" id="gradeBtn" onclick="startGrade()">Start Grade</button>
+            </div>
+          </div>
+          <div class="grid-3" id="gradeCams">
+            <div class="cam-slot"><span class="cam-label">Side</span>—</div>
+            <div class="cam-slot"><span class="cam-label">Top</span>—</div>
+            <div class="cam-slot"><span class="cam-label">Front</span>—</div>
+          </div>
+          <div class="grade-log mt-16" id="gradeLog" style="display:none;"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">Grade History</div>
+          <div id="gradeHistoryBody"><div class="loading-row"><span class="spinner"></span></div></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ADD PROVIDER MODAL -->
+<div class="modal-overlay" id="addProviderModal">
+  <div class="modal">
+    <div class="modal-header"><h2>Add Provider</h2><button class="modal-close" onclick="closeAddProvider()">&times;</button></div>
+    <div class="modal-body">
+      <div class="field-row">
+        <div class="field"><label class="field-label" for="provName">Name *</label><input class="field-input" id="provName" type="text" placeholder="e.g. Dave Morrison"><div class="field-error" id="provNameErr">Name is required</div></div>
+        <div class="field"><label class="field-label" for="provCompany">Company</label><input class="field-input" id="provCompany" type="text" placeholder="e.g. Morrison Ranch"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label class="field-label" for="provPhone">Phone *</label><input class="field-input" id="provPhone" type="tel" placeholder="(555) 555-0000"><div class="field-error" id="provPhoneErr">Phone is required</div></div>
+        <div class="field"><label class="field-label" for="provEmail">Email</label><input class="field-input" id="provEmail" type="email" placeholder="name@business.com"><div class="field-error" id="provEmailErr">Enter a valid email</div></div>
+      </div>
+      <div class="field"><label class="field-label" for="provAddress">Address</label><input class="field-input" id="provAddress" type="text" placeholder="Street, city, state, zip"></div>
+    </div>
+    <div class="modal-footer"><button class="btn" onclick="closeAddProvider()">Cancel</button><button class="btn btn-solid" onclick="saveProvider()" style="padding:10px 24px;font-size:13px;">Save Provider</button></div>
+  </div>
+</div>
+
+<!-- GRADE REVIEW MODAL -->
+<div class="modal-overlay" id="gradeReviewModal">
+  <div class="modal wide">
+    <div class="modal-header"><h2>Grade Review</h2><span class="text-sm text-muted" id="reviewSubtitle">Review before saving to database</span></div>
+    <div class="modal-body">
+      <div id="reviewGradeBadge" class="preview-grade-badge">—</div>
+      <div class="flex gap-12 mb-16">
+        <div class="inset flex-1 preview-metric"><div class="val" id="reviewWeight">—</div><div class="lbl">Live Weight</div></div>
+        <div class="inset flex-1 preview-metric"><div class="val" id="reviewViews">—</div><div class="lbl">Views OK</div></div>
+        <div class="inset flex-1 preview-metric"><div class="val" id="reviewTime">—</div><div class="lbl">Total Time</div></div>
+      </div>
+      <div class="section-label">Debug Overlays</div>
+      <div class="grid-3 mb-16">
+        <div class="cam-slot" id="reviewSide"><span class="cam-label">Side</span></div>
+        <div class="cam-slot" id="reviewTop"><span class="cam-label">Top</span></div>
+        <div class="cam-slot" id="reviewFront"><span class="cam-label">Front</span></div>
+      </div>
+      <div class="section-label">Measurements</div>
+      <div class="inset mb-16"><pre id="reviewMeasurements" style="margin:0;white-space:pre-wrap;font-family:var(--font-mono);font-size:11px;color:var(--text-secondary);">—</pre></div>
+      <div id="reviewWarnings" style="display:none;"><div class="section-label">Warnings</div><div class="inset" style="color:var(--orange);font-size:12px;"><ul id="reviewWarningList" style="margin:0;padding-left:16px;"></ul></div></div>
+    </div>
+    <div class="modal-footer" id="reviewFooter">
+      <button class="btn btn-danger" onclick="rejectGrade()">Discard</button>
+      <button class="btn btn-solid" onclick="acceptGrade()" id="acceptGradeBtn" style="padding:10px 24px;font-size:13px;">Accept &amp; Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- DISCARD CONFIRM MODAL -->
+<div class="modal-overlay" id="discardConfirmModal">
+  <div class="modal" style="width:400px;">
+    <div class="modal-header"><h2>Discard Grade?</h2></div>
+    <div class="modal-body" style="font-size:14px;color:var(--text-secondary);line-height:1.6;">
+      This will throw away the grade result. You'll need to re-run the full capture and grading pipeline to get a new result.
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cancelDiscard()">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmDiscard()" style="font-weight:600;">Yes, Discard</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span class="toast-icon"></span><span class="toast-msg"></span></div>
+
+<script>
+// ============================================================
+// STATE
+// ============================================================
+let allAnimals = [];
+let allProviders = [];
+let allGrades = [];
+let providerMap = {};
+let loadErrors = [];
+
+let animalFilter = 'all';
+let animalSort = 'id-desc';
+let provFilter = 'all';
+let selectedAnimalId = null;
+let selectedAnimalType = null;
+let currentPage = 'dashboard';
+
+let pendingGradeResult = null;
+
+// ============================================================
+// AUTH + INIT
+// ============================================================
+function showApp(user) {
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('topbarUser').textContent = user.username + ' (' + user.role + ')';
+  document.getElementById('footerUser').textContent = user.username;
+  setCamerasForPage('dashboard');
+  loadAll();
+}
+
+async function loadAll() {
+  loadErrors = [];
+
+  // Providers first — other data depends on providerMap
+  try {
+    await loadProviders();
+  } catch (err) {
+    loadErrors.push('Providers: ' + err.message);
+  }
+
+  // Load animals + grades in parallel, each independently
+  const jobs = [
+    loadGoats().catch(err => { loadErrors.push('Goats: ' + err.message); }),
+    loadChickens().catch(err => { loadErrors.push('Chickens: ' + err.message); }),
+    loadLambs().catch(err => { loadErrors.push('Lambs: ' + err.message); }),
+    loadGrades().catch(err => { loadErrors.push('Grades: ' + err.message); }),
+  ];
+  await Promise.all(jobs);
+
+  // Render whatever we have
+  updateDashboard();
+  filterAnimals();
+  filterProviders();
+  renderGradeHistory();
+
+  // Status
+  if (loadErrors.length === 0) {
+    setDbStatus('ok');
+  } else if (allAnimals.length > 0 || allProviders.length > 0) {
+    setDbStatus('partial');
+    showLoadErrors();
+  } else {
+    setDbStatus('error');
+    showLoadErrors();
+  }
+}
+
+function setDbStatus(state) {
+  const el = document.getElementById('dbStatus');
+  if (state === 'ok') el.innerHTML = '<span class="dot green"></span><span>Connected</span>';
+  else if (state === 'partial') el.innerHTML = '<span class="dot orange"></span><span>Partial</span>';
+  else el.innerHTML = '<span class="dot red"></span><span>DB Error</span>';
+}
+
+function showLoadErrors() {
+  const el = document.getElementById('loadErrors');
+  el.style.display = '';
+  el.innerHTML = loadErrors.map(e => '<div class="load-error">' + esc(e) + '</div>').join('');
+}
+
+// ============================================================
+// DATA LOADING
+// ============================================================
+async function dbFetch(path) {
+  const resp = await HerdAuth.fetch(CONFIG.DB_BASE + path);
+  if (!resp.ok) throw new Error(resp.status + ' on ' + path);
+  return resp.json();
+}
+
+async function loadProviders() {
+  allProviders = await dbFetch('/providers');
+  providerMap = {};
+  allProviders.forEach(p => { providerMap[p.id] = p; });
+}
+
+async function loadGoats() {
+  const rows = await dbFetch('/goats');
+  const typed = rows.map(r => ({
+    ...r, type: 'goat',
+    description: r.description || r.hook_id || '',
+    providerName: providerMap[r.prov_id]?.name || '—',
+  }));
+  allAnimals = allAnimals.filter(a => a.type !== 'goat').concat(typed);
+}
+
+async function loadChickens() {
+  const rows = await dbFetch('/chickens');
+  const typed = rows.map(r => ({
+    ...r, type: 'chicken', grade: null, description: '',
+    providerName: providerMap[r.prov_id]?.name || '—',
+  }));
+  allAnimals = allAnimals.filter(a => a.type !== 'chicken').concat(typed);
+}
+
+async function loadLambs() {
+  const rows = await dbFetch('/lambs');
+  const typed = rows.map(r => ({
+    ...r, type: 'lamb', description: r.description || '',
+    providerName: providerMap[r.prov_id]?.name || '—',
+  }));
+  allAnimals = allAnimals.filter(a => a.type !== 'lamb').concat(typed);
+}
+
+async function loadGrades() {
+  allGrades = await dbFetch('/grading?limit=50');
+}
+
+// ============================================================
+// CAMERAS — toggle on/off per page
+// ============================================================
+let activeCamTarget = null; // 'dashboard' | 'grading' | null
+
+function setCamerasForPage(page) {
+  const wantCams = (page === 'dashboard' || page === 'grading');
+  const target = wantCams ? page : null;
+
+  if (target === activeCamTarget) return;
+
+  // Tear down old streams
+  if (activeCamTarget) {
+    const containerId = activeCamTarget === 'dashboard' ? 'dashCams' : 'gradeCams';
+    const container = document.getElementById(containerId);
+    if (container) {
+      container.querySelectorAll('img[data-cam]').forEach(img => { img.src = ''; img.removeAttribute('src'); });
+    }
+  }
+
+  activeCamTarget = target;
+
+  // Set up new streams
+  if (target) {
+    const containerId = target === 'dashboard' ? 'dashCams' : 'gradeCams';
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const token = HerdAuth.getAccessToken();
+    const cams = ['side', 'top', 'front'];
+    const slots = container.querySelectorAll('.cam-slot');
+    slots.forEach((slot, i) => {
+      let img = slot.querySelector('img[data-cam]');
+      if (!img) {
+        img = document.createElement('img');
+        img.dataset.cam = cams[i];
+        img.alt = cams[i];
+        slot.insertBefore(img, slot.firstChild);
+      }
+      img.src = CONFIG.API_BASE + '/api/viewfocus/stream/' + cams[i] + '?token=' + token;
+    });
+  }
+}
+
+// Refresh token on dynamically created cam imgs
+function refreshCamTokens() {
+  const token = HerdAuth.getAccessToken();
+  document.querySelectorAll('img[data-cam]').forEach(img => {
+    if (img.src && img.src.includes('token=')) {
+      const base = img.src.split('?')[0];
+      img.src = base + '?token=' + token;
+    }
+  });
+}
+
+// Hook into auth.js token refresh if available
+if (typeof HerdAuth !== 'undefined' && HerdAuth._onTokenRefresh) {
+  HerdAuth._onTokenRefresh(refreshCamTokens);
+}
+// Fallback: refresh every 13 min
+setInterval(refreshCamTokens, 13 * 60 * 1000);
+
+// ============================================================
+// NAV
+// ============================================================
+const TITLES = { dashboard:'Dashboard', animals:'Animals', providers:'Providers', grading:'Grading' };
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const pg = btn.dataset.page;
+    currentPage = pg;
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-' + pg).classList.add('active');
+    document.getElementById('pageTitle').textContent = TITLES[pg] || pg;
+    setCamerasForPage(pg);
+  });
+});
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('collapsed'); }
+
+// ============================================================
+// HELPERS
+// ============================================================
+function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function highlight(text, q) {
+  if (!q || !text) return esc(text || '');
+  const s = esc(text), lo = s.toLowerCase(), ql = q.toLowerCase();
+  let r = '', last = 0, idx;
+  while ((idx = lo.indexOf(ql, last)) !== -1) {
+    r += s.slice(last, idx) + '<span class="match">' + s.slice(idx, idx + ql.length) + '</span>';
+    last = idx + ql.length;
+  }
+  return r + s.slice(last);
+}
+function fmtDateShort(d) { if (!d) return '—'; return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
+function fmtDate(d) { if (!d) return '—'; return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
+function wt(v) { return v != null ? parseFloat(v).toFixed(1) : '—'; }
+
+const GRADE_ORDER = {'CAB Prime':1,'Prime':2,'Choice':3,'Select':4,'No Roll':5};
+function gradeBadge(g) {
+  if (!g) return '<span class="badge badge-ungraded">Ungraded</span>';
+  return '<span class="badge ' + gradeClass(g) + '">' + esc(g) + '</span>';
+}
+function gradeClass(g) {
+  if (!g) return 'badge-ungraded';
+  const l = g.toLowerCase().replace(/\s+/g,'');
+  if (l==='cabprime') return 'badge-cabprime';
+  if (l==='prime') return 'badge-prime';
+  if (l==='choice') return 'badge-choice';
+  if (l==='select') return 'badge-select';
+  if (l==='noroll') return 'badge-noroll';
+  return 'badge-ungraded';
+}
+function typeBadge(t) { return '<span class="badge type-' + t + '">' + t.charAt(0).toUpperCase() + t.slice(1) + '</span>'; }
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function updateDashboard() {
+  const goats = allAnimals.filter(a => a.type === 'goat');
+  const chickens = allAnimals.filter(a => a.type === 'chicken');
+  const lambs = allAnimals.filter(a => a.type === 'lamb');
+
+  document.getElementById('statGoats').textContent = goats.length;
+  document.getElementById('statGoatsSub').textContent = goats.filter(g => g.grade).length + ' graded';
+  document.getElementById('statChickens').textContent = chickens.length;
+  document.getElementById('statChickensSub').textContent = 'in database';
+  document.getElementById('statLambs').textContent = lambs.length;
+  document.getElementById('statLambsSub').textContent = lambs.filter(l => l.grade).length + ' graded';
+  document.getElementById('statProviders').textContent = allProviders.length;
+
+  const today = new Date().toDateString();
+  const todayGrades = allGrades.filter(g => new Date(g.graded_at).toDateString() === today);
+  document.getElementById('statGrades').textContent = todayGrades.length;
+  document.getElementById('statGradesSub').textContent = allGrades.length + ' total';
+
+  const recent = allGrades.slice(0, 5);
+  const gradeEl = document.getElementById('dashRecentGrades');
+  if (!recent.length) { gradeEl.innerHTML = '<div class="text-muted text-md" style="padding:8px 0;">No grades yet</div>'; }
+  else {
+    gradeEl.innerHTML = recent.map(g =>
+      '<div class="row-item flex items-center justify-between"><div><span class="text-primary fw-600 text-lg">' + g.serial_id + '</span>'
+      + (g.hook_id ? '<span class="text-muted text-md" style="margin-left:8px;">' + esc(g.hook_id) + '</span>' : '')
+      + '</div><div class="flex items-center gap-10">' + gradeBadge(g.grade) + '<span class="text-faint text-sm">' + fmtDateShort(g.graded_at) + '</span></div></div>'
+    ).join('');
+  }
+
+  const provEl = document.getElementById('dashProviders');
+  if (!allProviders.length) { provEl.innerHTML = '<div class="text-muted text-md" style="padding:8px 0;">No providers</div>'; }
+  else {
+    provEl.innerHTML = allProviders.slice(0, 6).map(p => {
+      const cnt = allAnimals.filter(a => a.prov_id === p.id).length;
+      return '<div class="row-item flex items-center justify-between"><span class="text-primary fw-600 text-lg">' + esc(p.name) + '</span>'
+        + '<span class="badge badge-prime" style="font-size:11px;">' + cnt + ' head</span></div>';
+    }).join('');
+  }
+}
+
+// ============================================================
+// ANIMALS
+// ============================================================
+function filterAnimals() {
+  const q = (document.getElementById('animalSearch')?.value || '').trim().toLowerCase();
+  document.getElementById('animalClear').classList.toggle('visible', q.length > 0);
+
+  let results = allAnimals.filter(a => {
+    if (animalFilter === 'goats' && a.type !== 'goat') return false;
+    if (animalFilter === 'chickens' && a.type !== 'chicken') return false;
+    if (animalFilter === 'lambs' && a.type !== 'lamb') return false;
+    if (animalFilter === 'graded' && !a.grade) return false;
+    if (animalFilter === 'pending' && a.grade) return false;
+    if (!q) return true;
+    return [String(a.serial_id), a.type, a.description, a.grade || 'ungraded', a.providerName, String(a.hang_weight || '')]
+      .join(' ').toLowerCase().includes(q);
+  });
+
+  results.sort((a, b) => {
+    if (animalSort === 'id-desc') return b.serial_id - a.serial_id;
+    if (animalSort === 'id-asc') return a.serial_id - b.serial_id;
+    if (animalSort === 'weight-desc') return (b.hang_weight || 0) - (a.hang_weight || 0);
+    if (animalSort === 'weight-asc') return (a.hang_weight || 0) - (b.hang_weight || 0);
+    if (animalSort === 'grade') return (GRADE_ORDER[a.grade] || 99) - (GRADE_ORDER[b.grade] || 99);
+    return 0;
+  });
+
+  document.getElementById('animalCount').textContent = results.length + ' of ' + allAnimals.length;
+  renderAnimalTable(results, q);
+}
+
+function clearAnimalSearch() { document.getElementById('animalSearch').value = ''; document.getElementById('animalClear').classList.remove('visible'); filterAnimals(); document.getElementById('animalSearch').focus(); }
+function setAnimalFilter(chip, v) { chip.closest('.flex').querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active')); chip.classList.add('active'); animalFilter = v; filterAnimals(); }
+function setAnimalSort(chip, v) { chip.closest('.flex').querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active')); chip.classList.add('active'); animalSort = v; filterAnimals(); }
+
+function renderAnimalTable(animals, q) {
+  const body = document.getElementById('animalTableBody');
+  if (!animals.length) { body.innerHTML = '<div class="no-results">No animals match<div class="hint">Try a different search or filter</div></div>'; document.getElementById('animalDetail').style.display='none'; return; }
+  body.innerHTML = animals.map(a => {
+    const sel = (a.serial_id === selectedAnimalId && a.type === selectedAnimalType) ? 'background:rgba(76,175,80,.06);' : '';
+    return '<div class="tbl-row" style="grid-template-columns:90px 80px 1fr 80px 100px 1fr;' + sel + '" onclick="selectAnimal(' + a.serial_id + ',\'' + a.type + '\')">'
+      + '<span class="text-primary fw-600 text-mono">' + highlight(String(a.serial_id), q) + '</span>'
+      + typeBadge(a.type)
+      + '<span class="text-secondary">' + highlight(a.description || '—', q) + '</span>'
+      + '<span class="text-secondary text-mono">' + wt(a.hang_weight) + '</span>'
+      + gradeBadge(a.grade)
+      + '<span class="text-muted">' + highlight(a.providerName, q) + '</span></div>';
+  }).join('');
+}
+
+function selectAnimal(serial, type) {
+  const a = allAnimals.find(x => x.serial_id === serial && x.type === type);
+  if (!a) return;
+  selectedAnimalId = serial; selectedAnimalType = type;
+  filterAnimals();
+  document.getElementById('animalDetail').style.display = '';
+  document.getElementById('detailSerial').textContent = a.serial_id;
+  document.getElementById('detailType').innerHTML = typeBadge(a.type);
+  document.getElementById('detailDesc').textContent = a.description || '—';
+  document.getElementById('detailHW').textContent = wt(a.hang_weight);
+  document.getElementById('detailLW').textContent = wt(a.live_weight);
+  document.getElementById('detailGrade').innerHTML = gradeBadge(a.grade);
+  document.getElementById('detailProvider').textContent = a.providerName;
+  document.getElementById('detailKill').textContent = fmtDate(a.kill_date);
+  document.getElementById('detailProcess').textContent = fmtDate(a.process_date);
+  document.getElementById('detailActions').style.display = a.type === 'goat' ? '' : 'none';
+}
+
+function openGradeForAnimal() {
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('[data-page="grading"]').classList.add('active');
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-grading').classList.add('active');
+  document.getElementById('pageTitle').textContent = 'Grading';
+  currentPage = 'grading';
+  setCamerasForPage('grading');
+  document.getElementById('gradeSerial').value = selectedAnimalId;
+  validateGradeSerial();
+  document.getElementById('gradeLiveWeight').focus();
+}
+
+// ============================================================
+// PROVIDERS
+// ============================================================
+function filterProviders() {
+  const q = (document.getElementById('provSearch')?.value || '').trim().toLowerCase();
+  document.getElementById('provClear').classList.toggle('visible', q.length > 0);
+  let results = allProviders.filter(p => {
+    if (provFilter === 'active' && p.status !== 'active') return false;
+    if (!q) return true;
+    return [p.name, p.company, p.phone, p.email, p.address].join(' ').toLowerCase().includes(q);
+  });
+  document.getElementById('provCount').textContent = results.length + ' of ' + allProviders.length;
+  renderProvGrid(results, q);
+}
+function clearProvSearch() { document.getElementById('provSearch').value=''; document.getElementById('provClear').classList.remove('visible'); filterProviders(); document.getElementById('provSearch').focus(); }
+function setProvFilter(chip, v) { chip.closest('.flex').querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active')); chip.classList.add('active'); provFilter = v; filterProviders(); }
+
+function renderProvGrid(providers, q) {
+  const grid = document.getElementById('provGrid');
+  if (!providers.length) { grid.innerHTML = '<div class="no-results" style="grid-column:1/-1;">No providers match</div>'; return; }
+  grid.innerHTML = providers.map(p => {
+    const cnt = allAnimals.filter(a => a.prov_id === p.id).length;
+    const headBadge = cnt > 0 ? '<span class="badge badge-prime" style="font-size:11px;">' + cnt + ' head</span>'
+      : '<span style="font-size:11px;color:var(--text-muted);background:var(--bg-raised);padding:3px 10px;border-radius:20px;">0 head</span>';
+    return '<div class="panel p-20" style="cursor:pointer;border:1px solid transparent;transition:border-color .2s;" onmouseenter="this.style.borderColor=\'var(--border)\'" onmouseleave="this.style.borderColor=\'transparent\'">'
+      + '<div class="flex justify-between items-center" style="margin-bottom:12px;"><div>'
+        + '<div style="font-size:16px;font-weight:600;color:var(--text-primary);margin-bottom:2px;">' + highlight(p.name, q) + '</div>'
+        + (p.company ? '<div style="font-size:12px;color:var(--text-muted);">' + highlight(p.company, q) + '</div>' : '')
+      + '</div>' + headBadge + '</div>'
+      + '<div class="flex gap-16" style="font-size:12px;color:var(--text-muted);">' + (p.phone ? '<span>' + highlight(p.phone, q) + '</span>' : '') + (p.email ? '<span>' + highlight(p.email, q) + '</span>' : '') + '</div>'
+      + (p.address ? '<div style="margin-top:6px;font-size:11px;color:var(--text-muted);">' + highlight(p.address, q) + '</div>' : '')
+      + '<div style="margin-top:10px;border-top:1px solid var(--border-subtle);padding-top:8px;font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:1px;">' + (p.status || 'active') + '</div></div>';
+  }).join('');
+}
+
+function openAddProvider() {
+  document.getElementById('addProviderModal').classList.add('open');
+  ['provName','provCompany','provPhone','provEmail','provAddress'].forEach(id => { document.getElementById(id).value=''; document.getElementById(id).classList.remove('error'); });
+  document.querySelectorAll('#addProviderModal .field-error').forEach(e => e.classList.remove('visible'));
+  setTimeout(() => document.getElementById('provName').focus(), 100);
+}
+function closeAddProvider() { document.getElementById('addProviderModal').classList.remove('open'); }
+
+async function saveProvider() {
+  let ok = true;
+  const name = document.getElementById('provName').value.trim();
+  const phone = document.getElementById('provPhone').value.trim();
+  const email = document.getElementById('provEmail').value.trim();
+  if (!name) { document.getElementById('provName').classList.add('error'); document.getElementById('provNameErr').classList.add('visible'); ok=false; } else { document.getElementById('provName').classList.remove('error'); document.getElementById('provNameErr').classList.remove('visible'); }
+  if (!phone) { document.getElementById('provPhone').classList.add('error'); document.getElementById('provPhoneErr').classList.add('visible'); ok=false; } else { document.getElementById('provPhone').classList.remove('error'); document.getElementById('provPhoneErr').classList.remove('visible'); }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { document.getElementById('provEmail').classList.add('error'); document.getElementById('provEmailErr').classList.add('visible'); ok=false; } else { document.getElementById('provEmail').classList.remove('error'); document.getElementById('provEmailErr').classList.remove('visible'); }
+  if (!ok) return;
+
+  try {
+    const resp = await HerdAuth.fetch(CONFIG.DB_BASE + '/providers', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name, company: document.getElementById('provCompany').value.trim() || null, phone, email: email || null, address: document.getElementById('provAddress').value.trim() || null, status: 'active' }),
+    });
+    if (!resp.ok) throw new Error('Failed: ' + resp.status);
+    closeAddProvider();
+    await loadProviders();
+    filterProviders();
+    updateDashboard();
+    showToast('success', 'Provider added — ' + name);
+  } catch (err) { showToast('error', 'Save failed: ' + err.message); }
+}
+document.getElementById('addProviderModal').addEventListener('click', function(e) { if (e.target === this) closeAddProvider(); });
+
+// ============================================================
+// GRADING — serial_id validation
+// ============================================================
+function validateGradeSerial() {
+  const val = document.getElementById('gradeSerial').value.trim();
+  const hint = document.getElementById('gradeSerialHint');
+  if (!val) { hint.textContent = 'Serial ID is auto-assigned by the database — enter an existing goat ID'; hint.className = 'field-hint'; return; }
+  const id = parseInt(val);
+  if (isNaN(id)) { hint.textContent = 'Must be a number'; hint.className = 'field-hint invalid'; return; }
+  const goat = allAnimals.find(a => a.serial_id === id && a.type === 'goat');
+  if (goat) {
+    const desc = goat.description ? ' — ' + goat.description : '';
+    hint.textContent = 'Found: Goat #' + id + desc;
+    hint.className = 'field-hint valid';
+  } else {
+    hint.textContent = 'No goat found with serial ID ' + id;
+    hint.className = 'field-hint invalid';
+  }
+}
+
+// ============================================================
+// GRADING — flow
+// ============================================================
+function gradeLog(msg, type) {
+  const el = document.getElementById('gradeLog');
+  el.style.display = '';
+  const div = document.createElement('div');
+  div.className = type || 'info';
+  div.textContent = new Date().toLocaleTimeString() + '  ' + msg;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function startGrade() {
+  const serialId = document.getElementById('gradeSerial').value.trim();
+  const liveWeight = parseFloat(document.getElementById('gradeLiveWeight').value);
+  const btn = document.getElementById('gradeBtn');
+
+  if (!serialId || isNaN(parseInt(serialId))) { showToast('error', 'Valid numeric serial ID is required'); return; }
+  if (!liveWeight || liveWeight <= 0) { showToast('error', 'Valid live weight is required'); return; }
+
+  // Validate goat exists
+  const goat = allAnimals.find(a => a.serial_id === parseInt(serialId) && a.type === 'goat');
+  if (!goat) { showToast('error', 'Goat with serial ID ' + serialId + ' not found in database'); return; }
+
+  btn.disabled = true;
+  document.getElementById('gradeLog').innerHTML = '';
+  document.getElementById('gradeLog').style.display = 'none';
+
+  gradeLog('Starting grade for serial ' + serialId + ' @ ' + liveWeight + ' lbs');
+
+  try {
+    gradeLog('POST /api/prod/grade ...', 'info');
+    const resp = await HerdAuth.fetch(CONFIG.API_BASE + '/api/prod/grade', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ serial_id: serialId, live_weight: liveWeight }),
+    });
+    const body = await resp.json();
+
+    if (!resp.ok) {
+      gradeLog('Rejected: ' + (body.message || body.error_code || resp.status), 'err');
+      if (body.fix) gradeLog('Fix: ' + body.fix, 'warn');
+      btn.disabled = false; return;
+    }
+
+    gradeLog('Grade started — capturing images...', 'ok');
+    const result = await pollGradeStatus();
+
+    if (result && result.success !== false && !result.error) {
+      gradeLog('Grade complete — opening review...', 'ok');
+      pendingGradeResult = {
+        serial_id: parseInt(serialId),
+        grade: result.grade || null,
+        live_weight: liveWeight,
+        all_views_ok: result.all_views_successful ?? result.all_views_ok ?? null,
+        measurements: result.measurements || null,
+        capture_sec: result.timing?.capture_sec || null,
+        ec2_sec: result.timing?.ec2_sec || null,
+        total_sec: result.timing?.total_sec || null,
+        warnings: result.warnings || [],
+      };
+      openGradeReview(pendingGradeResult, serialId);
+    } else {
+      gradeLog('Grade failed: ' + (result?.error || 'unknown'), 'err');
+      if (result?.fix) gradeLog('Fix: ' + result.fix, 'warn');
+    }
+  } catch (err) {
+    gradeLog('Network error: ' + err.message, 'err');
+  } finally { btn.disabled = false; }
+}
+
+async function pollGradeStatus() {
+  let lastProgress = null;
+  for (let i = 0; i < 240; i++) {
+    await new Promise(r => setTimeout(r, 500));
+    let data;
+    try {
+      const resp = await HerdAuth.fetch(CONFIG.API_BASE + '/api/prod/status');
+      data = await resp.json();
+    } catch { gradeLog('Lost connection, retrying...', 'warn'); continue; }
+    if (data.progress && data.progress !== lastProgress) {
+      lastProgress = data.progress;
+      const msgs = {starting:'Initializing cameras...',capturing:'Capturing images...',grading:'Sending to EC2...',archiving:'Archiving to S3...'};
+      gradeLog(msgs[data.progress] || data.progress, 'info');
+    }
+    if (!data.active) return data.last_error ? {success:false, error:data.last_error} : data.last_result || {success:false, error:'No result'};
+  }
+  return {success:false, error:'Timed out'};
+}
+
+// ============================================================
+// GRADE REVIEW
+// ============================================================
+function openGradeReview(result, serialId) {
+  const modal = document.getElementById('gradeReviewModal');
+  modal.classList.add('open');
+  document.getElementById('reviewFooter').style.display = '';
+  document.getElementById('reviewSubtitle').textContent = 'Review before saving to database';
+
+  const badgeEl = document.getElementById('reviewGradeBadge');
+  badgeEl.textContent = result.grade || 'UNGRADED';
+  badgeEl.className = 'preview-grade-badge badge lg ' + gradeClass(result.grade);
+  badgeEl.style.fontSize = '28px';
+
+  document.getElementById('reviewWeight').textContent = result.live_weight ? result.live_weight + ' lbs' : '—';
+  document.getElementById('reviewViews').textContent = result.all_views_ok ? 'Yes' : 'No';
+  document.getElementById('reviewTime').textContent = result.total_sec ? parseFloat(result.total_sec).toFixed(1) + 's' : '—';
+
+  // Debug images
+  const token = HerdAuth.getAccessToken();
+  ['side','top','front'].forEach(view => {
+    const slot = document.getElementById('review' + view.charAt(0).toUpperCase() + view.slice(1));
+    const existing = slot.querySelector('img');
+    if (existing) existing.remove();
+    const img = document.createElement('img');
+    img.src = CONFIG.API_BASE + '/api/prod/debug/' + serialId + '/' + view + '?token=' + token;
+    img.alt = view + ' debug';
+    img.onerror = function() { this.style.opacity = '0.2'; };
+    slot.insertBefore(img, slot.firstChild);
+  });
+
+  document.getElementById('reviewMeasurements').textContent = result.measurements ? JSON.stringify(result.measurements, null, 2) : 'No measurements available';
+
+  const warnDiv = document.getElementById('reviewWarnings');
+  const warnList = document.getElementById('reviewWarningList');
+  if (result.warnings && result.warnings.length) {
+    warnDiv.style.display = '';
+    warnList.innerHTML = result.warnings.map(w => '<li>' + esc(w) + '</li>').join('');
+  } else { warnDiv.style.display = 'none'; }
+}
+
+async function acceptGrade() {
+  if (!pendingGradeResult) return;
+  const btn = document.getElementById('acceptGradeBtn');
+  btn.disabled = true; btn.textContent = 'Saving...';
+
+  try {
+    const resp = await HerdAuth.fetch(CONFIG.DB_BASE + '/grading', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(pendingGradeResult),
+    });
+    if (!resp.ok) throw new Error('DB save failed: ' + resp.status);
+
+    document.getElementById('gradeReviewModal').classList.remove('open');
+    showToast('success', 'Grade saved — ' + (pendingGradeResult.grade || 'Ungraded') + ' for serial ' + pendingGradeResult.serial_id);
+    gradeLog('Grade saved to database', 'ok');
+
+    pendingGradeResult = null;
+    await Promise.all([loadGoats().catch(()=>{}), loadGrades().catch(()=>{})]);
+    updateDashboard();
+    filterAnimals();
+    renderGradeHistory();
+  } catch (err) {
+    showToast('error', err.message);
+    gradeLog('Save error: ' + err.message, 'err');
+  } finally { btn.disabled = false; btn.textContent = 'Accept & Save'; }
+}
+
+function rejectGrade() {
+  // Open confirmation modal instead of immediate discard
+  document.getElementById('discardConfirmModal').classList.add('open');
+}
+
+function cancelDiscard() {
+  document.getElementById('discardConfirmModal').classList.remove('open');
+}
+
+function confirmDiscard() {
+  document.getElementById('discardConfirmModal').classList.remove('open');
+  document.getElementById('gradeReviewModal').classList.remove('open');
+  pendingGradeResult = null;
+  gradeLog('Grade discarded by operator', 'warn');
+  showToast('success', 'Grade discarded');
+}
+
+// ============================================================
+// GRADE HISTORY
+// ============================================================
+function renderGradeHistory() {
+  const body = document.getElementById('gradeHistoryBody');
+  if (!allGrades.length) { body.innerHTML = '<div class="no-results">No grading results yet</div>'; return; }
+  body.innerHTML = allGrades.map(g => {
+    const viewsOk = g.all_views_ok ? '<span class="text-accent text-sm">All OK</span>' : '<span class="text-faint text-sm">Partial</span>';
+    const time = g.total_sec ? parseFloat(g.total_sec).toFixed(1) + 's' : '—';
+    return '<div class="tbl-row" style="grid-template-columns:80px 100px 80px 80px 60px 1fr 60px;">'
+      + '<span class="text-primary fw-600 text-mono">' + g.serial_id + '</span>'
+      + gradeBadge(g.grade)
+      + '<span class="text-secondary text-mono">' + wt(g.live_weight) + '</span>'
+      + viewsOk
+      + '<span class="text-muted text-mono text-sm">' + time + '</span>'
+      + '<span class="text-faint text-md">' + fmtDate(g.graded_at) + '</span>'
+      + '<button class="btn btn-sm" onclick="viewGradeDetail(' + g.id + ')">Detail</button></div>';
+  }).join('');
+}
+
+async function viewGradeDetail(resultId) {
+  try {
+    const result = await dbFetch('/grading/result/' + resultId);
+    openGradeReview({
+      grade: result.grade, live_weight: result.live_weight, all_views_ok: result.all_views_ok,
+      measurements: result.measurements, total_sec: result.total_sec ? parseFloat(result.total_sec) : null,
+      warnings: result.warnings,
+    }, result.serial_id);
+    document.getElementById('reviewFooter').style.display = 'none';
+    document.getElementById('reviewSubtitle').textContent = 'Saved grade — read only';
+  } catch (err) { showToast('error', 'Could not load grade detail'); }
+}
+
+// Close review modal on overlay click — restore footer
+document.getElementById('gradeReviewModal').addEventListener('click', function(e) {
+  if (e.target === this) { this.classList.remove('open'); document.getElementById('reviewFooter').style.display = ''; document.getElementById('reviewSubtitle').textContent = 'Review before saving to database'; }
+});
+document.getElementById('discardConfirmModal').addEventListener('click', function(e) { if (e.target === this) cancelDiscard(); });
+
+// ============================================================
+// TOAST
+// ============================================================
+let toastT;
+function showToast(type, msg) {
+  const t = document.getElementById('toast');
+  t.className = 'toast ' + type;
+  t.querySelector('.toast-icon').textContent = type === 'success' ? '✓' : '✕';
+  t.querySelector('.toast-msg').textContent = msg;
+  clearTimeout(toastT);
+  requestAnimationFrame(() => t.classList.add('show'));
+  toastT = setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+// ============================================================
+// KEYBOARD
+// ============================================================
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.getElementById('discardConfirmModal').classList.remove('open');
+    const review = document.getElementById('gradeReviewModal');
+    if (review.classList.contains('open')) { review.classList.remove('open'); document.getElementById('reviewFooter').style.display = ''; }
+    document.getElementById('addProviderModal').classList.remove('open');
+  }
+});
+
+// ============================================================
+// BOOT
+// ============================================================
+HerdAuth.requireAuth().then(user => showApp(user));
+</script>
+</body>
+</html>

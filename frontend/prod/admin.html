@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <title>Admin | HerdSync</title>
+    <script src="/js/config.js"></script>
+    <script src="/js/auth.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #1a1a2e;
+        color: white;
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding: 20px;
+      }
+      .nav {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 20px;
+        background: #0d0d1a;
+        z-index: 100;
+        border-bottom: 1px solid #222;
+      }
+      .nav-left {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+      .nav-brand {
+        font-size: 15px;
+        font-weight: 700;
+        color: #4caf50;
+        letter-spacing: 0.5px;
+      }
+      .nav-links {
+        display: flex;
+        gap: 4px;
+      }
+      .nav-links a {
+        color: #666;
+        text-decoration: none;
+        font-size: 13px;
+        padding: 6px 12px;
+        border-radius: 6px;
+        transition: all 0.2s;
+      }
+      .nav-links a:hover {
+        color: #ccc;
+        background: #1a1a2e;
+      }
+      .nav-links a.active {
+        color: #4caf50;
+        background: #1a1a2e;
+      }
+      .nav-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .nav-user {
+        font-size: 11px;
+        color: #555;
+      }
+      .logout-btn {
+        background: none;
+        border: 1px solid #333;
+        color: #666;
+        padding: 6px 14px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .logout-btn:hover {
+        border-color: #666;
+        color: #888;
+      }
+
+      #app {
+        display: none;
+        width: 100%;
+        max-width: 700px;
+        margin-top: 60px;
+      }
+      #no-access {
+        display: none;
+        text-align: center;
+        margin-top: 120px;
+        color: #666;
+        font-size: 16px;
+      }
+      #no-access .lock {
+        font-size: 48px;
+        margin-bottom: 16px;
+        opacity: 0.3;
+      }
+      #no-access a {
+        color: #4caf50;
+        text-decoration: none;
+      }
+
+      .page-title {
+        font-size: 12px;
+        color: #555;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        margin-bottom: 20px;
+      }
+
+      /* User table */
+      .user-table {
+        background: #0d0d1a;
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 20px;
+        border: 1px solid #1a1a2e;
+      }
+      .user-row {
+        display: flex;
+        align-items: center;
+        padding: 14px 20px;
+        border-bottom: 1px solid #111;
+        transition: background 0.15s;
+      }
+      .user-row:last-child {
+        border-bottom: none;
+      }
+      .user-row:hover {
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .user-row.inactive {
+        opacity: 0.4;
+      }
+      .user-row .user-info {
+        flex: 1;
+      }
+      .user-row .user-name {
+        font-size: 15px;
+        font-weight: 600;
+        color: #e0e0e0;
+      }
+      .user-row .user-meta {
+        font-size: 11px;
+        color: #555;
+        margin-top: 2px;
+      }
+      .user-row .user-role {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        padding: 3px 10px;
+        border-radius: 20px;
+        margin-right: 12px;
+      }
+      .user-row .user-role.admin {
+        color: #ff9800;
+        background: rgba(255, 152, 0, 0.1);
+      }
+      .user-row .user-role.operator {
+        color: #4caf50;
+        background: rgba(76, 175, 80, 0.1);
+      }
+      .user-actions {
+        display: flex;
+        gap: 6px;
+      }
+      .action-btn {
+        background: none;
+        border: 1px solid #333;
+        color: #666;
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 11px;
+        transition: all 0.2s;
+      }
+      .action-btn:hover {
+        border-color: #666;
+        color: #ccc;
+      }
+      .action-btn.danger:hover {
+        border-color: #e53935;
+        color: #e53935;
+      }
+      .action-btn:disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+      }
+
+      .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: #444;
+        font-size: 14px;
+      }
+
+      /* Add user form */
+      .add-user-panel {
+        background: #0d0d1a;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        border: 1px solid #1a1a2e;
+      }
+      .panel-title {
+        font-size: 12px;
+        color: #555;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 16px;
+      }
+      .form-row {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+      }
+      .form-group {
+        flex: 1;
+        min-width: 120px;
+      }
+      .form-group label {
+        display: block;
+        font-size: 11px;
+        color: #888;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+      }
+      .form-group input,
+      .form-group select {
+        width: 100%;
+        padding: 10px 12px;
+        font-size: 14px;
+        border: 1px solid #333;
+        border-radius: 6px;
+        background: #1a1a2e;
+        color: white;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      .form-group input:focus,
+      .form-group select:focus {
+        border-color: #4caf50;
+      }
+      .form-group select {
+        cursor: pointer;
+      }
+      .form-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .btn-primary {
+        padding: 10px 24px;
+        border: none;
+        border-radius: 6px;
+        background: #4caf50;
+        color: white;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .btn-primary:hover {
+        background: #45a049;
+      }
+      .btn-primary:disabled {
+        background: #333;
+        color: #666;
+        cursor: not-allowed;
+      }
+      .form-message {
+        font-size: 12px;
+        min-height: 18px;
+      }
+      .form-message.error {
+        color: #e53935;
+      }
+      .form-message.success {
+        color: #4caf50;
+      }
+
+      /* Edit modal */
+      .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+      }
+      .modal-box {
+        background: #1a1a2e;
+        border: 1px solid #333;
+        border-radius: 12px;
+        padding: 28px;
+        width: 380px;
+        max-width: 90vw;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      }
+      .modal-box h3 {
+        color: #e0e0e0;
+        margin: 0 0 20px 0;
+        font-size: 18px;
+      }
+      .modal-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 20px;
+      }
+      .btn-secondary {
+        padding: 10px 20px;
+        border: 1px solid #333;
+        border-radius: 6px;
+        background: none;
+        color: #888;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .btn-secondary:hover {
+        border-color: #666;
+        color: #ccc;
+      }
+      .btn-danger {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 6px;
+        background: #e53935;
+        color: white;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .btn-danger:hover {
+        background: #c62828;
+      }
+
+      .password-toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+        cursor: pointer;
+        font-size: 12px;
+        color: #666;
+      }
+      .password-toggle input[type="checkbox"] {
+        width: auto;
+        margin: 0;
+      }
+
+      @media (max-width: 600px) {
+        .form-row {
+          flex-direction: column;
+        }
+        .user-row {
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .user-actions {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <nav class="nav">
+        <div class="nav-left">
+          <span class="nav-brand">HerdSync</span>
+          <div class="nav-links">
+            <a href="admin.html" class="active">Users</a>
+          </div>
+        </div>
+        <div class="nav-right">
+          <span class="nav-user" id="navUser"></span>
+          <button class="logout-btn" onclick="HerdAuth.logout()">Logout</button>
+        </div>
+      </nav>
+
+      <div class="page-title">User Management</div>
+
+      <!-- Add User -->
+      <div class="add-user-panel">
+        <div class="panel-title">Add User</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Username</label>
+            <input
+              type="text"
+              id="newUsername"
+              placeholder="e.g. john"
+              autocomplete="off"
+            />
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input
+              type="password"
+              id="newPassword"
+              placeholder="Enter password"
+              autocomplete="new-password"
+            />
+            <span
+              style="
+                font-size: 10px;
+                color: #555;
+                margin-top: 4px;
+                display: block;
+              "
+              >8+ chars · uppercase · lowercase · number · special</span
+            >
+          </div>
+          <div class="form-group">
+            <label>Role</label>
+            <select id="newRole">
+              <option value="operator">Operator</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn-primary" id="addUserBtn" onclick="addUser()">
+            Add User
+          </button>
+          <span class="form-message" id="addMessage"></span>
+        </div>
+      </div>
+
+      <!-- User List -->
+      <div class="user-table" id="userTable">
+        <div class="empty-state">Loading users...</div>
+      </div>
+    </div>
+
+    <!-- No access message for non-admins -->
+    <div id="no-access">
+      <div class="lock">&#128274;</div>
+      <p>Admin access required.</p>
+      <p style="margin-top: 8px"><a href="index.html">Back to Capture</a></p>
+    </div>
+
+    <!-- Edit Modal (injected dynamically) -->
+    <div id="editModal"></div>
+
+    <script>
+      let currentUser = null;
+      let users = [];
+
+      function showApp(user) {
+        currentUser = user;
+
+        if (user.role !== "admin") {
+          document.getElementById("no-access").style.display = "block";
+          return;
+        }
+
+        document.getElementById("app").style.display = "block";
+        document.getElementById("navUser").textContent =
+          user.username + " (" + user.role + ")";
+        loadUsers();
+      }
+
+      // =====================================================================
+      // LOAD USERS
+      // =====================================================================
+      async function loadUsers() {
+        try {
+          const resp = await HerdAuth.fetch("/auth/users");
+          if (!resp.ok) throw new Error("Failed to load users");
+          const data = await resp.json();
+          users = data.users;
+          renderUsers();
+        } catch (err) {
+          document.getElementById("userTable").innerHTML =
+            '<div class="empty-state" style="color:#e53935;">Failed to load users: ' +
+            err.message +
+            "</div>";
+        }
+      }
+
+      // =====================================================================
+      // RENDER USERS
+      // =====================================================================
+      function renderUsers() {
+        const table = document.getElementById("userTable");
+
+        if (users.length === 0) {
+          table.innerHTML = '<div class="empty-state">No users found</div>';
+          return;
+        }
+
+        table.innerHTML = users
+          .map((u) => {
+            const isSelf = u.username === currentUser.username;
+            const inactive = u.active === false;
+            const created = u.created_at
+              ? new Date(u.created_at).toLocaleDateString()
+              : "";
+            const createdBy = u.created_by ? " by " + u.created_by : "";
+
+            return `
+            <div class="user-row ${inactive ? "inactive" : ""}">
+              <div class="user-info">
+                <div class="user-name">
+                  ${u.username}
+                  ${isSelf ? '<span style="color:#555;font-size:11px;margin-left:6px;">(you)</span>' : ""}
+                  ${inactive ? '<span style="color:#e53935;font-size:11px;margin-left:6px;">disabled</span>' : ""}
+                </div>
+                <div class="user-meta">Created ${created}${createdBy}</div>
+              </div>
+              <span class="user-role ${u.role}">${u.role}</span>
+              <div class="user-actions">
+                <button class="action-btn" onclick="openEditModal(${u.id})">Edit</button>
+                <button class="action-btn danger" onclick="confirmDelete(${u.id}, '${u.username}')" ${isSelf ? "disabled" : ""}>Delete</button>
+              </div>
+            </div>
+          `;
+          })
+          .join("");
+      }
+
+      // =====================================================================
+      // ADD USER
+      // =====================================================================
+      async function addUser() {
+        const username = document.getElementById("newUsername").value.trim();
+        const password = document.getElementById("newPassword").value;
+        const role = document.getElementById("newRole").value;
+        const msg = document.getElementById("addMessage");
+        const btn = document.getElementById("addUserBtn");
+
+        msg.textContent = "";
+        msg.className = "form-message";
+
+        if (!username) {
+          msg.textContent = "Username required";
+          msg.className = "form-message error";
+          return;
+        }
+        if (
+          !password ||
+          password.length < 8 ||
+          !/[A-Z]/.test(password) ||
+          !/[a-z]/.test(password) ||
+          !/[0-9]/.test(password) ||
+          !/[^A-Za-z0-9]/.test(password)
+        ) {
+          msg.textContent =
+            "Password must be 8+ chars with uppercase, lowercase, number, and special character";
+          msg.className = "form-message error";
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = "Adding...";
+
+        try {
+          const resp = await HerdAuth.fetch("/auth/users", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, password, role }),
+          });
+
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || "Failed to create user");
+          }
+
+          msg.textContent = 'User "' + username + '" created';
+          msg.className = "form-message success";
+          document.getElementById("newUsername").value = "";
+          document.getElementById("newPassword").value = "";
+          document.getElementById("newRole").value = "operator";
+
+          await loadUsers();
+        } catch (err) {
+          msg.textContent = err.message;
+          msg.className = "form-message error";
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Add User";
+        }
+      }
+
+      // =====================================================================
+      // EDIT MODAL
+      // =====================================================================
+      function openEditModal(userId) {
+        const user = users.find((u) => u.id === userId);
+        if (!user) return;
+
+        const isSelf = user.username === currentUser.username;
+
+        const modal = document.getElementById("editModal");
+        modal.innerHTML = `
+          <div class="modal-overlay" onclick="if(event.target===this)closeEditModal()">
+            <div class="modal-box">
+              <h3>Edit: ${user.username}</h3>
+              <div class="form-group" style="margin-bottom:12px;">
+                <label>Role</label>
+                <select id="editRole" ${isSelf ? "disabled" : ""}>
+                  <option value="operator" ${user.role === "operator" ? "selected" : ""}>Operator</option>
+                  <option value="admin" ${user.role === "admin" ? "selected" : ""}>Admin</option>
+                </select>
+              </div>
+              <label class="password-toggle">
+                <input type="checkbox" id="changePasswordCheck" onchange="togglePasswordField()">
+                Change password
+              </label>
+              <div id="passwordFieldWrap" style="display:none;">
+                <div class="form-group" style="margin-bottom:12px;">
+                  <label>New Password</label>
+                  <input type="password" id="editPassword" placeholder="Enter new password" autocomplete="new-password" />
+                  <span style="font-size:10px;color:#555;margin-top:4px;display:block;">8+ chars · uppercase · lowercase · number · special</span>
+                </div>
+              </div>
+              ${
+                !isSelf
+                  ? `
+                <div class="form-group" style="margin-bottom:12px;">
+                  <label>Status</label>
+                  <select id="editActive">
+                    <option value="true" ${user.active !== false ? "selected" : ""}>Active</option>
+                    <option value="false" ${user.active === false ? "selected" : ""}>Disabled</option>
+                  </select>
+                </div>
+              `
+                  : ""
+              }
+              <span class="form-message" id="editMessage"></span>
+              <div class="modal-actions">
+                <button class="btn-secondary" onclick="closeEditModal()">Cancel</button>
+                <button class="btn-primary" id="saveEditBtn" onclick="saveEdit(${user.id})">Save Changes</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function togglePasswordField() {
+        const checked = document.getElementById("changePasswordCheck").checked;
+        document.getElementById("passwordFieldWrap").style.display = checked
+          ? "block"
+          : "none";
+        if (checked) document.getElementById("editPassword").focus();
+      }
+
+      function closeEditModal() {
+        document.getElementById("editModal").innerHTML = "";
+      }
+
+      async function saveEdit(userId) {
+        const role = document.getElementById("editRole").value;
+        const changePassword = document.getElementById(
+          "changePasswordCheck",
+        ).checked;
+        const password = changePassword
+          ? document.getElementById("editPassword").value
+          : null;
+        const activeEl = document.getElementById("editActive");
+        const active = activeEl ? activeEl.value === "true" : undefined;
+        const msg = document.getElementById("editMessage");
+        const btn = document.getElementById("saveEditBtn");
+
+        msg.textContent = "";
+        msg.className = "form-message";
+
+        if (
+          changePassword &&
+          (!password ||
+            password.length < 8 ||
+            !/[A-Z]/.test(password) ||
+            !/[a-z]/.test(password) ||
+            !/[0-9]/.test(password) ||
+            !/[^A-Za-z0-9]/.test(password))
+        ) {
+          msg.textContent =
+            "Password must be 8+ chars with uppercase, lowercase, number, and special character";
+          msg.className = "form-message error";
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = "Saving...";
+
+        try {
+          const body = { role };
+          if (password) body.password = password;
+          if (active !== undefined) body.active = active;
+
+          const resp = await HerdAuth.fetch("/auth/users/" + userId, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || "Failed to update user");
+          }
+
+          closeEditModal();
+          await loadUsers();
+        } catch (err) {
+          msg.textContent = err.message;
+          msg.className = "form-message error";
+          btn.disabled = false;
+          btn.textContent = "Save Changes";
+        }
+      }
+
+      // =====================================================================
+      // DELETE USER
+      // =====================================================================
+      function confirmDelete(userId, username) {
+        const modal = document.getElementById("editModal");
+        modal.innerHTML = `
+          <div class="modal-overlay" onclick="if(event.target===this)closeEditModal()">
+            <div class="modal-box">
+              <h3>Delete User</h3>
+              <p style="color:#aaa;margin-bottom:20px;font-size:14px;line-height:1.6;">
+                Permanently delete <strong>${username}</strong>? This will revoke all their sessions immediately. This cannot be undone.
+              </p>
+              <span class="form-message" id="editMessage"></span>
+              <div class="modal-actions">
+                <button class="btn-secondary" onclick="closeEditModal()">Cancel</button>
+                <button class="btn-danger" id="confirmDeleteBtn" onclick="doDelete(${userId})">Delete</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      async function doDelete(userId) {
+        const msg = document.getElementById("editMessage");
+        const btn = document.getElementById("confirmDeleteBtn");
+
+        btn.disabled = true;
+        btn.textContent = "Deleting...";
+
+        try {
+          const resp = await HerdAuth.fetch("/auth/users/" + userId, {
+            method: "DELETE",
+          });
+
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || "Failed to delete user");
+          }
+
+          closeEditModal();
+          await loadUsers();
+        } catch (err) {
+          msg.textContent = err.message;
+          msg.className = "form-message error";
+          btn.disabled = false;
+          btn.textContent = "Delete";
+        }
+      }
+
+      // Auth gate — admin only
+      HerdAuth.requireAuth().then((user) => showApp(user));
+    </script>
+  </body>
+</html>

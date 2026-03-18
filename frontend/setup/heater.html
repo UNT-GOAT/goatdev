@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <title>Heaters | HerdSync</title>
+    <script src="/js/config.js"></script>
+    <script src="/js/auth.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #1a1a2e;
+        color: white;
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding: 20px;
+      }
+      .nav {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 20px;
+        background: #0d0d1a;
+        z-index: 100;
+        border-bottom: 1px solid #222;
+      }
+      .nav-left {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+      }
+      .nav-brand {
+        font-size: 15px;
+        font-weight: 700;
+        color: #4caf50;
+        letter-spacing: 0.5px;
+      }
+      .nav-links {
+        display: flex;
+        gap: 4px;
+      }
+      .nav-links a {
+        color: #666;
+        text-decoration: none;
+        font-size: 13px;
+        padding: 6px 12px;
+        border-radius: 6px;
+        transition: all 0.2s;
+      }
+      .nav-links a:hover {
+        color: #ccc;
+        background: #1a1a2e;
+      }
+      .nav-links a.active {
+        color: #4caf50;
+        background: #1a1a2e;
+      }
+      .nav-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .nav-user {
+        font-size: 11px;
+        color: #555;
+      }
+      .connection {
+        font-size: 11px;
+        color: #555;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .connection .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #555;
+      }
+      .connection .dot.ok {
+        background: #4caf50;
+      }
+      .connection .dot.err {
+        background: #e53935;
+      }
+      .logout-btn {
+        background: none;
+        border: 1px solid #333;
+        color: #666;
+        padding: 6px 14px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .logout-btn:hover {
+        border-color: #666;
+        color: #888;
+      }
+      #app {
+        display: none;
+        width: 100%;
+        max-width: 900px;
+        margin-top: 60px;
+      }
+      .page-title {
+        font-size: 12px;
+        color: #555;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        margin-bottom: 20px;
+      }
+      .threshold-bar {
+        background: #0d0d1a;
+        border-radius: 10px;
+        padding: 14px 20px;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .threshold-bar .label {
+        font-size: 11px;
+        color: #555;
+        text-transform: uppercase;
+      }
+      .threshold-bar .values {
+        display: flex;
+        gap: 20px;
+      }
+      .threshold-bar .val {
+        font-size: 14px;
+        font-family: monospace;
+      }
+      .threshold-bar .val.on {
+        color: #ff9800;
+      }
+      .threshold-bar .val.off {
+        color: #4caf50;
+      }
+      .camera-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 16px;
+        margin-bottom: 20px;
+      }
+      .camera-card {
+        background: #0d0d1a;
+        border-radius: 12px;
+        padding: 20px;
+        border: 1px solid #1a1a2e;
+        transition: border-color 0.3s;
+      }
+      .camera-card.heating {
+        border-color: #ff9800;
+      }
+      .camera-card.failsafe {
+        border-color: #e53935;
+      }
+      .camera-card.override {
+        border-color: #2196f3;
+      }
+      .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      .card-name {
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .card-status {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        padding: 3px 10px;
+        border-radius: 20px;
+      }
+      .card-status.off {
+        color: #555;
+        background: #1a1a2e;
+      }
+      .card-status.on {
+        color: #ff9800;
+        background: rgba(255, 152, 0, 0.1);
+      }
+      .card-status.failsafe {
+        color: #e53935;
+        background: rgba(229, 57, 53, 0.1);
+      }
+      .card-status.override-on {
+        color: #2196f3;
+        background: rgba(33, 150, 243, 0.1);
+      }
+      .card-status.override-off {
+        color: #9c27b0;
+        background: rgba(156, 39, 176, 0.1);
+      }
+      .temp-display {
+        font-size: 48px;
+        font-weight: 700;
+        font-family: monospace;
+        margin: 10px 0;
+        letter-spacing: -2px;
+      }
+      .temp-display.cold {
+        color: #42a5f5;
+      }
+      .temp-display.warm {
+        color: #4caf50;
+      }
+      .temp-display.hot {
+        color: #ff9800;
+      }
+      .temp-display.err {
+        color: #e53935;
+      }
+      .card-meta {
+        font-size: 11px;
+        color: #444;
+        margin-bottom: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .card-meta span {
+        display: flex;
+        justify-content: space-between;
+      }
+      .override-controls {
+        display: flex;
+        gap: 8px;
+      }
+      .override-btn {
+        flex: 1;
+        padding: 8px 0;
+        border: 1px solid #333;
+        border-radius: 6px;
+        background: none;
+        color: #888;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .override-btn:hover {
+        border-color: #666;
+        color: #ccc;
+      }
+      .override-btn.active-on {
+        background: rgba(255, 152, 0, 0.15);
+        border-color: #ff9800;
+        color: #ff9800;
+      }
+      .override-btn.active-off {
+        background: rgba(156, 39, 176, 0.15);
+        border-color: #9c27b0;
+        color: #9c27b0;
+      }
+      .override-btn.active-auto {
+        background: rgba(76, 175, 80, 0.15);
+        border-color: #4caf50;
+        color: #4caf50;
+      }
+      .history-panel {
+        background: #0d0d1a;
+        border-radius: 10px;
+        padding: 15px;
+      }
+      .history-title {
+        font-size: 12px;
+        color: #555;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 10px;
+      }
+      .history-list {
+        max-height: 200px;
+        overflow-y: auto;
+        font-family: monospace;
+        font-size: 12px;
+      }
+      .history-entry {
+        padding: 4px 0;
+        border-bottom: 1px solid #111;
+        display: flex;
+        gap: 10px;
+      }
+      .history-time {
+        color: #444;
+        flex-shrink: 0;
+      }
+      .history-cam {
+        color: #4caf50;
+        flex-shrink: 0;
+        width: 70px;
+      }
+      .history-event {
+        color: #888;
+      }
+      .history-event.on {
+        color: #ff9800;
+      }
+      .history-event.off {
+        color: #4caf50;
+      }
+      .history-event.failsafe {
+        color: #e53935;
+      }
+      .history-event.override {
+        color: #2196f3;
+      }
+      @media (max-width: 600px) {
+        .camera-grid {
+          grid-template-columns: 1fr;
+        }
+        .temp-display {
+          font-size: 36px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <nav class="nav">
+        <div class="nav-left">
+          <span class="nav-brand">HerdSync</span>
+          <div class="nav-links">
+            <a href="index.html">Capture</a>
+            <a href="heater.html" class="active">Heaters</a>
+            <a href="view-focus.html">View Focus</a>
+          </div>
+        </div>
+        <div class="nav-right">
+          <div class="connection">
+            <div class="dot" id="connDot"></div>
+            <span id="connLabel">Connecting...</span>
+          </div>
+          <span class="nav-user" id="navUser"></span>
+          <button class="logout-btn" onclick="HerdAuth.logout()">Logout</button>
+        </div>
+      </nav>
+      <div class="page-title">Heater Control Dashboard</div>
+      <div class="threshold-bar">
+        <span class="label">Thresholds</span>
+        <div class="values">
+          <span class="val on" id="threshOn">ON &lt; --°F</span>
+          <span class="val off" id="threshOff">OFF &gt; --°F</span>
+        </div>
+      </div>
+      <div class="camera-grid" id="cameraGrid"></div>
+      <div class="history-panel">
+        <div class="history-title">Recent Events</div>
+        <div class="history-list" id="historyList">
+          <div style="color: #444; padding: 10px 0">Loading...</div>
+        </div>
+      </div>
+    </div>
+    <script>
+      function showApp(user) {
+        document.getElementById("app").style.display = "block";
+        document.getElementById("navUser").textContent =
+          user.username + " (" + user.role + ")";
+        fetchStatus();
+        fetchHistory();
+        setInterval(fetchStatus, 2000);
+        setInterval(fetchHistory, 10000);
+      }
+      async function fetchStatus() {
+        const dot = document.getElementById("connDot");
+        const label = document.getElementById("connLabel");
+        try {
+          const res = await HerdAuth.fetch(
+            CONFIG.API_BASE + "/api/heater/status",
+          );
+          const data = await res.json();
+          dot.className = "dot ok";
+          label.textContent = "Connected";
+          if (data.thresholds) {
+            document.getElementById("threshOn").textContent =
+              "ON < " + data.thresholds.on_below + "°F";
+            document.getElementById("threshOff").textContent =
+              "OFF > " + data.thresholds.off_above + "°F";
+          }
+          renderCameras(data.cameras || {});
+        } catch (err) {
+          dot.className = "dot err";
+          label.textContent = "Disconnected";
+        }
+      }
+      function renderCameras(cameras) {
+        const grid = document.getElementById("cameraGrid");
+        const names = Object.keys(cameras).sort();
+        if (grid.children.length !== names.length) {
+          grid.innerHTML = "";
+          names.forEach((name) => {
+            const card = document.createElement("div");
+            card.className = "camera-card";
+            card.id = "card-" + name;
+            card.innerHTML = `
+              <div class="card-header">
+                <span class="card-name">${name.replace("camera", "Camera ")}</span>
+                <span class="card-status off" id="status-${name}">OFF</span>
+              </div>
+              <div class="temp-display warm" id="temp-${name}">--°F</div>
+              <div class="card-meta" id="meta-${name}"></div>
+              <div class="override-controls">
+                <button class="override-btn" onclick="setOverride('${name}', 'on')">Force ON</button>
+                <button class="override-btn active-auto" onclick="setOverride('${name}', 'auto')">Auto</button>
+                <button class="override-btn" onclick="setOverride('${name}', 'off')">Force OFF</button>
+              </div>`;
+            grid.appendChild(card);
+          });
+        }
+        names.forEach((name) => {
+          const cam = cameras[name];
+          const card = document.getElementById("card-" + name);
+          const statusEl = document.getElementById("status-" + name);
+          const tempEl = document.getElementById("temp-" + name);
+          const metaEl = document.getElementById("meta-" + name);
+          card.className = "camera-card";
+          if (cam.failsafe) card.classList.add("failsafe");
+          else if (cam.override !== "auto") card.classList.add("override");
+          else if (cam.heater_on) card.classList.add("heating");
+          if (cam.failsafe) {
+            statusEl.className = "card-status failsafe";
+            statusEl.textContent = "FAILSAFE";
+          } else if (cam.override === "on") {
+            statusEl.className = "card-status override-on";
+            statusEl.textContent = "FORCED ON";
+          } else if (cam.override === "off") {
+            statusEl.className = "card-status override-off";
+            statusEl.textContent = "FORCED OFF";
+          } else if (cam.heater_on) {
+            statusEl.className = "card-status on";
+            statusEl.textContent = "HEATING";
+          } else {
+            statusEl.className = "card-status off";
+            statusEl.textContent = "OFF";
+          }
+          if (cam.temp_f !== null) {
+            tempEl.textContent = cam.temp_f + "°F";
+            if (cam.temp_f < 40) tempEl.className = "temp-display cold";
+            else if (cam.temp_f < 70) tempEl.className = "temp-display warm";
+            else tempEl.className = "temp-display hot";
+          } else {
+            tempEl.textContent = "--°F";
+            tempEl.className = "temp-display err";
+          }
+          let meta = "";
+          if (cam.last_good_temp !== null)
+            meta += `<span><span>Last good</span><span>${cam.last_good_temp}°F</span></span>`;
+          if (cam.fail_count > 0)
+            meta += `<span><span>Failed reads</span><span style="color:#e53935">${cam.fail_count}</span></span>`;
+          if (cam.last_change)
+            meta += `<span><span>Last change</span><span>${new Date(cam.last_change).toLocaleTimeString()}</span></span>`;
+          metaEl.innerHTML = meta;
+          const btns = card.querySelectorAll(".override-btn");
+          btns[0].className =
+            "override-btn" + (cam.override === "on" ? " active-on" : "");
+          btns[1].className =
+            "override-btn" + (cam.override === "auto" ? " active-auto" : "");
+          btns[2].className =
+            "override-btn" + (cam.override === "off" ? " active-off" : "");
+        });
+      }
+      async function setOverride(camera, state) {
+        try {
+          await HerdAuth.fetch(CONFIG.API_BASE + "/api/heater/override", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ camera, state }),
+          });
+          fetchStatus();
+        } catch (err) {
+          alert("Failed to set override: " + err.message);
+        }
+      }
+      async function fetchHistory() {
+        try {
+          const res = await HerdAuth.fetch(
+            CONFIG.API_BASE + "/api/heater/history",
+          );
+          const data = await res.json();
+          renderHistory(data.history || []);
+        } catch (err) {}
+      }
+      function renderHistory(history) {
+        const list = document.getElementById("historyList");
+        if (history.length === 0) {
+          list.innerHTML =
+            '<div style="color: #444; padding: 10px 0;">No events yet</div>';
+          return;
+        }
+        list.innerHTML = history
+          .slice()
+          .reverse()
+          .map((entry) => {
+            const time = new Date(entry.time).toLocaleTimeString();
+            let cls = "";
+            const evt = entry.event || "";
+            if (evt.includes("heater_on") || evt.includes("override_on"))
+              cls = "on";
+            else if (evt.includes("heater_off") || evt.includes("override_off"))
+              cls = "off";
+            else if (evt.includes("failsafe")) cls = "failsafe";
+            else if (evt.includes("override")) cls = "override";
+            let extra = entry.temp !== undefined ? ` (${entry.temp}°F)` : "";
+            return `<div class="history-entry">
+            <span class="history-time">${time}</span>
+            <span class="history-cam">${entry.camera || ""}</span>
+            <span class="history-event ${cls}">${evt}${extra}</span>
+          </div>`;
+          })
+          .join("");
+      }
+
+      // Auth gate
+      HerdAuth.requireAuth().then((user) => showApp(user));
+    </script>
+  </body>
+</html>

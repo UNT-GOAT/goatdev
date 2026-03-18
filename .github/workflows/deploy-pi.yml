@@ -1,16 +1,15 @@
 name: Deploy to Raspberry Pi
-
 on:
   push:
     branches: [main]
     paths:
-      - "pi/**" # Prod pi server
-      - "training/pi-server**" # Temp training pi server
-      - "logger/pi_cloudwatch**" # Pi CloudWatch logging for both servers
-      - "logger/pi_heartbeat_cron**" # Pi heartbeat cron job for both servers
+      - "pi/servers/**"
+      - "pi/display/**"
+      - "pi/logger/**"
+      - "pi/system/**"
+      - "pi/requirements.txt"
       - ".github/workflows/deploy-pi.yml"
   workflow_dispatch:
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -21,7 +20,6 @@ jobs:
           oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
           tags: tag:ci
-
       - name: Deploy to Pi
         env:
           SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
@@ -32,20 +30,47 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no pi@${TAILSCALE_IP} << 'EOF'
             set -e
-            cd /home/pi/goat-capture
+            cd /home/pi/goatdev
             git fetch origin
             git reset --hard origin/main
-            
             if [ ! -d "/home/pi/venv" ]; then
               python3 -m venv /home/pi/venv
             fi
-            
             source /home/pi/venv/bin/activate
             pip install -r pi/requirements.txt --quiet
-            
-            sudo systemctl restart goat-prod
-            sudo systemctl restart goat-training
-            
+            sudo bash pi/system/deploy.sh
+
+            # Order:
+            #   1. Stop consumers (prod + training) so nothing is talking to proxy
+            #   2. Restart camera-proxy and wait for it to be healthy
+            #   3. Start consumers back up against the now-ready proxy
+            #   4. Restart stateless services (display + heating) last
+
+            echo "Stopping consumer services..."
+            sudo systemctl stop goat-prod
+            sudo systemctl stop goat-training
+
+            echo "Restarting camera-proxy..."
+            sudo systemctl restart camera-proxy
+
+            echo "Waiting for camera-proxy health..."
+            for i in $(seq 1 15); do
+              if curl -sf http://127.0.0.1:8080/status > /dev/null 2>&1; then
+                echo "camera-proxy healthy after ~${i}s"
+                break
+              fi
+              sleep 1
+            done
+            curl -sf http://127.0.0.1:8080/status || echo "WARNING: camera-proxy not healthy after 15s"
+
+            echo "Starting consumer services..."
+            sudo systemctl start goat-prod
+            sudo systemctl start goat-training
+
+            echo "Restarting stateless services..."
+            sudo systemctl restart goat-display
+            sudo systemctl restart camera-heating
+
             echo "Deployed and restarted at $(date)"
             git log -1 --oneline
           EOF

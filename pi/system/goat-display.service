@@ -1,0 +1,15 @@
+[Unit]
+Description=GOAT-PI Status Display
+DefaultDependencies=no
+After=sysinit.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /home/pi/goatdev/pi/display/display.py
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=sysinit.target

@@ -1,0 +1,2177 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prod Integration Example | HerdSync</title>
+    <script src="/js/config.js"></script>
+    <script src="/js/auth.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: monospace;
+        background: #111;
+        color: #ccc;
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+      }
+
+      /* Tab bar */
+      .tab-bar {
+        position: sticky;
+        top: 0;
+        z-index: 200;
+        background: #0a0a0a;
+        border-bottom: 1px solid #333;
+        display: flex;
+        align-items: center;
+        padding: 0 20px;
+      }
+      .tab-bar .brand {
+        font-size: 14px;
+        font-weight: 700;
+        color: #4caf50;
+        margin-right: 24px;
+        padding: 12px 0;
+      }
+      .tab-btn {
+        background: none;
+        border: none;
+        color: #666;
+        font-family: monospace;
+        font-size: 13px;
+        padding: 12px 16px;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        transition: all 0.2s;
+      }
+      .tab-btn:hover {
+        color: #ccc;
+      }
+      .tab-btn.active {
+        color: #4caf50;
+        border-bottom-color: #4caf50;
+      }
+      .tab-bar .spacer {
+        flex: 1;
+      }
+      .tab-bar .nav-user {
+        font-size: 11px;
+        color: #555;
+        margin-right: 8px;
+      }
+      .tab-bar .nav-link {
+        color: #ff9800;
+        font-size: 12px;
+        text-decoration: none;
+        margin-right: 12px;
+      }
+      .tab-bar .nav-link:hover {
+        color: #ffb74d;
+      }
+      .tab-bar .logout-btn {
+        background: none;
+        border: 1px solid #333;
+        color: #666;
+        padding: 4px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: monospace;
+        font-size: 12px;
+      }
+      .tab-bar .logout-btn:hover {
+        border-color: #666;
+        color: #888;
+      }
+      .tab-content {
+        display: none;
+      }
+      .tab-content.active {
+        display: block;
+      }
+
+      /* Main tab */
+      .main-tab {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .main-tab h1 {
+        color: #4caf50;
+        font-size: 18px;
+        margin-bottom: 4px;
+      }
+      .note {
+        color: #666;
+        font-size: 12px;
+        margin-bottom: 30px;
+        line-height: 1.6;
+      }
+      .main-tab h2 {
+        color: #888;
+        font-size: 13px;
+        text-transform: uppercase;
+        margin: 30px 0 10px;
+      }
+      .streams {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+      .stream-box {
+        flex: 1;
+      }
+      .stream-box label {
+        display: block;
+        font-size: 11px;
+        color: #666;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+      }
+      .stream-box img {
+        width: 100%;
+        aspect-ratio: 4/3;
+        object-fit: contain;
+        background: #000;
+        border-radius: 4px;
+        display: block;
+      }
+      .form-row {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .form-row input {
+        flex: 1;
+        padding: 10px;
+        background: #1a1a2e;
+        border: 1px solid #333;
+        border-radius: 4px;
+        color: white;
+        font-family: monospace;
+      }
+      .form-row input:focus {
+        outline: none;
+        border-color: #4caf50;
+      }
+      .main-tab button {
+        padding: 10px 24px;
+        background: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      .main-tab button:hover {
+        background: #45a049;
+      }
+      .main-tab button:disabled {
+        background: #333;
+        color: #666;
+        cursor: not-allowed;
+      }
+      #log {
+        background: #000;
+        border-radius: 4px;
+        padding: 12px;
+        margin-top: 20px;
+        height: 300px;
+        overflow-y: auto;
+        font-size: 12px;
+        line-height: 1.8;
+      }
+      .log-line {
+        white-space: pre-wrap;
+      }
+      .log-line.ok {
+        color: #4caf50;
+      }
+      .log-line.err {
+        color: #e53935;
+      }
+      .log-line.warn {
+        color: #ff9800;
+      }
+      .log-line.info {
+        color: #888;
+      }
+      .debug-box {
+        flex: 1;
+      }
+      .debug-box label {
+        display: block;
+        font-size: 11px;
+        color: #666;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+      }
+      .debug-box img {
+        width: 100%;
+        background: #000;
+        border-radius: 4px;
+        display: block;
+      }
+      .upload-section {
+        border: 1px dashed #333;
+        border-radius: 6px;
+        padding: 16px;
+        margin-bottom: 20px;
+        background: #0a0a1a;
+      }
+      .upload-note {
+        color: #ff9800;
+        font-size: 11px;
+        margin-bottom: 12px;
+        line-height: 1.5;
+      }
+      .upload-row {
+        display: flex;
+        gap: 10px;
+      }
+      .upload-box {
+        flex: 1;
+        text-align: center;
+      }
+      .upload-box label.title {
+        display: block;
+        font-size: 11px;
+        color: #666;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+      }
+      .upload-drop {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 4/3;
+        background: #000;
+        border: 1px dashed #333;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        overflow: hidden;
+        transition: border-color 0.2s;
+      }
+      .upload-drop:hover {
+        border-color: #4caf50;
+      }
+      .upload-drop.has-file {
+        border-style: solid;
+        border-color: #4caf50;
+      }
+      .upload-drop input[type="file"] {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+      }
+      .upload-drop .placeholder {
+        color: #444;
+        font-size: 11px;
+        pointer-events: none;
+      }
+      .upload-drop img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+      .password-section {
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 16px;
+        margin-bottom: 20px;
+        background: #0a0a1a;
+      }
+      .password-section h3 {
+        color: #888;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 12px;
+      }
+      .password-section input {
+        padding: 10px;
+        background: #1a1a2e;
+        border: 1px solid #333;
+        border-radius: 4px;
+        color: white;
+        font-family: monospace;
+        width: 100%;
+        margin-bottom: 8px;
+      }
+      .password-section input:focus {
+        outline: none;
+        border-color: #4caf50;
+      }
+      .pw-hint {
+        font-size: 10px;
+        color: #555;
+        margin-bottom: 12px;
+        display: block;
+      }
+      .pw-msg {
+        font-size: 12px;
+        min-height: 18px;
+        margin-top: 8px;
+      }
+      .pw-msg.error {
+        color: #e53935;
+      }
+      .pw-msg.success {
+        color: #4caf50;
+      }
+
+      /* ============================================================= */
+      /* CONFIRMATION PANEL                                             */
+      /* ============================================================= */
+      .confirm-panel {
+        display: none;
+        border: 2px solid #ff9800;
+        border-radius: 6px;
+        padding: 20px;
+        margin-top: 20px;
+        background: #0a0a1a;
+      }
+      .confirm-panel.visible {
+        display: block;
+      }
+      .confirm-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      .confirm-header h3 {
+        color: #ff9800;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin: 0;
+      }
+      .confirm-header .confirm-serial {
+        color: #4caf50;
+        font-size: 16px;
+        font-weight: 700;
+      }
+      .confirm-result {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+        padding: 12px;
+        background: #000;
+        border-radius: 4px;
+      }
+      .confirm-field label {
+        display: block;
+        font-size: 10px;
+        color: #555;
+        text-transform: uppercase;
+        margin-bottom: 2px;
+      }
+      .confirm-field .val {
+        font-size: 14px;
+        color: #ccc;
+      }
+      .confirm-field .val.grade {
+        color: #e3b341;
+        font-weight: 700;
+        font-size: 18px;
+      }
+      .confirm-field .val.ok {
+        color: #4caf50;
+      }
+      .confirm-field .val.bad {
+        color: #e53935;
+      }
+      .confirm-measurements {
+        margin-bottom: 16px;
+        padding: 12px;
+        background: #000;
+        border-radius: 4px;
+      }
+      .confirm-measurements h4 {
+        color: #666;
+        font-size: 11px;
+        text-transform: uppercase;
+        margin: 0 0 8px 0;
+      }
+      .confirm-meas-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 6px;
+      }
+      .confirm-meas-item {
+        font-size: 12px;
+        color: #a5d6ff;
+      }
+      .confirm-meas-item span {
+        color: #555;
+      }
+      .confirm-warnings {
+        margin-bottom: 16px;
+      }
+      .confirm-warnings .warn-item {
+        font-size: 12px;
+        color: #ff9800;
+        padding: 2px 0;
+      }
+      .confirm-debug {
+        margin-bottom: 16px;
+      }
+      .confirm-debug h4 {
+        color: #666;
+        font-size: 11px;
+        text-transform: uppercase;
+        margin: 0 0 8px 0;
+      }
+      .confirm-debug .streams {
+        margin-bottom: 0;
+      }
+      .confirm-actions {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      .confirm-actions .btn-confirm {
+        padding: 12px 32px;
+        background: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .confirm-actions .btn-confirm:hover {
+        background: #45a049;
+      }
+      .confirm-actions .btn-confirm:disabled {
+        background: #333;
+        color: #666;
+        cursor: not-allowed;
+      }
+      .confirm-actions .btn-reject {
+        padding: 12px 24px;
+        background: none;
+        border: 1px solid #e53935;
+        color: #e53935;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      .confirm-actions .btn-reject:hover {
+        background: rgba(229, 57, 53, 0.1);
+      }
+      .confirm-actions .confirm-status {
+        font-size: 12px;
+        color: #666;
+        margin-left: auto;
+      }
+      .confirm-actions .confirm-status.saving {
+        color: #ff9800;
+      }
+      .confirm-actions .confirm-status.saved {
+        color: #4caf50;
+      }
+      .confirm-actions .confirm-status.error {
+        color: #e53935;
+      }
+
+      /* Database tab */
+      .db-tab {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .db-tab h1 {
+        color: #4caf50;
+        font-size: 18px;
+        margin-bottom: 16px;
+      }
+      .db-controls {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .db-controls button {
+        padding: 8px 16px;
+        background: #1a1a2e;
+        border: 1px solid #333;
+        color: #ccc;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .db-controls button:hover {
+        border-color: #4caf50;
+        color: #fff;
+      }
+      .db-controls button.active {
+        background: #4caf50;
+        color: #fff;
+        border-color: #4caf50;
+      }
+      .db-controls .separator {
+        color: #333;
+        margin: 0 4px;
+      }
+      .db-controls input {
+        padding: 8px 12px;
+        background: #1a1a2e;
+        border: 1px solid #333;
+        border-radius: 4px;
+        color: white;
+        font-family: monospace;
+        font-size: 12px;
+        width: 180px;
+      }
+      .db-controls input:focus {
+        outline: none;
+        border-color: #4caf50;
+      }
+      .db-stats {
+        font-size: 11px;
+        color: #555;
+        margin-bottom: 16px;
+      }
+      .db-table-wrap {
+        overflow-x: auto;
+        border: 1px solid #222;
+        border-radius: 6px;
+      }
+      .db-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .db-table th {
+        text-align: left;
+        padding: 8px 10px;
+        background: #0a0a0a;
+        color: #666;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 1px solid #333;
+        position: sticky;
+        top: 0;
+        white-space: nowrap;
+      }
+      .db-table td {
+        padding: 6px 10px;
+        border-bottom: 1px solid #1a1a2e;
+        white-space: nowrap;
+      }
+      .db-table tr:hover td {
+        background: #1a1a2e;
+      }
+      .db-table .null {
+        color: #444;
+        font-style: italic;
+      }
+      .db-table .id-col {
+        color: #4caf50;
+        font-weight: 600;
+      }
+      .db-table .date-col {
+        color: #888;
+      }
+      .db-table .num-col {
+        color: #a5d6ff;
+        text-align: right;
+      }
+      .db-table .grade-col {
+        color: #e3b341;
+        font-weight: 600;
+      }
+      .db-empty {
+        text-align: center;
+        padding: 40px;
+        color: #444;
+        font-size: 13px;
+      }
+      .db-loading {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+      }
+      .db-schema-wrap {
+        display: none;
+        margin-top: 16px;
+        border: 1px solid #222;
+        border-radius: 6px;
+        background: #000;
+        overflow: auto;
+        max-height: 700px;
+      }
+      .db-schema-toolbar {
+        display: none;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+      }
+      .db-schema-meta {
+        color: #888;
+        font-size: 11px;
+      }
+      .db-schema-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .db-schema-actions button,
+      .db-schema-actions a {
+        padding: 8px 12px;
+        background: #1a1a2e;
+        border: 1px solid #333;
+        color: #ccc;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 12px;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+      }
+      .db-schema-actions button:hover,
+      .db-schema-actions a:hover {
+        border-color: #4caf50;
+        color: #fff;
+      }
+      .db-schema-img {
+        display: block;
+        width: 100%;
+        max-width: none;
+        height: auto;
+      }
+      .detail-panel {
+        background: #0a0a1a;
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 16px;
+        margin-top: 16px;
+        display: none;
+      }
+      .detail-panel h3 {
+        color: #888;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 12px;
+      }
+      .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 8px;
+      }
+      .detail-field label {
+        display: block;
+        font-size: 10px;
+        color: #555;
+        text-transform: uppercase;
+      }
+      .detail-field span {
+        font-size: 13px;
+        color: #ccc;
+      }
+      .detail-field .val-null {
+        color: #444;
+        font-style: italic;
+      }
+      .detail-close {
+        float: right;
+        background: none;
+        border: 1px solid #333;
+        color: #666;
+        padding: 4px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: monospace;
+        font-size: 11px;
+      }
+      .detail-close:hover {
+        border-color: #666;
+        color: #888;
+      }
+
+      /* Notes tab */
+      .notes-tab {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 24px 20px;
+      }
+      .notes-tab .section {
+        margin-bottom: 36px;
+      }
+      .section-header {
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 8px 8px 0 0;
+        padding: 14px 18px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .section-header h2 {
+        font-size: 14px;
+        color: #f0f6fc;
+        margin: 0;
+        font-family: monospace;
+        text-transform: none;
+      }
+      .tag {
+        font-size: 10px;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .tag.security {
+        background: rgba(246, 78, 77, 0.15);
+        color: #f97583;
+      }
+      .tag.auth {
+        background: rgba(88, 166, 255, 0.15);
+        color: #58a6ff;
+      }
+      .tag.arch {
+        background: rgba(126, 231, 135, 0.15);
+        color: #7ee787;
+      }
+      .tag.pattern {
+        background: rgba(210, 153, 34, 0.15);
+        color: #e3b341;
+      }
+      .tag.feature {
+        background: rgba(188, 140, 255, 0.15);
+        color: #bc8cff;
+      }
+      .annotation {
+        background: #1c2128;
+        border-left: 1px solid #30363d;
+        border-right: 1px solid #30363d;
+        padding: 14px 18px;
+        font-size: 13px;
+        color: #8b949e;
+        line-height: 1.7;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .annotation strong {
+        color: #c9d1d9;
+      }
+      .annotation code {
+        background: #30363d;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 12px;
+        color: #7ee787;
+      }
+      .annotation .callout {
+        background: rgba(246, 78, 77, 0.08);
+        border-left: 3px solid #f97583;
+        padding: 10px 14px;
+        margin: 10px 0;
+        border-radius: 0 4px 4px 0;
+        font-size: 12px;
+        color: #f97583;
+      }
+      .annotation .info {
+        background: rgba(88, 166, 255, 0.08);
+        border-left: 3px solid #58a6ff;
+        padding: 10px 14px;
+        margin: 10px 0;
+        border-radius: 0 4px 4px 0;
+        font-size: 12px;
+        color: #8b949e;
+      }
+      .code-block {
+        border: 1px solid #30363d;
+        border-top: none;
+        border-radius: 0 0 8px 8px;
+        overflow: hidden;
+      }
+      .code-block pre {
+        margin: 0;
+        padding: 14px 18px;
+        overflow-x: auto;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .code-block code {
+        font-family: "SF Mono", "Fira Code", monospace;
+      }
+
+      #app {
+        display: none;
+      }
+      @media (max-width: 600px) {
+        .form-row,
+        .upload-row,
+        .streams {
+          flex-direction: column;
+        }
+        .tab-bar {
+          flex-wrap: wrap;
+        }
+        .section-header {
+          flex-direction: column;
+          gap: 6px;
+          align-items: flex-start;
+        }
+        .confirm-actions {
+          flex-direction: column;
+        }
+        .confirm-actions .confirm-status {
+          margin-left: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div class="tab-bar">
+        <span class="brand">HerdSync</span>
+        <button class="tab-btn active" onclick="switchTab('main', this)">
+          Prod
+        </button>
+        <button class="tab-btn" onclick="switchTab('db', this)">
+          Database
+        </button>
+        <button class="tab-btn" onclick="switchTab('notes', this)">
+          Notes
+        </button>
+        <span class="spacer"></span>
+        <span id="adminLinkSlot"></span>
+        <span class="nav-user" id="navUser"></span>
+        <button class="logout-btn" onclick="HerdAuth.logout()">Logout</button>
+      </div>
+
+      <!-- ============================================================= -->
+      <!-- PROD TAB -->
+      <!-- ============================================================= -->
+      <div id="tab-main" class="tab-content active">
+        <div class="main-tab">
+          <h1>Prod Integration Example</h1>
+          <p class="note">
+            Reference implementation &mdash; camera streams, grade submission,
+            operator confirmation, database persistence.<br />
+            All grading requests go to the Pi. The Pi captures images and
+            forwards to EC2 internally. Results are reviewed by the operator
+            before saving to the database.
+          </p>
+
+          <h2>Camera Previews</h2>
+          <div class="streams">
+            <div class="stream-box">
+              <label>Side</label>
+              <img id="stream-side" src="" alt="side stream" />
+            </div>
+            <div class="stream-box">
+              <label>Top</label>
+              <img id="stream-top" src="" alt="top stream" />
+            </div>
+            <div class="stream-box">
+              <label>Front</label>
+              <img id="stream-front" src="" alt="front stream" />
+            </div>
+          </div>
+
+          <h2>Manual Upload (Testing Only)</h2>
+          <div class="upload-section">
+            <div class="upload-note">
+              For dataflow demonstration only — will not be part of the final
+              production page. Bypasses Pi camera capture and sends images
+              directly to EC2 for grading.
+            </div>
+            <div class="form-row" style="margin-bottom: 10px">
+              <input
+                type="text"
+                id="uploadSerialId"
+                placeholder="serial_id (e.g. 1443)"
+              />
+              <input
+                type="number"
+                id="uploadLiveWeight"
+                placeholder="live_weight (lbs)"
+                step="0.1"
+              />
+            </div>
+            <div class="upload-row">
+              <div class="upload-box">
+                <label class="title">Side</label>
+                <div class="upload-drop" id="drop-side">
+                  <span class="placeholder">click or drop</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onchange="handleUpload('side', this)"
+                  />
+                </div>
+              </div>
+              <div class="upload-box">
+                <label class="title">Top</label>
+                <div class="upload-drop" id="drop-top">
+                  <span class="placeholder">click or drop</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onchange="handleUpload('top', this)"
+                  />
+                </div>
+              </div>
+              <div class="upload-box">
+                <label class="title">Front</label>
+                <div class="upload-drop" id="drop-front">
+                  <span class="placeholder">click or drop</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onchange="handleUpload('front', this)"
+                  />
+                </div>
+              </div>
+            </div>
+            <div style="margin-top: 12px">
+              <button id="uploadGradeBtn" onclick="startUploadGrade()" disabled>
+                Grade with Uploaded Images
+              </button>
+              <span
+                id="upload-status"
+                style="margin-left: 10px; font-size: 11px; color: #666"
+              ></span>
+            </div>
+          </div>
+
+          <h2>Grade (Live Capture)</h2>
+          <div class="form-row">
+            <input
+              type="text"
+              id="serialId"
+              placeholder="serial_id (e.g. 1443)"
+            />
+            <input
+              type="number"
+              id="liveWeight"
+              placeholder="live_weight (lbs)"
+              step="0.1"
+            />
+          </div>
+          <button id="gradeBtn" onclick="startGrade()">Grade</button>
+
+          <!-- ========================================================= -->
+          <!-- CONFIRMATION PANEL                                         -->
+          <!-- ========================================================= -->
+          <div class="confirm-panel" id="confirmPanel">
+            <div class="confirm-header">
+              <h3>Review Grade Result</h3>
+              <span class="confirm-serial" id="confirmSerial"></span>
+            </div>
+
+            <div class="confirm-result" id="confirmResult"></div>
+
+            <div
+              class="confirm-measurements"
+              id="confirmMeasWrap"
+              style="display: none"
+            >
+              <h4>Measurements</h4>
+              <div class="confirm-meas-grid" id="confirmMeas"></div>
+            </div>
+
+            <div
+              class="confirm-warnings"
+              id="confirmWarnings"
+              style="display: none"
+            ></div>
+
+            <div class="confirm-debug">
+              <h4>Debug Overlays</h4>
+              <div class="streams" id="confirmDebugImages"></div>
+            </div>
+
+            <div class="confirm-actions">
+              <button
+                class="btn-confirm"
+                id="confirmBtn"
+                onclick="confirmGrade()"
+              >
+                Confirm &amp; Save
+              </button>
+              <button class="btn-reject" onclick="rejectGrade()">Reject</button>
+              <span class="confirm-status" id="confirmStatus"></span>
+            </div>
+          </div>
+
+          <h2>Account</h2>
+          <div class="password-section">
+            <h3>Change Password</h3>
+            <input
+              type="password"
+              id="currentPassword"
+              placeholder="Current password"
+            />
+            <input
+              type="password"
+              id="newPassword"
+              placeholder="New password"
+            />
+            <span class="pw-hint"
+              >8+ chars &middot; uppercase &middot; lowercase &middot; number
+              &middot; special character</span
+            >
+            <input
+              type="password"
+              id="confirmPassword"
+              placeholder="Confirm new password"
+            />
+            <button onclick="changePassword()" id="changePwBtn">
+              Update Password
+            </button>
+            <div class="pw-msg" id="pwMsg"></div>
+          </div>
+
+          <div id="log"></div>
+        </div>
+      </div>
+
+      <!-- ============================================================= -->
+      <!-- DATABASE TAB -->
+      <!-- ============================================================= -->
+      <div id="tab-db" class="tab-content">
+        <div class="db-tab">
+          <h1>Database Browser</h1>
+          <div class="db-controls">
+            <button class="active" onclick="dbLoadTable('goats', this)">
+              Goats
+            </button>
+            <button onclick="dbLoadTable('chickens', this)">Chickens</button>
+            <button onclick="dbLoadTable('lambs', this)">Lambs</button>
+            <span class="separator">|</span>
+            <button onclick="dbLoadTable('providers', this)">Providers</button>
+            <button onclick="dbLoadTable('grading', this)">
+              Grading Results
+            </button>
+            <span class="separator">|</span>
+            <button onclick="dbToggleSchema(this)">Schema</button>
+            <input
+              type="text"
+              id="dbSearch"
+              placeholder="Search..."
+              onkeyup="dbFilter()"
+            />
+            <button
+              onclick="dbRefresh()"
+              style="background: none; border: 1px solid #333; color: #666"
+            >
+              Refresh
+            </button>
+          </div>
+          <div class="db-schema-toolbar" id="dbSchemaToolbar">
+            <div class="db-schema-meta">HerdSync RDS schema diagram</div>
+            <div class="db-schema-actions">
+              <button onclick="dbSchemaZoom(1)">100%</button>
+              <button onclick="dbSchemaZoom(1.5)">150%</button>
+              <button onclick="dbSchemaZoom(2)">200%</button>
+              <a href="db_schema.png" target="_blank" rel="noopener"
+                >Open Full Size</a
+              >
+            </div>
+          </div>
+          <div class="db-schema-wrap" id="dbSchemaWrap">
+            <img
+              id="dbSchemaImg"
+              class="db-schema-img"
+              src="db_schema.png"
+              alt="HerdSync DB schema diagram"
+            />
+          </div>
+          <div class="db-stats" id="dbStats"></div>
+          <div
+            class="db-table-wrap"
+            id="dbTableWrap"
+            style="max-height: 500px; overflow-y: auto"
+          >
+            <table class="db-table" id="dbTable">
+              <thead id="dbThead"></thead>
+              <tbody id="dbTbody"></tbody>
+            </table>
+          </div>
+          <div id="dbEmpty" class="db-empty" style="display: none">
+            No records found
+          </div>
+          <div id="dbLoading" class="db-loading" style="display: none">
+            Loading...
+          </div>
+          <div class="detail-panel" id="detailPanel">
+            <button class="detail-close" onclick="closeDetail()">Close</button>
+            <h3 id="detailTitle">Record Detail</h3>
+            <div class="detail-grid" id="detailGrid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================================= -->
+      <!-- NOTES TAB                                                      -->
+      <!-- ============================================================= -->
+      <div id="tab-notes" class="tab-content">
+        <div class="notes-tab">
+          <div class="section">
+            <div class="section-header">
+              <h2>Config &amp; Endpoints</h2>
+              <span class="tag arch">Architecture</span>
+            </div>
+            <div class="annotation">
+              All frontend routing is driven by <code>/js/config.js</code>,
+              generated during CI/CD from GitHub secrets. Auth logic lives in
+              <code>/js/auth.js</code>. Both are served from S3 via CloudFront.
+              <div class="info">
+                <strong>CONFIG.AUTH_BASE</strong> &mdash; EC2 via ALB. Auth
+                endpoints: <code>/auth/login</code>, <code>/auth/refresh</code>,
+                <code>/auth/verify</code>, <code>/auth/me</code>,
+                <code>/auth/users</code><br />
+                <strong>CONFIG.DB_BASE</strong> &mdash; EC2 via ALB through
+                db-proxy. Data endpoints: <code>/db/goats</code>,
+                <code>/db/providers</code>, <code>/db/grading</code>, etc.<br />
+                <strong>CONFIG.API_BASE</strong> &mdash; Pi via Tailscale. Live
+                endpoints: <code>/api/prod/*</code>,
+                <code>/api/viewfocus/*</code>, <code>/api/heater/*</code>,
+                <code>/api/capture/*</code>
+              </div>
+              <div class="callout">
+                Auth and DB never go through the Pi. The Pi is only for live
+                camera/grading workflows.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-javascript">const CONFIG = {
+  AUTH_BASE: "https://api.herd-sync.com",      // EC2 via ALB
+  DB_BASE:   "https://api.herd-sync.com/db",   // EC2 via ALB → db-proxy
+  API_BASE:  "https://pi.herd-sync.com",       // Pi via Tailscale
+};</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Auth Gate Pattern</h2>
+              <span class="tag security">Security</span>
+            </div>
+            <div class="annotation">
+              Every page starts hidden. No content renders until
+              <code>HerdAuth.requireAuth()</code> resolves.
+              <div class="info">
+                <strong>HerdAuth.fetch(url, opts)</strong> &mdash; drop-in for
+                fetch(). Attaches Bearer token, auto-refreshes on 401.<br />
+                <strong>HerdAuth.getAccessToken()</strong> &mdash; raw JWT for
+                <code>?token=</code> URLs (img tags).<br />
+                <strong>HerdAuth.getUser()</strong> &mdash; cached {id,
+                username, role}.<br />
+                <strong>HerdAuth.logout()</strong> &mdash; clears tokens,
+                revokes refresh server-side.
+              </div>
+              <div class="callout">
+                Never show page content before requireAuth() resolves. Never
+                hand-roll token attachment for normal API requests.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-javascript">function showApp(user) {
+  document.getElementById("app").style.display = "block";
+}
+// Must be LAST line in every page
+HerdAuth.requireAuth().then((user) => showApp(user));</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Image Auth (?token= pattern)</h2>
+              <span class="tag security">Security</span>
+            </div>
+            <div class="annotation">
+              <code>&lt;img&gt;</code> tags cannot set HTTP headers. JWT is
+              passed as a query parameter instead. The Pi's Caddy forward_auth
+              extracts it from <code>X-Forwarded-Uri</code>. Tokens auto-refresh
+              every ~14 min via <code>auth.js</code> which updates all
+              <code>img[src*="token="]</code> elements.
+            </div>
+            <div class="code-block">
+              <pre><code class="language-javascript">img.src = CONFIG.API_BASE + "/api/viewfocus/stream/side"
+  + "?token=" + HerdAuth.getAccessToken();</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Grading &amp; Confirmation Flow</h2>
+              <span class="tag feature">Feature</span>
+            </div>
+            <div class="annotation">
+              Grading is a multi-step process. The CV model is not perfect
+              &mdash; operators must review results before they hit the
+              database.
+              <div class="info">
+                <strong>1.</strong> Operator enters serial_id + live_weight,
+                clicks Grade<br />
+                <strong>2.</strong> Pi captures images &rarr; sends to EC2
+                &rarr; EC2 returns grade + measurements + debug images<br />
+                <strong>3.</strong> Confirmation panel shows results + debug
+                overlays for review<br />
+                <strong>4.</strong> Operator clicks
+                <strong>Confirm</strong> &rarr; frontend POSTs to
+                <code>CONFIG.DB_BASE + "/grading"</code><br />
+                <strong>5.</strong> Or clicks <strong>Reject</strong> &rarr;
+                result discarded, no DB write
+              </div>
+              <div class="callout">
+                EC2 never auto-saves to the database. The frontend owns the
+                confirm/reject decision. This is intentional.
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-javascript">// On confirm — save to DB through db-proxy
+const resp = await HerdAuth.fetch(CONFIG.DB_BASE + "/grading", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(pendingResult),
+});
+// On reject — just clear the panel, nothing saved</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Pi Route Surface</h2>
+              <span class="tag arch">Architecture</span>
+            </div>
+            <div class="annotation">
+              All live operational flows go through Pi routes, never directly to
+              EC2.
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">/api/viewfocus/stream/{cam}        MJPEG live stream
+/api/viewfocus/settings            Camera focus settings
+/api/prod/grade                    Live capture → grade
+/api/prod/grade/test               Upload images → grade (no cameras)
+/api/prod/status                   Poll grading progress
+/api/prod/debug/{serial_id}/{view} Debug overlay images
+/api/heater/status                 Heater dashboard data
+/api/capture/record                Training capture</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>DB Routes (via db-proxy)</h2>
+              <span class="tag arch">Architecture</span>
+            </div>
+            <div class="annotation">
+              All database access goes through <code>CONFIG.DB_BASE</code> which
+              hits the auth-gated db-proxy. The proxy validates the JWT, then
+              forwards to the internal db service. Only whitelisted prefixes are
+              allowed.
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">GET    /goats                List all goats
+GET    /goats/{serial_id}    Get one goat
+POST   /goats                Create goat (serial_id auto-assigned)
+PUT    /goats/{serial_id}    Update goat
+
+GET    /grading              Recent grade results
+GET    /grading/{serial_id}  Grade history for a goat
+POST   /grading              Save a confirmed grade result
+
+GET    /providers             List providers
+GET    /animals/next          Preview next serial_id
+
+Same pattern for /chickens, /lambs.</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>Security Model</h2>
+              <span class="tag security">Security</span>
+            </div>
+            <div class="annotation">
+              Two independent auth layers protect the system.
+              <div class="info">
+                <strong>User-level:</strong> Browser &rarr; Bearer JWT &rarr;
+                Caddy forward_auth (Pi) or db-proxy verify (EC2)<br />
+                <strong>Service-level:</strong> Pi &rarr; EC2 via
+                <code>X-API-Key</code> header (shared secret in .env)
+              </div>
+              EC2 API middleware fails closed: no key configured = all
+              non-health requests rejected. Pi&harr;EC2 traffic goes over
+              Tailscale (WireGuard encrypted).
+            </div>
+            <div class="code-block">
+              <pre><code class="language-plaintext">Browser → Pi (Caddy forward_auth) → EC2 (X-API-Key)
+Browser → ALB → auth service (login/refresh/verify)
+Browser → ALB → db-proxy (JWT verify) → db service</code></pre>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-header">
+              <h2>New Page Checklist</h2>
+              <span class="tag pattern">Pattern</span>
+            </div>
+            <div class="annotation">
+              Every new page must follow these rules:
+              <div class="info">
+                &bull; Include <code>/js/config.js</code> and
+                <code>/js/auth.js</code><br />
+                &bull; Gate with
+                <code>HerdAuth.requireAuth().then(showApp)</code> as last
+                line<br />
+                &bull; Use <code>HerdAuth.fetch()</code> for all authenticated
+                requests<br />
+                &bull; Use <code>?token=</code> for img/stream src attributes<br />
+                &bull; Use <code>CONFIG.API_BASE</code> for Pi,
+                <code>CONFIG.AUTH_BASE</code> for auth,
+                <code>CONFIG.DB_BASE</code> for data<br />
+                &bull; Role checks are UI-only &mdash; backend enforces actual
+                permissions
+              </div>
+            </div>
+            <div class="code-block">
+              <pre><code class="language-html">&lt;script src="/js/config.js"&gt;&lt;/script&gt;
+&lt;script src="/js/auth.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  function showApp(user) { /* render page */ }
+  HerdAuth.requireAuth().then(showApp);
+&lt;/script&gt;</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // =================================================================
+      // TAB SWITCHING
+      // =================================================================
+      function switchTab(name, btn) {
+        document
+          .querySelectorAll(".tab-content")
+          .forEach((t) => t.classList.remove("active"));
+        document
+          .querySelectorAll(".tab-btn")
+          .forEach((b) => b.classList.remove("active"));
+        document.getElementById("tab-" + name).classList.add("active");
+        btn.classList.add("active");
+        if (name === "notes")
+          document.querySelectorAll(".notes-tab pre code").forEach((el) => {
+            if (!el.dataset.highlighted) hljs.highlightElement(el);
+          });
+        if (name === "db" && !dbCurrentTable)
+          dbLoadTable("goats", document.querySelector(".db-controls button"));
+      }
+
+      let currentUser = null;
+      let dbSchemaVisible = false;
+      let dbSchemaScale = 1;
+
+      // =================================================================
+      // APP INIT
+      // =================================================================
+      function showApp(user) {
+        currentUser = user;
+        document.getElementById("app").style.display = "block";
+        document.getElementById("navUser").textContent =
+          user.username + " (" + user.role + ")";
+        if (user.role === "admin") {
+          const adminLink = document.createElement("a");
+          adminLink.href = "admin.html";
+          adminLink.textContent = "Admin";
+          adminLink.className = "nav-link";
+          document.getElementById("adminLinkSlot").appendChild(adminLink);
+        }
+        ["side", "top", "front"].forEach((cam) => {
+          document.getElementById("stream-" + cam).src =
+            CONFIG.API_BASE +
+            "/api/viewfocus/stream/" +
+            cam +
+            "?token=" +
+            HerdAuth.getAccessToken();
+        });
+      }
+
+      // =================================================================
+      // LOGGING
+      // =================================================================
+      function log(msg, type = "info") {
+        const el = document.getElementById("log");
+        const time = new Date().toLocaleTimeString();
+        const div = document.createElement("div");
+        div.className = "log-line " + type;
+        div.textContent = time + "  " + msg;
+        el.appendChild(div);
+        el.scrollTop = el.scrollHeight;
+      }
+
+      // =================================================================
+      // MANUAL UPLOAD
+      // =================================================================
+      const uploadedFiles = { side: null, top: null, front: null };
+      function handleUpload(view, input) {
+        const file = input.files[0];
+        if (!file) return;
+        uploadedFiles[view] = file;
+        const drop = document.getElementById("drop-" + view);
+        const existing = drop.querySelector("img");
+        if (existing) existing.remove();
+        const img = document.createElement("img");
+        img.src = URL.createObjectURL(file);
+        drop.appendChild(img);
+        drop.classList.add("has-file");
+        drop.querySelector(".placeholder").style.display = "none";
+        updateUploadStatus();
+      }
+      function updateUploadStatus() {
+        const filled = Object.values(uploadedFiles).filter(Boolean).length;
+        document.getElementById("upload-status").textContent =
+          filled + "/3 images selected";
+        document.getElementById("uploadGradeBtn").disabled = filled < 3;
+        document.getElementById("upload-status").style.color =
+          filled === 3 ? "#4caf50" : "#666";
+      }
+
+      async function startUploadGrade() {
+        const serialId = document.getElementById("uploadSerialId").value.trim();
+        const liveWeight = parseFloat(
+          document.getElementById("uploadLiveWeight").value,
+        );
+        const btn = document.getElementById("uploadGradeBtn");
+        if (!serialId) {
+          log("serial_id is required", "err");
+          return;
+        }
+        if (!liveWeight || liveWeight <= 0) {
+          log("valid live_weight is required", "err");
+          return;
+        }
+
+        btn.disabled = true;
+        document.getElementById("log").innerHTML = "";
+        hideConfirmPanel();
+        log(
+          "Starting upload grade for " + serialId + " @ " + liveWeight + " lbs",
+        );
+        log("Uploading 3 images to Pi → EC2...", "info");
+
+        try {
+          const formData = new FormData();
+          formData.append("serial_id", serialId);
+          formData.append("live_weight", liveWeight);
+          formData.append("side_image", uploadedFiles.side);
+          formData.append("top_image", uploadedFiles.top);
+          formData.append("front_image", uploadedFiles.front);
+
+          const resp = await HerdAuth.fetch(
+            CONFIG.API_BASE + "/api/prod/grade/test",
+            { method: "POST", body: formData },
+          );
+          const body = await resp.json();
+
+          if (!resp.ok) {
+            log(
+              "Upload grade rejected: " +
+                (body.message || body.error_code || resp.status),
+              "err",
+            );
+            if (body.fix) log("Fix: " + body.fix, "warn");
+            btn.disabled = false;
+            return;
+          }
+
+          log("Grade returned — review below", "ok");
+          showConfirmPanel(serialId, liveWeight, body);
+        } catch (err) {
+          log("Network error: " + err.message, "err");
+          log("Is the Pi reachable at " + CONFIG.API_BASE + "?", "warn");
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      // =================================================================
+      // GRADE FLOW (live capture)
+      // =================================================================
+      async function startGrade() {
+        const serialId = document.getElementById("serialId").value.trim();
+        const liveWeight = parseFloat(
+          document.getElementById("liveWeight").value,
+        );
+        const btn = document.getElementById("gradeBtn");
+        if (!serialId) {
+          log("serial_id is required", "err");
+          return;
+        }
+        if (!liveWeight || liveWeight <= 0) {
+          log("valid live_weight is required", "err");
+          return;
+        }
+
+        btn.disabled = true;
+        document.getElementById("log").innerHTML = "";
+        hideConfirmPanel();
+        log("Starting grade for " + serialId + " @ " + liveWeight + " lbs");
+
+        try {
+          log("POST /api/prod/grade ...", "info");
+          const resp = await HerdAuth.fetch(
+            CONFIG.API_BASE + "/api/prod/grade",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                serial_id: serialId,
+                live_weight: liveWeight,
+              }),
+            },
+          );
+          const body = await resp.json();
+
+          if (!resp.ok) {
+            log(
+              "Grade rejected: " +
+                (body.message || body.error_code || resp.status),
+              "err",
+            );
+            if (body.fix) log("Fix: " + body.fix, "warn");
+            if (body.errors) body.errors.forEach((e) => log("  " + e, "warn"));
+            btn.disabled = false;
+            return;
+          }
+
+          log("Grade started — capturing images...", "ok");
+          const result = await pollStatus();
+
+          if (result && result.success) {
+            log("Grade returned — review below", "ok");
+            showConfirmPanel(serialId, liveWeight, result);
+          } else {
+            log("Grade failed: " + (result?.error || "unknown"), "err");
+            if (result?.fix) log("Fix: " + result.fix, "warn");
+          }
+        } catch (err) {
+          log("Network error: " + err.message, "err");
+          log("Is the Pi reachable at " + CONFIG.API_BASE + "?", "warn");
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      async function pollStatus() {
+        let lastProgress = null;
+        for (let i = 0; i < 240; i++) {
+          await new Promise((r) => setTimeout(r, 500));
+          let data;
+          try {
+            const resp = await HerdAuth.fetch(
+              CONFIG.API_BASE + "/api/prod/status",
+            );
+            data = await resp.json();
+          } catch (err) {
+            log("Lost connection to Pi, retrying...", "warn");
+            continue;
+          }
+
+          if (data.progress && data.progress !== lastProgress) {
+            lastProgress = data.progress;
+            const msgs = {
+              starting: "Initializing cameras...",
+              capturing: "Capturing images from cameras...",
+              grading: "Sending to EC2 for grading...",
+              archiving: "Archiving images to S3...",
+            };
+            log(msgs[data.progress] || data.progress, "info");
+          }
+          if (!data.active) {
+            return data.last_error
+              ? { success: false, error: data.last_error }
+              : data.last_result || {
+                  success: false,
+                  error: "No result returned",
+                };
+          }
+        }
+        return {
+          success: false,
+          error: "Timed out waiting for grade to complete",
+        };
+      }
+
+      // =================================================================
+      // CONFIRMATION PANEL
+      // =================================================================
+      let pendingGradeResult = null;
+      let pendingSerialId = null;
+      let pendingLiveWeight = null;
+
+      function showConfirmPanel(serialId, liveWeight, result) {
+        pendingGradeResult = result;
+        pendingSerialId = serialId;
+        pendingLiveWeight = liveWeight;
+
+        const panel = document.getElementById("confirmPanel");
+        document.getElementById("confirmSerial").textContent = "#" + serialId;
+
+        // Result summary
+        const grid = document.getElementById("confirmResult");
+        const allOk = result.all_views_successful || result.all_views_ok;
+        grid.innerHTML =
+          '<div class="confirm-field"><label>Grade</label><div class="val grade">' +
+          (result.grade || "N/A") +
+          "</div></div>" +
+          '<div class="confirm-field"><label>Views OK</label><div class="val ' +
+          (allOk ? "ok" : "bad") +
+          '">' +
+          (allOk ? "Yes" : "No") +
+          "</div></div>" +
+          '<div class="confirm-field"><label>Live Weight</label><div class="val">' +
+          liveWeight +
+          " lbs</div></div>" +
+          (result.timing
+            ? '<div class="confirm-field"><label>EC2 Time</label><div class="val">' +
+              (result.timing.ec2_sec || "—") +
+              "s</div></div>"
+            : "") +
+          (result.timing
+            ? '<div class="confirm-field"><label>Total Time</label><div class="val">' +
+              (result.timing.total_sec || "—") +
+              "s</div></div>"
+            : "");
+
+        // Measurements
+        const measWrap = document.getElementById("confirmMeasWrap");
+        const measGrid = document.getElementById("confirmMeas");
+        const meas = result.measurements;
+        if (meas && typeof meas === "object" && Object.keys(meas).length > 0) {
+          measGrid.innerHTML = Object.entries(meas)
+            .filter(([_, v]) => v !== null && v !== undefined)
+            .map(
+              ([k, v]) =>
+                '<div class="confirm-meas-item">' +
+                k.replace(/_cm$/, "").replace(/_/g, " ") +
+                ": <span>" +
+                v +
+                " cm</span></div>",
+            )
+            .join("");
+          measWrap.style.display = "block";
+        } else {
+          measWrap.style.display = "none";
+        }
+
+        // Warnings
+        const warnEl = document.getElementById("confirmWarnings");
+        if (result.warnings && result.warnings.length > 0) {
+          warnEl.innerHTML = result.warnings
+            .map((w) => '<div class="warn-item">⚠ ' + w + "</div>")
+            .join("");
+          warnEl.style.display = "block";
+        } else {
+          warnEl.style.display = "none";
+        }
+
+        // Debug images
+        const debugContainer = document.getElementById("confirmDebugImages");
+        debugContainer.innerHTML = "";
+        ["side", "top", "front"].forEach((view) => {
+          const url =
+            CONFIG.API_BASE +
+            "/api/prod/debug/" +
+            serialId +
+            "/" +
+            view +
+            "?token=" +
+            HerdAuth.getAccessToken();
+          const div = document.createElement("div");
+          div.className = "debug-box";
+          div.innerHTML =
+            "<label>" +
+            view +
+            '</label><img src="' +
+            url +
+            '" alt="' +
+            view +
+            ' debug" onerror="this.alt=\'not available\'; this.style.opacity=0.3" />';
+          debugContainer.appendChild(div);
+        });
+
+        // Reset status
+        document.getElementById("confirmStatus").textContent = "";
+        document.getElementById("confirmStatus").className = "confirm-status";
+        document.getElementById("confirmBtn").disabled = false;
+
+        panel.classList.add("visible");
+        panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+
+      function hideConfirmPanel() {
+        document.getElementById("confirmPanel").classList.remove("visible");
+        pendingGradeResult = null;
+        pendingSerialId = null;
+        pendingLiveWeight = null;
+      }
+
+      async function confirmGrade() {
+        if (!pendingGradeResult || !pendingSerialId) return;
+
+        const btn = document.getElementById("confirmBtn");
+        const status = document.getElementById("confirmStatus");
+        btn.disabled = true;
+        status.textContent = "Saving to database...";
+        status.className = "confirm-status saving";
+
+        const allOk =
+          pendingGradeResult.all_views_successful ||
+          pendingGradeResult.all_views_ok;
+
+        const payload = {
+          serial_id: parseInt(pendingSerialId) || 0,
+          grade: pendingGradeResult.grade || null,
+          live_weight: pendingLiveWeight,
+          all_views_ok: allOk || false,
+          measurements: pendingGradeResult.measurements || null,
+          warnings: pendingGradeResult.warnings || null,
+          capture_sec: pendingGradeResult.timing?.capture_sec || null,
+          ec2_sec: pendingGradeResult.timing?.ec2_sec || null,
+          total_sec: pendingGradeResult.timing?.total_sec || null,
+        };
+
+        try {
+          const resp = await HerdAuth.fetch(CONFIG.DB_BASE + "/grading", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || err.error || "HTTP " + resp.status);
+          }
+
+          const saved = await resp.json();
+          status.textContent = "Saved (id: " + (saved.id || "ok") + ")";
+          status.className = "confirm-status saved";
+          log(
+            "Grade confirmed and saved to database (id: " +
+              (saved.id || "ok") +
+              ")",
+            "ok",
+          );
+
+          // Auto-hide after a moment
+          setTimeout(() => hideConfirmPanel(), 3000);
+        } catch (err) {
+          status.textContent = "Failed: " + err.message;
+          status.className = "confirm-status error";
+          log("Failed to save grade: " + err.message, "err");
+          btn.disabled = false;
+        }
+      }
+
+      function rejectGrade() {
+        log("Grade rejected by operator — not saved", "warn");
+        hideConfirmPanel();
+      }
+
+      // =================================================================
+      // CHANGE PASSWORD
+      // =================================================================
+      async function changePassword() {
+        const currentPw = document.getElementById("currentPassword").value;
+        const newPw = document.getElementById("newPassword").value;
+        const confirmPw = document.getElementById("confirmPassword").value;
+        const msg = document.getElementById("pwMsg");
+        const btn = document.getElementById("changePwBtn");
+        msg.textContent = "";
+        msg.className = "pw-msg";
+
+        if (!currentPw) {
+          msg.textContent = "Current password is required";
+          msg.className = "pw-msg error";
+          return;
+        }
+        if (
+          !newPw ||
+          newPw.length < 8 ||
+          !/[A-Z]/.test(newPw) ||
+          !/[a-z]/.test(newPw) ||
+          !/[0-9]/.test(newPw) ||
+          !/[^A-Za-z0-9]/.test(newPw)
+        ) {
+          msg.textContent =
+            "Password must be 8+ chars with uppercase, lowercase, number, and special character";
+          msg.className = "pw-msg error";
+          return;
+        }
+        if (newPw !== confirmPw) {
+          msg.textContent = "Passwords do not match";
+          msg.className = "pw-msg error";
+          return;
+        }
+        if (currentPw === newPw) {
+          msg.textContent = "New password must be different";
+          msg.className = "pw-msg error";
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = "Updating...";
+        try {
+          const verifyResp = await fetch(CONFIG.AUTH_BASE + "/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              username: currentUser.username,
+              password: currentPw,
+            }),
+          });
+          if (!verifyResp.ok) {
+            const err = await verifyResp.json().catch(() => ({}));
+            msg.textContent = err.detail || "Current password is incorrect";
+            msg.className = "pw-msg error";
+            return;
+          }
+          const updateResp = await HerdAuth.fetch(
+            CONFIG.AUTH_BASE + "/auth/users/" + currentUser.id,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ password: newPw }),
+            },
+          );
+          if (!updateResp.ok) {
+            const err = await updateResp.json().catch(() => ({}));
+            throw new Error(err.detail || "Failed to update password");
+          }
+          msg.textContent = "Password updated successfully";
+          msg.className = "pw-msg success";
+          document.getElementById("currentPassword").value = "";
+          document.getElementById("newPassword").value = "";
+          document.getElementById("confirmPassword").value = "";
+        } catch (err) {
+          msg.textContent = err.message;
+          msg.className = "pw-msg error";
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Update Password";
+        }
+      }
+
+      // =================================================================
+      // DATABASE BROWSER
+      // =================================================================
+      let dbCurrentTable = null;
+      let dbData = [];
+      let dbProviderCache = {};
+
+      const DB_COLUMNS = {
+        goats: [
+          "serial_id",
+          "hook_id",
+          "description",
+          "live_weight",
+          "hang_weight",
+          "whole_hw",
+          "grade",
+          "prov_id",
+          "kill_date",
+          "process_date",
+        ],
+        chickens: [
+          "serial_id",
+          "live_weight",
+          "hang_weight",
+          "whole_hw",
+          "prov_id",
+          "kill_date",
+          "process_date",
+        ],
+        lambs: [
+          "serial_id",
+          "description",
+          "live_weight",
+          "hang_weight",
+          "whole_hw",
+          "grade",
+          "prov_id",
+          "kill_date",
+          "process_date",
+        ],
+        providers: ["id", "name", "phone", "email", "status"],
+        grading: [
+          "id",
+          "serial_id",
+          "grade",
+          "live_weight",
+          "all_views_ok",
+          "ec2_sec",
+          "graded_at",
+        ],
+      };
+      const COL_STYLES = {
+        serial_id: "id-col",
+        id: "id-col",
+        grade: "grade-col",
+        live_weight: "num-col",
+        hang_weight: "num-col",
+        whole_hw: "num-col",
+        ec2_sec: "num-col",
+        kill_date: "date-col",
+        process_date: "date-col",
+        graded_at: "date-col",
+      };
+
+      async function dbFetch(path) {
+        const base =
+          typeof CONFIG !== "undefined" && CONFIG.DB_BASE ? CONFIG.DB_BASE : "";
+        const resp = await HerdAuth.fetch(base + path);
+        if (!resp.ok) throw new Error("API error: " + resp.status);
+        return resp.json();
+      }
+
+      function dbToggleSchema(btn) {
+        dbSchemaVisible = !dbSchemaVisible;
+        const wrap = document.getElementById("dbSchemaWrap");
+        const toolbar = document.getElementById("dbSchemaToolbar");
+        const tableWrap = document.getElementById("dbTableWrap");
+        const stats = document.getElementById("dbStats");
+        wrap.style.display = dbSchemaVisible ? "block" : "none";
+        toolbar.style.display = dbSchemaVisible ? "flex" : "none";
+        tableWrap.style.display = dbSchemaVisible ? "none" : "block";
+        stats.style.display = dbSchemaVisible ? "none" : "block";
+        document.getElementById("dbEmpty").style.display = dbSchemaVisible
+          ? "none"
+          : document.getElementById("dbEmpty").style.display;
+        document.getElementById("dbLoading").style.display = dbSchemaVisible
+          ? "none"
+          : document.getElementById("dbLoading").style.display;
+        document.getElementById("detailPanel").style.display = dbSchemaVisible
+          ? "none"
+          : document.getElementById("detailPanel").style.display;
+        if (btn) {
+          if (dbSchemaVisible) btn.classList.add("active");
+          else btn.classList.remove("active");
+        }
+        if (dbSchemaVisible) dbSchemaZoom(dbSchemaScale);
+      }
+      function dbSchemaZoom(scale) {
+        dbSchemaScale = scale;
+        document.getElementById("dbSchemaImg").style.width = scale * 100 + "%";
+      }
+
+      async function dbLoadProviderCache() {
+        if (Object.keys(dbProviderCache).length > 0) return;
+        try {
+          const providers = await dbFetch("/providers");
+          providers.forEach((p) => {
+            dbProviderCache[p.id] = p.name;
+          });
+        } catch (e) {}
+      }
+
+      async function dbLoadTable(table, btn) {
+        if (dbSchemaVisible) {
+          const schemaBtn = document.querySelector(
+            '.db-controls button[onclick*="dbToggleSchema"]',
+          );
+          if (schemaBtn) schemaBtn.classList.remove("active");
+          dbSchemaVisible = false;
+          document.getElementById("dbSchemaWrap").style.display = "none";
+          document.getElementById("dbSchemaToolbar").style.display = "none";
+          document.getElementById("dbTableWrap").style.display = "block";
+          document.getElementById("dbStats").style.display = "block";
+        }
+        document.querySelectorAll(".db-controls button").forEach((b) => {
+          if (
+            !String(b.getAttribute("onclick") || "").includes("dbToggleSchema")
+          )
+            b.classList.remove("active");
+        });
+        if (btn) btn.classList.add("active");
+
+        dbCurrentTable = table;
+        const tbody = document.getElementById("dbTbody");
+        const thead = document.getElementById("dbThead");
+        const stats = document.getElementById("dbStats");
+        const empty = document.getElementById("dbEmpty");
+        const loading = document.getElementById("dbLoading");
+        tbody.innerHTML = "";
+        thead.innerHTML = "";
+        stats.textContent = "";
+        empty.style.display = "none";
+        loading.style.display = "block";
+        closeDetail();
+
+        try {
+          await dbLoadProviderCache();
+          dbData = await dbFetch(
+            "/" + table + (table === "grading" ? "?limit=200" : ""),
+          );
+          loading.style.display = "none";
+          if (dbData.length === 0) {
+            empty.style.display = "block";
+            stats.textContent = "0 records";
+            return;
+          }
+          const cols = DB_COLUMNS[table] || Object.keys(dbData[0]).slice(0, 10);
+          stats.textContent = dbData.length + " records";
+          thead.innerHTML =
+            "<tr>" +
+            cols.map((c) => "<th>" + c.replace(/_/g, " ") + "</th>").join("") +
+            "</tr>";
+          dbRenderRows(cols);
+        } catch (err) {
+          loading.style.display = "none";
+          empty.style.display = "block";
+          empty.textContent = "Error loading data: " + err.message;
+        }
+      }
+
+      function dbRenderRows(cols) {
+        const tbody = document.getElementById("dbTbody");
+        const search = document.getElementById("dbSearch").value.toLowerCase();
+        const filtered = search
+          ? dbData.filter((r) =>
+              Object.values(r).some((v) =>
+                String(v).toLowerCase().includes(search),
+              ),
+            )
+          : dbData;
+        tbody.innerHTML = filtered
+          .map(
+            (row, i) =>
+              '<tr onclick="dbShowDetail(' +
+              i +
+              ')" style="cursor:pointer;">' +
+              cols
+                .map((c) => {
+                  let val = row[c];
+                  const style = COL_STYLES[c] || "";
+                  if (c === "prov_id" && val && dbProviderCache[val])
+                    val = dbProviderCache[val];
+                  if (c === "graded_at" && val)
+                    val = new Date(val).toLocaleString();
+                  if (val === null || val === undefined)
+                    return '<td class="null">—</td>';
+                  if (typeof val === "boolean") val = val ? "✓" : "✗";
+                  return '<td class="' + style + '">' + val + "</td>";
+                })
+                .join("") +
+              "</tr>",
+          )
+          .join("");
+        document.getElementById("dbStats").textContent =
+          filtered.length +
+          (filtered.length !== dbData.length ? " / " + dbData.length : "") +
+          " records";
+        document.getElementById("dbEmpty").style.display =
+          filtered.length === 0 ? "block" : "none";
+      }
+
+      function dbFilter() {
+        if (!dbCurrentTable || !dbData.length) return;
+        dbRenderRows(
+          DB_COLUMNS[dbCurrentTable] || Object.keys(dbData[0]).slice(0, 10),
+        );
+      }
+      function dbRefresh() {
+        if (dbSchemaVisible) return;
+        if (dbCurrentTable)
+          dbLoadTable(
+            dbCurrentTable,
+            document.querySelector(
+              '.db-controls button.active:not([onclick*="dbToggleSchema"])',
+            ),
+          );
+      }
+
+      function dbShowDetail(index) {
+        if (dbSchemaVisible) return;
+        const search = document.getElementById("dbSearch").value.toLowerCase();
+        const filtered = search
+          ? dbData.filter((r) =>
+              Object.values(r).some((v) =>
+                String(v).toLowerCase().includes(search),
+              ),
+            )
+          : dbData;
+        const row = filtered[index];
+        if (!row) return;
+        const panel = document.getElementById("detailPanel");
+        const grid = document.getElementById("detailGrid");
+        const title = document.getElementById("detailTitle");
+        const LABELS = {
+          goats: "Goat",
+          chickens: "Chicken",
+          lambs: "Lamb",
+          providers: "Provider",
+          grading: "Grading",
+        };
+        title.textContent =
+          (LABELS[dbCurrentTable] || "Record") +
+          " #" +
+          (row.serial_id || row.id);
+        grid.innerHTML = Object.entries(row)
+          .map(([key, val]) => {
+            if (key === "prov_id" && val && dbProviderCache[val])
+              val = dbProviderCache[val] + " (id: " + val + ")";
+            if (key === "measurements" && val && typeof val === "object")
+              val = Object.entries(val)
+                .map(([k, v]) => k.replace(/_cm$/, "") + ": " + v + "cm")
+                .join(", ");
+            if (Array.isArray(val)) val = val.join(", ") || "—";
+            const display =
+              val === null || val === undefined
+                ? '<span class="val-null">null</span>'
+                : String(val);
+            return (
+              '<div class="detail-field"><label>' +
+              key.replace(/_/g, " ") +
+              "</label><span>" +
+              display +
+              "</span></div>"
+            );
+          })
+          .join("");
+        panel.style.display = "block";
+        panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+      function closeDetail() {
+        document.getElementById("detailPanel").style.display = "none";
+      }
+
+      // =================================================================
+      // AUTH GATE
+      // =================================================================
+      HerdAuth.requireAuth().then((user) => showApp(user));
+    </script>
+  </body>
+</html>

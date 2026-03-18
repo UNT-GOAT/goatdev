@@ -92,6 +92,7 @@ Fields:
 ```
 
 Example with curl:
+
 ```bash
 curl -X POST http://localhost:8000/analyze \
   -F "serial_id=GOAT001" \
@@ -102,6 +103,7 @@ curl -X POST http://localhost:8000/analyze \
 ```
 
 Response:
+
 ```json
 {
   "serial_id": "GOAT001",
@@ -150,6 +152,7 @@ Logs follow a structured format for CloudWatch:
 ```
 
 Examples:
+
 ```
 [INFO] [startup] API ready
 [INFO] [analyze] Request received | serial_id=GOAT001 weight=75.5
@@ -161,18 +164,19 @@ Examples:
 
 Key settings in `api/config.py`:
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `MIN_IMAGE_DIMENSION` | 100 | Minimum image width/height in pixels |
-| `MAX_FILE_SIZE_BYTES` | 20MB | Maximum upload size |
-| `MIN_CONFIDENCE_THRESHOLD` | 0.1 | YOLO detection threshold |
-| `WARN_CONFIDENCE_THRESHOLD` | 0.3 | Warn if confidence below this |
-| `MIN_WEIGHT_LBS` | 10 | Minimum valid weight |
-| `MAX_WEIGHT_LBS` | 500 | Maximum valid weight |
+| Setting                     | Default | Description                          |
+| --------------------------- | ------- | ------------------------------------ |
+| `MIN_IMAGE_DIMENSION`       | 100     | Minimum image width/height in pixels |
+| `MAX_FILE_SIZE_BYTES`       | 20MB    | Maximum upload size                  |
+| `MIN_CONFIDENCE_THRESHOLD`  | 0.1     | YOLO detection threshold             |
+| `WARN_CONFIDENCE_THRESHOLD` | 0.3     | Warn if confidence below this        |
+| `MIN_WEIGHT_LBS`            | 10      | Minimum valid weight                 |
+| `MAX_WEIGHT_LBS`            | 500     | Maximum valid weight                 |
 
 ## Grade Values
 
 Valid grades (best to worst):
+
 - Reserve
 - CAB Prime
 - Prime
@@ -186,11 +190,13 @@ Valid grades (best to worst):
 ## Error Handling
 
 All errors include:
+
 - `error`: Human-readable message
 - `error_code`: Machine-readable code
 - `fix`: Suggested action (when applicable)
 
 Example error response:
+
 ```json
 {
   "error": "No goat detected in side image",
