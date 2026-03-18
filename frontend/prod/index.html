@@ -664,6 +664,9 @@ async function loadAll() {
   filterProviders();
   renderGradeHistory();
 
+  // Pre-fetch next serial ID for grading
+  fetchNextSerialId();
+
   // Status
   if (loadErrors.length === 0) {
     setDbStatus('ok');
@@ -809,6 +812,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     document.getElementById('page-' + pg).classList.add('active');
     document.getElementById('pageTitle').textContent = TITLES[pg] || pg;
     setCamerasForPage(pg);
+    if (pg === 'grading') fetchNextSerialId();
   });
 });
 function toggleSidebar() { document.getElementById('sidebar').classList.toggle('collapsed'); }
@@ -1040,22 +1044,32 @@ async function saveProvider() {
 document.getElementById('addProviderModal').addEventListener('click', function(e) { if (e.target === this) closeAddProvider(); });
 
 // ============================================================
-// GRADING — serial_id validation
+// GRADING — auto-increment serial ID
 // ============================================================
-function validateGradeSerial() {
-  const val = document.getElementById('gradeSerial').value.trim();
+let nextSerialId = null;
+
+async function fetchNextSerialId() {
   const hint = document.getElementById('gradeSerialHint');
-  if (!val) { hint.textContent = 'Enter an existing goat serial ID'; hint.className = 'field-hint'; return; }
-  const id = parseInt(val);
-  if (isNaN(id)) { hint.textContent = 'Must be a number'; hint.className = 'field-hint invalid'; return; }
-  const goat = allAnimals.find(a => a.serial_id === id && a.type === 'goat');
-  if (goat) {
-    const desc = goat.description ? ' — ' + goat.description : '';
-    hint.textContent = 'Found: Goat #' + id + desc;
+  const input = document.getElementById('gradeSerial');
+  const btn = document.getElementById('gradeBtn');
+
+  hint.textContent = 'Fetching next serial ID...';
+  hint.className = 'field-hint';
+  input.value = '';
+  btn.disabled = true;
+
+  try {
+    const data = await dbFetch('/animals/next');
+    nextSerialId = data.next_serial_id || data.next_id || data;
+    input.value = nextSerialId;
+    hint.textContent = 'Auto-assigned — this goat will be created on save';
     hint.className = 'field-hint valid';
-  } else {
-    hint.textContent = 'No goat found with serial ID ' + id;
+    btn.disabled = false;
+  } catch (err) {
+    hint.textContent = 'Failed to fetch next ID: ' + err.message;
     hint.className = 'field-hint invalid';
+    nextSerialId = null;
+    btn.disabled = true;
   }
 }
 
@@ -1073,28 +1087,24 @@ function gradeLog(msg, type) {
 }
 
 async function startGrade() {
-  const serialId = document.getElementById('gradeSerial').value.trim();
+  if (!nextSerialId) { showToast('error', 'No serial ID assigned — try refreshing'); return; }
   const liveWeight = parseFloat(document.getElementById('gradeLiveWeight').value);
   const btn = document.getElementById('gradeBtn');
 
-  if (!serialId || isNaN(parseInt(serialId))) { showToast('error', 'Valid numeric serial ID is required'); return; }
   if (!liveWeight || liveWeight <= 0) { showToast('error', 'Valid live weight is required'); return; }
 
-  // Validate goat exists
-  const goat = allAnimals.find(a => a.serial_id === parseInt(serialId) && a.type === 'goat');
-  if (!goat) { showToast('error', 'Goat with serial ID ' + serialId + ' not found in database'); return; }
-
+  const serialId = nextSerialId;
   btn.disabled = true;
   document.getElementById('gradeLog').innerHTML = '';
   document.getElementById('gradeLog').style.display = 'none';
 
-  gradeLog('Starting grade for serial ' + serialId + ' @ ' + liveWeight + ' lbs');
+  gradeLog('Starting grade for new goat (serial ' + serialId + ') @ ' + liveWeight + ' lbs');
 
   try {
     gradeLog('POST /api/prod/grade ...', 'info');
     const resp = await HerdAuth.fetch(CONFIG.API_BASE + '/api/prod/grade', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ serial_id: serialId, live_weight: liveWeight }),
+      body: JSON.stringify({ serial_id: String(serialId), live_weight: liveWeight }),
     });
     const body = await resp.json();
 
@@ -1110,7 +1120,7 @@ async function startGrade() {
     if (result && result.success !== false && !result.error) {
       gradeLog('Grade complete — opening review...', 'ok');
       pendingGradeResult = {
-        serial_id: parseInt(serialId),
+        serial_id: serialId,
         grade: result.grade || null,
         live_weight: liveWeight,
         all_views_ok: result.all_views_successful ?? result.all_views_ok ?? null,
@@ -1196,26 +1206,45 @@ async function acceptGrade() {
   btn.disabled = true; btn.textContent = 'Saving...';
 
   try {
-    const resp = await HerdAuth.fetch(CONFIG.DB_BASE + '/grading', {
+    // Step 1: Create the goat in the database
+    gradeLog('Creating goat #' + pendingGradeResult.serial_id + '...', 'info');
+    const goatResp = await HerdAuth.fetch(CONFIG.DB_BASE + '/goats', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        serial_id: pendingGradeResult.serial_id,
+        live_weight: pendingGradeResult.live_weight,
+        grade: pendingGradeResult.grade || null,
+      }),
+    });
+    if (!goatResp.ok) {
+      const err = await goatResp.json().catch(() => ({}));
+      throw new Error('Failed to create goat: ' + (err.detail || goatResp.status));
+    }
+    gradeLog('Goat created', 'ok');
+
+    // Step 2: Save the grading result
+    gradeLog('Saving grade result...', 'info');
+    const gradeResp = await HerdAuth.fetch(CONFIG.DB_BASE + '/grading', {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify(pendingGradeResult),
     });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error('DB save failed: ' + (err.detail || resp.status));
+    if (!gradeResp.ok) {
+      const err = await gradeResp.json().catch(() => ({}));
+      throw new Error('Goat created but grade save failed: ' + (err.detail || gradeResp.status));
     }
 
     document.getElementById('gradeReviewModal').classList.remove('open');
-    showToast('success', 'Grade saved — ' + (pendingGradeResult.grade || 'Ungraded') + ' for serial ' + pendingGradeResult.serial_id);
+    showToast('success', 'Goat #' + pendingGradeResult.serial_id + ' created — ' + (pendingGradeResult.grade || 'Ungraded'));
     gradeLog('Grade saved to database', 'ok');
 
     pendingGradeResult = null;
 
-    // Refresh data in-place
+    // Refresh data + fetch next serial ID for the next grade
     await Promise.all([loadGoats().catch(()=>{}), loadGrades().catch(()=>{})]);
     updateDashboard();
     filterAnimals();
     renderGradeHistory();
+    fetchNextSerialId();
   } catch (err) {
     showToast('error', err.message);
     gradeLog('Save error: ' + err.message, 'err');
