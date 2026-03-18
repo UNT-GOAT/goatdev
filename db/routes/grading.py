@@ -1,11 +1,8 @@
 """
-Grading results routes.
+Goat grading results routes.
 
-Write path: frontend calls POST /grading after operator confirms a grade.
+Write path: ec2-api calls POST /grading after grading completes.
 Read path: frontend calls GET /grading/{serial_id} to show history.
-
-Supports both goats and lambs — the grade_results table references
-animals(serial_id) instead of a species-specific table.
 """
 
 from fastapi import APIRouter, HTTPException, Request
@@ -16,8 +13,6 @@ from routes import get_conn
 import json
 
 router = APIRouter()
-
-GRADEABLE_SPECIES = ("goat", "lamb")
 
 
 class GradeResultIn(BaseModel):
@@ -47,21 +42,17 @@ class GradeResultIn(BaseModel):
 
 
 @router.get("/{serial_id}")
-async def get_grades_for_animal(request: Request, serial_id: int):
-    """Get all grading results for an animal, newest first."""
+async def get_grades_for_goat(request: Request, serial_id: int):
+    """Get all grading results for a goat, newest first."""
     pool = await get_conn(request)
     async with pool.acquire() as conn:
-        # Verify animal exists and is gradeable
-        animal = await conn.fetchrow(
-            "SELECT serial_id, species FROM animals WHERE serial_id = $1", serial_id
-        )
-        if not animal:
-            raise HTTPException(404, "Animal not found")
-        if animal["species"] not in GRADEABLE_SPECIES:
-            raise HTTPException(400, f"Grading not supported for {animal['species']}")
+        # Verify goat exists
+        goat = await conn.fetchrow("SELECT serial_id FROM goats WHERE serial_id = $1", serial_id)
+        if not goat:
+            raise HTTPException(404, "Goat not found")
 
         rows = await conn.fetch(
-            """SELECT * FROM grade_results
+            """SELECT * FROM goat_grade_results
                WHERE serial_id = $1
                ORDER BY graded_at DESC""",
             serial_id,
@@ -69,6 +60,7 @@ async def get_grades_for_animal(request: Request, serial_id: int):
         results = []
         for r in rows:
             d = dict(r)
+            # asyncpg returns jsonb as str, parse it
             if d.get("measurements") and isinstance(d["measurements"], str):
                 d["measurements"] = json.loads(d["measurements"])
             results.append(d)
@@ -81,7 +73,7 @@ async def get_grade_result(request: Request, result_id: int):
     pool = await get_conn(request)
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM grade_results WHERE id = $1", result_id
+            "SELECT * FROM goat_grade_results WHERE id = $1", result_id
         )
         if not row:
             raise HTTPException(404, "Grade result not found")
@@ -93,22 +85,20 @@ async def get_grade_result(request: Request, result_id: int):
 
 @router.post("", status_code=201)
 async def create_grade_result(request: Request, body: GradeResultIn):
-    """Record a new grading result. Called by frontend after operator confirms."""
+    """Record a new grading result. Called by ec2-api after grading completes."""
     pool = await get_conn(request)
     async with pool.acquire() as conn:
-        # Verify animal exists and is gradeable
-        animal = await conn.fetchrow(
-            "SELECT serial_id, species FROM animals WHERE serial_id = $1", body.serial_id
+        # Verify goat exists
+        goat = await conn.fetchrow(
+            "SELECT serial_id FROM goats WHERE serial_id = $1", body.serial_id
         )
-        if not animal:
-            raise HTTPException(404, f"Animal with serial_id {body.serial_id} not found")
-        if animal["species"] not in GRADEABLE_SPECIES:
-            raise HTTPException(400, f"Grading not supported for {animal['species']}")
+        if not goat:
+            raise HTTPException(404, f"Goat with serial_id {body.serial_id} not found")
 
         measurements_json = json.dumps(body.measurements) if body.measurements else None
 
         row = await conn.fetchrow(
-            """INSERT INTO grade_results
+            """INSERT INTO goat_grade_results
                (serial_id, grade, live_weight, all_views_ok, measurements,
                 side_raw_s3_key, top_raw_s3_key, front_raw_s3_key,
                 side_debug_s3_key, top_debug_s3_key, front_debug_s3_key,
@@ -123,12 +113,10 @@ async def create_grade_result(request: Request, body: GradeResultIn):
             body.warnings,
         )
 
-        # Update the animal's grade field on the species table
+        # Also update the goat's grade field with the latest
         if body.grade:
-            species = animal["species"]
-            table = species + "s"  # goat -> goats, lamb -> lambs
             await conn.execute(
-                f"UPDATE {table} SET grade = $1 WHERE serial_id = $2",
+                "UPDATE goats SET grade = $1 WHERE serial_id = $2",
                 body.grade, body.serial_id,
             )
 
@@ -140,17 +128,13 @@ async def create_grade_result(request: Request, body: GradeResultIn):
 
 @router.get("")
 async def list_recent_grades(request: Request, limit: int = 50):
-    """List recent grading results across all gradeable animals."""
+    """List recent grading results across all goats."""
     pool = await get_conn(request)
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT g.*, a.species,
-                      COALESCE(goats.hook_id, NULL) as hook_id,
-                      COALESCE(goats.description, lambs.description) as description
-               FROM grade_results g
-               JOIN animals a ON a.serial_id = g.serial_id
-               LEFT JOIN goats ON goats.serial_id = g.serial_id
-               LEFT JOIN lambs ON lambs.serial_id = g.serial_id
+            """SELECT g.*, goats.hook_id, goats.description
+               FROM goat_grade_results g
+               JOIN goats ON goats.serial_id = g.serial_id
                ORDER BY g.graded_at DESC
                LIMIT $1""",
             min(limit, 200),

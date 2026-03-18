@@ -78,10 +78,10 @@ CREATE TABLE IF NOT EXISTS lambs (
     updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Grading results (goats and lambs)
-CREATE TABLE IF NOT EXISTS grade_results (
+-- Goat grading results
+CREATE TABLE IF NOT EXISTS goat_grade_results (
     id                  SERIAL PRIMARY KEY,
-    serial_id           INTEGER NOT NULL REFERENCES animals(serial_id),
+    serial_id           INTEGER NOT NULL REFERENCES goats(serial_id),
     grade               VARCHAR(20),
     live_weight         NUMERIC(10,2),
     all_views_ok        BOOLEAN,
@@ -108,8 +108,8 @@ CREATE TABLE IF NOT EXISTS grade_results (
     graded_at           TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_grade_results_serial ON grade_results(serial_id);
-CREATE INDEX IF NOT EXISTS idx_grade_results_date ON grade_results(graded_at);
+CREATE INDEX IF NOT EXISTS idx_goat_grades_serial ON goat_grade_results(serial_id);
+CREATE INDEX IF NOT EXISTS idx_goat_grades_date ON goat_grade_results(graded_at);
 
 -- updated_at trigger
 CREATE OR REPLACE FUNCTION update_updated_at()
