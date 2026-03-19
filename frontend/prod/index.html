@@ -1310,11 +1310,11 @@
                 fill="none"
                 stroke="currentColor"
                 stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
               >
-                <path
-                  d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
-                />
-                <polyline points="14 2 14 8 20 8" />
+                <circle cx="12" cy="8" r="6" />
+                <path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11" />
               </svg>
               <span class="nav-label">Grading</span>
             </button>
@@ -2469,6 +2469,7 @@
       let currentPage = "dashboard";
 
       let pendingGradeResult = null;
+      let _gradeAnimalCreated = false;
       let nextGradeId = null;
 
       // Description options per species — used by both grading form and edit modal
@@ -3389,22 +3390,26 @@
             x.serial_id === selectedAnimalId && x.type === selectedAnimalType,
         );
         if (!a) return;
-        document.getElementById("deleteMsg").textContent =
-          "Permanently delete " +
-          a.type +
-          " #" +
-          a.serial_id +
-          "?" +
-          (a.type === "goat" || a.type === "lamb"
-            ? " Any linked grade history will also need to be removed."
-            : "");
+        const grades = allGrades.filter((g) => g.serial_id === a.serial_id);
+        let msg = "Permanently delete " + a.type + " #" + a.serial_id + "?";
+        if (grades.length)
+          msg +=
+            " " +
+            grades.length +
+            " grade result" +
+            (grades.length > 1 ? "s" : "") +
+            " will also be deleted.";
+        document.getElementById("deleteMsg").textContent = msg;
         openModal("modalDelete");
       }
       async function confirmDelete() {
         closeModal("modalDelete");
+        const type = selectedAnimalType,
+          sid = selectedAnimalId;
         try {
+          const grades = allGrades.filter((g) => g.serial_id === sid);
           const r = await HerdAuth.fetch(
-            CONFIG.DB_BASE + "/" + selectedAnimalType + "s/" + selectedAnimalId,
+            CONFIG.DB_BASE + "/" + type + "s/" + sid,
             { method: "DELETE" },
           );
           if (!r.ok) {
@@ -3413,7 +3418,16 @@
           }
           showToast(
             "success",
-            "Deleted " + selectedAnimalType + " #" + selectedAnimalId,
+            "Deleted " +
+              type +
+              " #" +
+              sid +
+              (grades.length
+                ? " + " +
+                  grades.length +
+                  " grade" +
+                  (grades.length > 1 ? "s" : "")
+                : ""),
           );
           selectedAnimalId = null;
           selectedAnimalType = null;
@@ -3422,9 +3436,11 @@
             loadGoats().catch(() => {}),
             loadChickens().catch(() => {}),
             loadLambs().catch(() => {}),
+            loadGrades().catch(() => {}),
           ]);
           filterAnimals();
           updateDashboard();
+          renderGradeHistory();
           computeNextGradeId();
         } catch (err) {
           showToast("error", err.message);
@@ -3606,6 +3622,7 @@
               )
               .forEach((sel) => {
                 populateProviderSelect(sel, newId);
+                sel.value = String(newId);
               });
           }
 
@@ -3685,7 +3702,9 @@
           "Permanently delete " +
           p.name +
           "?" +
-          (cnt > 0 ? " This provider has " + cnt + " animals linked." : "");
+          (cnt > 0
+            ? " " + cnt + " animals will be unlinked from this provider."
+            : "");
         openModal("modalDeleteProvider");
       }
 
@@ -3693,6 +3712,7 @@
         const id = parseInt(document.getElementById("editProvId").value);
         closeModal("modalDeleteProvider");
         try {
+          const linked = allAnimals.filter((a) => a.prov_id === id);
           const r = await HerdAuth.fetch(CONFIG.DB_BASE + "/providers/" + id, {
             method: "DELETE",
           });
@@ -3701,9 +3721,21 @@
             throw new Error(err.detail || "Delete failed: " + r.status);
           }
           closeModal("modalEditProvider");
-          showToast("success", "Provider deleted");
-          await loadProviders();
+          showToast(
+            "success",
+            "Provider deleted" +
+              (linked.length
+                ? " — " + linked.length + " animals unlinked"
+                : ""),
+          );
+          await Promise.all([
+            loadProviders().catch(() => {}),
+            loadGoats().catch(() => {}),
+            loadChickens().catch(() => {}),
+            loadLambs().catch(() => {}),
+          ]);
           filterProviders();
+          filterAnimals();
           updateDashboard();
         } catch (err) {
           showToast("error", err.message);
@@ -3948,27 +3980,17 @@
         const label = species.charAt(0).toUpperCase() + species.slice(1);
 
         try {
-          gradeLog(
-            "Creating " + species + " #" + pendingGradeResult.serial_id + "...",
-            "info",
-          );
-          let animalResp = await HerdAuth.fetch(CONFIG.DB_BASE + endpoint, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              serial_id: pendingGradeResult.serial_id,
-              live_weight: pendingGradeResult.live_weight,
-              grade: pendingGradeResult.grade || null,
-              description: pendingGradeResult.description || null,
-            }),
-          });
-          if (animalResp.status === 409) {
-            pendingGradeResult.serial_id = nextGlobalId();
+          // Step 1: Create the animal (skip if already created on a previous attempt)
+          if (!_gradeAnimalCreated) {
             gradeLog(
-              "ID conflict — retrying with #" + pendingGradeResult.serial_id,
-              "warn",
+              "Creating " +
+                species +
+                " #" +
+                pendingGradeResult.serial_id +
+                "...",
+              "info",
             );
-            animalResp = await HerdAuth.fetch(CONFIG.DB_BASE + endpoint, {
+            let animalResp = await HerdAuth.fetch(CONFIG.DB_BASE + endpoint, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -3978,16 +4000,46 @@
                 description: pendingGradeResult.description || null,
               }),
             });
-            if (!animalResp.ok)
-              throw new Error(label + " creation failed after retry");
-          } else if (!animalResp.ok) {
-            const err = await animalResp.json().catch(() => ({}));
-            throw new Error(
-              label + " creation failed: " + (err.detail || animalResp.status),
+            if (animalResp.status === 409) {
+              pendingGradeResult.serial_id = nextGlobalId();
+              gradeLog(
+                "ID conflict — retrying with #" + pendingGradeResult.serial_id,
+                "warn",
+              );
+              animalResp = await HerdAuth.fetch(CONFIG.DB_BASE + endpoint, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  serial_id: pendingGradeResult.serial_id,
+                  live_weight: pendingGradeResult.live_weight,
+                  grade: pendingGradeResult.grade || null,
+                  description: pendingGradeResult.description || null,
+                }),
+              });
+              if (!animalResp.ok)
+                throw new Error(label + " creation failed after retry");
+            } else if (!animalResp.ok) {
+              const err = await animalResp.json().catch(() => ({}));
+              throw new Error(
+                label +
+                  " creation failed: " +
+                  (err.detail || animalResp.status),
+              );
+            }
+            _gradeAnimalCreated = true;
+            gradeLog(label + " created", "ok");
+          } else {
+            gradeLog(
+              "Retrying grade save for existing " +
+                species +
+                " #" +
+                pendingGradeResult.serial_id +
+                "...",
+              "info",
             );
           }
-          gradeLog(label + " created", "ok");
 
+          // Step 2: Save the grade result
           gradeLog("Saving grade result...", "info");
           const gradePayload = { ...pendingGradeResult };
           delete gradePayload.species;
@@ -3999,11 +4051,21 @@
           });
           if (!gradeResp.ok) {
             const err = await gradeResp.json().catch(() => ({}));
-            throw new Error(
-              "Grade save failed: " + (err.detail || gradeResp.status),
+            gradeLog(
+              "Grade save failed — " +
+                label +
+                " #" +
+                pendingGradeResult.serial_id +
+                " exists but grade was not saved. Click Retry.",
+              "err",
             );
+            showToast("error", "Grade save failed — retry or discard");
+            btn.disabled = false;
+            btn.textContent = "Retry Save";
+            return;
           }
 
+          _gradeAnimalCreated = false;
           closeModal("modalGradeReview");
           showToast(
             "success",
@@ -4028,8 +4090,10 @@
           showToast("error", err.message);
           gradeLog("Error: " + err.message, "err");
         } finally {
-          btn.disabled = false;
-          btn.textContent = "Accept & Save";
+          if (!_gradeAnimalCreated) {
+            btn.disabled = false;
+            btn.textContent = "Accept & Save";
+          }
         }
       }
 
@@ -4040,6 +4104,7 @@
         closeModal("modalDiscard");
         closeModal("modalGradeReview");
         pendingGradeResult = null;
+        _gradeAnimalCreated = false;
         gradeLog("Discarded by operator", "warn");
         showToast("success", "Grade discarded");
       }

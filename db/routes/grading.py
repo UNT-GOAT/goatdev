@@ -91,6 +91,19 @@ async def get_grade_result(request: Request, result_id: int):
         return d
 
 
+@router.delete("/result/{result_id}")
+async def delete_grade_result(request: Request, result_id: int):
+    """Delete a single grading result by ID."""
+    pool = await get_conn(request)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "DELETE FROM grade_results WHERE id = $1 RETURNING id", result_id
+        )
+        if not row:
+            raise HTTPException(404, "Grade result not found")
+        return {"deleted": result_id}
+
+
 @router.post("", status_code=201)
 async def create_grade_result(request: Request, body: GradeResultIn):
     """Record a new grading result. Called by frontend after operator confirms."""
