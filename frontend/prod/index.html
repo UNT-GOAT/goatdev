@@ -496,7 +496,9 @@ input, select, textarea { font-family: inherit; }
   .detail-panel { display: none; }
   .field-row { flex-direction: column; gap: 0; }
 }
+
 @media (max-width: 640px) {
+  /* Sidebar: fixed icon-only rail */
   .sidebar {
     position: fixed; left: 0; top: 0; bottom: 0;
     width: 64px; z-index: 30;
@@ -504,17 +506,95 @@ input, select, textarea { font-family: inherit; }
   .sidebar .brand-text, .sidebar .nav-label, .sidebar .footer-user { display: none; }
   .sidebar .nav-btn { justify-content: center; padding: 9px; }
   .main { margin-left: 64px; }
-  .content { padding: 12px; }
-  .stat-row { gap: 6px; }
-  .stat-card { min-width: 80px; padding: 10px; }
-  .stat-value { font-size: 18px; }
+
+  /* Content: allow full-page scrolling instead of trapped flex regions */
+  .content { padding: 14px; overflow-y: auto; }
+  .page.active {
+    display: flex;
+    flex-direction: column;
+    height: auto;       /* don't constrain to viewport */
+    min-height: 100%;   /* fill at least the viewport */
+  }
+
+  /* Stat cards: 2-column grid on mobile */
+  .stat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat-card { min-width: 0; padding: 10px 12px; }
+  .stat-value { font-size: 20px; }
+  .stat-sub { font-size: 9px; }
+
+  /* Dashboard panels: auto-height, no trapped scroll */
+  #page-dashboard .grid-2 {
+    grid-template-rows: auto;
+    flex: none;
+  }
+  #page-dashboard .panel {
+    max-height: 50vh;
+  }
+
+  /* Animals table: let it flow, horizontal scroll for wide rows */
+  #page-animals .panel.flex-1 {
+    overflow-x: auto;
+    flex: none;
+  }
+  #page-animals .panel.flex-1 > div[style*="overflow-y"] {
+    overflow-y: visible !important;
+    flex: none !important;
+  }
+  .tbl-head, .tbl-row { min-width: 540px; }
+
+  /* Providers panel: auto-height */
+  #provPanel {
+    flex: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  #provGrid {
+    overflow-y: visible !important;
+    flex: none !important;
+  }
+
+  /* Grading: let it flow */
+  #page-grading .panel:last-child {
+    flex: none !important;
+    max-height: none !important;
+  }
+  #page-grading .panel:last-child > div[style*="overflow-y"] {
+    overflow-y: visible !important;
+    flex: none !important;
+  }
+
+  /* Grids */
   .grid-3 { grid-template-columns: 1fr; }
+
+  /* Filter/search */
   .filter-row { gap: 5px; }
-  .filter-chip { padding: 5px 8px; font-size: 10px; }
-  .topbar { padding: 0 12px; }
+  .filter-chip { padding: 6px 10px; font-size: 10px; }
+  .search-bar { min-width: 100%; }
+  .search-bar input { font-size: 12px; }
+
+  /* Topbar */
+  .topbar { padding: 0 12px; height: 46px; }
   .topbar h1 { font-size: 13px; }
-  .tbl-head, .tbl-row { padding: 8px 10px; font-size: 9px; }
+  .topbar-user { display: none; }
+
+  /* Table text */
+  .tbl-head { padding: 6px 12px; font-size: 8px; }
+  .tbl-row { padding: 8px 12px; }
+
+  /* Modals */
   .modal { max-width: 98vw; border-radius: 10px; }
+  .modal-body { padding: 14px; }
+  .modal-header { padding: 12px 14px; }
+  .modal-footer { padding: 10px 14px; }
+
+  /* Grading form: stack vertically */
+  #page-grading .flex.gap-12.items-end {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  #page-grading .flex.gap-12.items-end > div { min-width: 0; flex: none; }
+  #page-grading .flex.gap-12.items-end > div:last-child { margin-top: 4px; }
+  .btn-solid { width: 100%; text-align: center; }
 }
 </style>
 </head>
@@ -658,14 +738,19 @@ input, select, textarea { font-family: inherit; }
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input type="text" id="provSearch" placeholder="Search name, company, email, phone..." oninput="filterProviders()">
             <button class="search-clear" id="provClear" onclick="clearProvSearch()">&times;</button>
-            <span class="result-count" id="provCount"></span>
           </div>
           <button class="filter-chip active" onclick="setProvFilter(this,'all')">All</button>
           <button class="filter-chip" onclick="setProvFilter(this,'active')">Active</button>
           <button class="btn btn-accent btn-sm" onclick="openAddProvider()">+ Add Provider</button>
         </div>
-        <div class="grid-cards" id="provGrid" style="flex:1;min-height:0;overflow-y:auto">
-          <div class="loading-row" style="grid-column:1/-1"><span class="spinner"></span></div>
+        <div class="panel" id="provPanel" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden">
+          <div class="panel-header shrink-0" style="display:flex;justify-content:space-between;align-items:center">
+            <span>All Providers</span>
+            <span id="provCount" style="font-size:10px;color:var(--text-faint);text-transform:none;letter-spacing:0"></span>
+          </div>
+          <div id="provGrid" style="overflow-y:auto;flex:1;min-height:0">
+            <div class="loading-row"><span class="spinner"></span></div>
+          </div>
         </div>
       </div>
 
@@ -1610,7 +1695,7 @@ function setProvFilter(chip, val) {
 function renderProviderGrid(providers, query) {
   const grid = document.getElementById('provGrid');
   if (!providers.length) {
-    grid.innerHTML = '<div class="no-results" style="grid-column:1/-1">No providers match</div>';
+    grid.innerHTML = '<div class="no-results">No providers match</div>';
     return;
   }
   grid.innerHTML = providers.map(p => {
@@ -1619,18 +1704,22 @@ function renderProviderGrid(providers, query) {
       ? '<span class="badge badge-prime" style="font-size:10px">' + cnt + ' head</span>'
       : '<span style="font-size:10px;color:var(--text-muted);background:var(--bg-raised);padding:3px 8px;border-radius:20px">0 head</span>';
 
-    return '<div class="panel p-14" style="display:flex;flex-direction:column;cursor:pointer;border:1px solid transparent;transition:border-color .2s" onmouseenter="this.style.borderColor=\'var(--border)\'" onmouseleave="this.style.borderColor=\'transparent\'">' +
-      '<div class="flex justify-between items-center" style="margin-bottom:8px">' +
-        '<div style="font-size:15px;font-weight:600;color:var(--text-primary)">' + highlight(p.name, query) + '</div>' +
-        headBadge +
+    const details = [
+      p.company ? highlight(p.company, query) : null,
+      p.phone ? highlight(p.phone, query) : null,
+      p.email ? '<span style="color:var(--text-faint)">' + highlight(p.email, query) + '</span>' : null,
+    ].filter(Boolean).join(' · ');
+
+    return '<div class="row-item" style="padding:12px 16px;cursor:pointer;transition:background .12s" onmouseenter="this.style.background=\'var(--accent-dim)\'" onmouseleave="this.style.background=\'transparent\'">' +
+      '<div class="flex justify-between items-center" style="margin-bottom:3px">' +
+        '<div style="font-size:14px;font-weight:600;color:var(--text-primary)">' + highlight(p.name, query) + '</div>' +
+        '<div class="flex items-center gap-8">' +
+          '<span style="font-size:9px;color:var(--text-faint);text-transform:uppercase;letter-spacing:1px">' + (p.status || 'active') + '</span>' +
+          headBadge +
+        '</div>' +
       '</div>' +
-      '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">' + (p.company ? highlight(p.company, query) : '<span style="color:var(--text-faint)">—</span>') + '</div>' +
-      '<div class="flex gap-14" style="font-size:12px;color:var(--text-muted);margin-bottom:8px">' +
-        '<span>' + (p.phone ? highlight(p.phone, query) : '<span style="color:var(--text-faint)">—</span>') + '</span>' +
-        '<span>' + (p.email ? highlight(p.email, query) : '<span style="color:var(--text-faint)">—</span>') + '</span>' +
-      '</div>' +
-      '<div style="font-size:11px;color:var(--text-muted);margin-bottom:auto">' + (p.address ? highlight(p.address, query) : '<span style="color:var(--text-faint)">No address</span>') + '</div>' +
-      '<div style="margin-top:10px;border-top:1px solid var(--border-subtle);padding-top:7px;font-size:9px;color:var(--text-faint);text-transform:uppercase;letter-spacing:1px">' + (p.status || 'active') + '</div>' +
+      (details ? '<div style="font-size:11px;color:var(--text-muted)">' + details + '</div>' : '') +
+      (p.address ? '<div style="font-size:10px;color:var(--text-faint);margin-top:2px">' + highlight(p.address, query) + '</div>' : '') +
     '</div>';
   }).join('');
 }
