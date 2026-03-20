@@ -42,9 +42,9 @@
         --text-muted: #5a5a6e;
         --text-faint: #3a3a48;
 
-        --accent: #4caf50;
-        --accent-dim: rgba(76, 175, 80, 0.1);
-        --accent-hover: rgba(76, 175, 80, 0.18);
+        --accent: #23783b;
+        --accent-dim: rgba(35, 120, 59, 0.1);
+        --accent-hover: rgba(35, 120, 59, 0.18);
         --blue: #42a5f5;
         --orange: #ff9800;
         --red: #e53935;
@@ -72,9 +72,9 @@
         --text-muted: #888;
         --text-faint: #aaa;
 
-        --accent: #388e3c;
-        --accent-dim: rgba(56, 142, 60, 0.08);
-        --accent-hover: rgba(56, 142, 60, 0.14);
+        --accent: #23783b;
+        --accent-dim: rgba(35, 120, 59, 0.08);
+        --accent-hover: rgba(35, 120, 59, 0.14);
         --blue: #1e88e5;
         --orange: #ef6c00;
         --red: #c62828;
@@ -141,43 +141,38 @@
       }
 
       .sidebar-brand {
-        padding: 14px 16px;
+        padding: 10px 12px;
         border-bottom: 1px solid var(--border);
         display: flex;
         align-items: center;
-        gap: 10px;
         cursor: pointer;
         min-height: 54px;
         user-select: none;
+        overflow: hidden;
       }
-      .brand-icon {
-        width: 32px;
+      .brand-logo {
         height: 32px;
-        border-radius: 8px;
-        background: linear-gradient(135deg, #4caf50, #2e7d32);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 14px;
-        font-weight: 800;
-        color: #fff;
-        flex-shrink: 0;
+        width: auto;
+        display: block;
       }
-      .brand-text {
-        white-space: nowrap;
+      .brand-logo-long {
+        display: block;
       }
-      .brand-name {
-        font-size: 14px;
-        font-weight: 700;
-        color: var(--accent);
-        letter-spacing: 0.4px;
-      }
-      .brand-ver {
-        font-size: 9px;
-        color: var(--text-faint);
-      }
-      .collapsed .brand-text {
+      .brand-logo-short {
         display: none;
+      }
+      .collapsed .brand-logo-long {
+        display: none;
+      }
+      .collapsed .brand-logo-short {
+        display: block;
+      }
+      /* Theme-based logo visibility */
+      :root[data-theme="dark"] .logo-light {
+        display: none !important;
+      }
+      :root[data-theme="light"] .logo-dark {
+        display: none !important;
       }
 
       .sidebar-nav {
@@ -412,8 +407,8 @@
         background: rgba(192, 160, 64, 0.12);
       }
       .badge-prime {
-        color: #4caf50;
-        background: rgba(76, 175, 80, 0.12);
+        color: #23783b;
+        background: rgba(35, 120, 59, 0.12);
       }
       .badge-choice {
         color: #42a5f5;
@@ -518,7 +513,7 @@
         border-radius: 8px;
       }
       .btn-solid:hover {
-        background: #43a047;
+        background: #1e6633;
       }
       .btn-solid:disabled {
         background: var(--border);
@@ -624,7 +619,7 @@
 
       /* Misc */
       .match {
-        background: rgba(76, 175, 80, 0.18);
+        background: rgba(35, 120, 59, 0.18);
         color: var(--accent);
         border-radius: 2px;
         padding: 0 1px;
@@ -1111,10 +1106,13 @@
           width: 64px;
           z-index: 30;
         }
-        .sidebar .brand-text,
+        .sidebar .brand-logo-long,
         .sidebar .nav-label,
         .sidebar .footer-user {
           display: none;
+        }
+        .sidebar .brand-logo-short {
+          display: block;
         }
         .sidebar .nav-btn {
           justify-content: center;
@@ -1253,11 +1251,26 @@
       <div class="shell">
         <aside class="sidebar" id="sidebar">
           <div class="sidebar-brand" onclick="toggleSidebar()">
-            <div class="brand-icon">H</div>
-            <div class="brand-text">
-              <div class="brand-name">HerdSync</div>
-              <div class="brand-ver">v1.0</div>
-            </div>
+            <img
+              src="/logos/dark_trans_v3.png"
+              alt="HerdSync"
+              class="brand-logo brand-logo-long logo-dark"
+            />
+            <img
+              src="/logos/dark_trans_v1.png"
+              alt="HerdSync"
+              class="brand-logo brand-logo-short logo-dark"
+            />
+            <img
+              src="/logos/light_v3.png"
+              alt="HerdSync"
+              class="brand-logo brand-logo-long logo-light"
+            />
+            <img
+              src="/logos/light_v1.png"
+              alt="HerdSync"
+              class="brand-logo brand-logo-short logo-light"
+            />
           </div>
 
           <nav class="sidebar-nav">
@@ -3211,24 +3224,7 @@
 
       async function saveSingleAnimal() {
         const type = document.getElementById("addAnimalType").value;
-
-        // Step 1: Create animals row to get the real serial_id from DB
-        const animalResp = await HerdAuth.fetch(CONFIG.DB_BASE + "/animals", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ species: type }),
-        });
-        if (!animalResp.ok) {
-          const err = await animalResp.json().catch(() => ({}));
-          throw new Error(
-            err.detail || "Failed to assign ID: " + animalResp.status,
-          );
-        }
-        const animal = await animalResp.json();
-        const sid = animal.serial_id;
-
-        // Step 2: Create species-specific record with that serial_id
-        const body = { serial_id: sid };
+        const body = {};
         if (DESCRIPTION_OPTIONS[type])
           body.description = document.getElementById("addAnimalDesc").value;
         const hw = parseFloat(document.getElementById("addAnimalHW").value);
@@ -3250,9 +3246,14 @@
           const err = await resp.json().catch(() => ({}));
           throw new Error(err.detail || "Failed: " + resp.status);
         }
+        const created = await resp.json();
         showToast(
           "success",
-          type.charAt(0).toUpperCase() + type.slice(1) + " #" + sid + " added",
+          type.charAt(0).toUpperCase() +
+            type.slice(1) +
+            " #" +
+            created.serial_id +
+            " added",
         );
       }
 
@@ -3271,19 +3272,7 @@
           status.textContent = "Adding " + (i + 1) + "/" + count + "...";
           status.className = "field-hint";
           try {
-            // Step 1: Create animals row
-            const ar = await HerdAuth.fetch(CONFIG.DB_BASE + "/animals", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ species: type }),
-            });
-            if (!ar.ok) {
-              failed++;
-              continue;
-            }
-            const animal = await ar.json();
-            // Step 2: Create species record
-            const body = { serial_id: animal.serial_id };
+            const body = {};
             if (prov) body.prov_id = parseInt(prov);
             if (kd) body.kill_date = kd;
             if (pd) body.process_date = pd;
@@ -3436,7 +3425,7 @@
           sid = selectedAnimalId;
         try {
           const grades = allGrades.filter((g) => g.serial_id === sid);
-          // 1. Delete species record
+          // Delete via species endpoint (factory handles both species + animals tables)
           const r = await HerdAuth.fetch(
             CONFIG.DB_BASE + "/" + type + "s/" + sid,
             { method: "DELETE" },
@@ -3445,10 +3434,6 @@
             const err = await r.json().catch(() => ({}));
             throw new Error(err.detail || "Delete failed: " + r.status);
           }
-          // 2. Delete animals row (grade_results cascade automatically)
-          await HerdAuth.fetch(CONFIG.DB_BASE + "/animals/" + sid, {
-            method: "DELETE",
-          }).catch(() => {});
           showToast(
             "success",
             "Deleted " +
@@ -4021,24 +4006,6 @@
         try {
           // Step 1: Create the animal (skip if already created on a previous attempt)
           if (!_gradeAnimalCreated) {
-            gradeLog("Assigning serial ID...", "info");
-            // 1a: Create animals row to get real serial_id
-            const idResp = await HerdAuth.fetch(CONFIG.DB_BASE + "/animals", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ species }),
-            });
-            if (!idResp.ok) {
-              const err = await idResp.json().catch(() => ({}));
-              throw new Error(
-                "Failed to assign ID: " + (err.detail || idResp.status),
-              );
-            }
-            const idData = await idResp.json();
-            pendingGradeResult.serial_id = idData.serial_id;
-            gradeLog("Assigned serial #" + idData.serial_id, "ok");
-
-            // 1b: Create species-specific record
             gradeLog(
               "Creating " +
                 species +
@@ -4051,7 +4018,6 @@
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                serial_id: pendingGradeResult.serial_id,
                 live_weight: pendingGradeResult.live_weight,
                 grade: pendingGradeResult.grade || null,
                 description: pendingGradeResult.description || null,
@@ -4065,8 +4031,10 @@
                   (err.detail || animalResp.status),
               );
             }
+            const created = await animalResp.json();
+            pendingGradeResult.serial_id = created.serial_id;
             _gradeAnimalCreated = true;
-            gradeLog(label + " created", "ok");
+            gradeLog(label + " #" + created.serial_id + " created", "ok");
           } else {
             gradeLog(
               "Retrying grade save for existing " +

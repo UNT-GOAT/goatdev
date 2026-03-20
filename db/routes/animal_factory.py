@@ -1,6 +1,5 @@
 """
 Generic CRUD factory for animal tables (chickens, goats, lambs).
-
 Each table has the same core fields (serial_id, weights, dates, prov_id)
 with minor differences (goats have hook_id, lambs/goats have description + grade).
 This factory generates a full CRUD router for any of them.
@@ -14,7 +13,6 @@ from pydantic import BaseModel, create_model
 from typing import Optional
 from datetime import date
 from routes import get_conn
-
 
 # All possible animal fields and their types
 ANIMAL_FIELDS = {
@@ -109,9 +107,11 @@ def build_animal_router(table: str) -> APIRouter:
 
         async with pool.acquire() as conn:
             async with conn.transaction():
-                # Auto-assign serial_id from animals table
+                # Auto-assign serial_id from animals table using MAX+1
                 row = await conn.fetchrow(
-                    "INSERT INTO animals (species) VALUES ($1) RETURNING serial_id",
+                    """INSERT INTO animals (serial_id, species)
+                       VALUES ((SELECT COALESCE(MAX(serial_id), 0) + 1 FROM animals), $1)
+                       RETURNING serial_id""",
                     species,
                 )
                 serial_id = row["serial_id"]
@@ -133,6 +133,7 @@ def build_animal_router(table: str) -> APIRouter:
     async def update_animal(request: Request, serial_id: int, body: UpdateModel):
         pool = await get_conn(request)
         fields_to_update = {k: v for k, v in body.model_dump().items() if v is not None}
+
         if not fields_to_update:
             raise HTTPException(400, "No fields to update")
 
@@ -162,10 +163,6 @@ def build_animal_router(table: str) -> APIRouter:
                 await conn.execute(
                     "DELETE FROM animals WHERE serial_id = $1", serial_id
                 )
-
                 return {"deleted": serial_id}
 
     return router
-
-
-import asyncpg

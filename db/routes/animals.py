@@ -28,7 +28,9 @@ async def create_animal(request: Request, body: AnimalCreate):
     pool = await get_conn(request)
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "INSERT INTO animals (species) VALUES ($1) RETURNING serial_id, species, created_at",
+            """INSERT INTO animals (serial_id, species)
+               VALUES ((SELECT COALESCE(MAX(serial_id), 0) + 1 FROM animals), $1)
+               RETURNING serial_id, species, created_at""",
             body.species,
         )
         return dict(row)
