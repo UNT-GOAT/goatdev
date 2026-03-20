@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1.0, user-scalable=no"
     />
     <title>HerdSync</title>
-    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" href="/logos/dark_trans_v1.png" />
     <script src="/js/config.js"></script>
     <script src="/js/auth.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -141,36 +141,35 @@
       }
 
       .sidebar-brand {
-        padding: 0;
-        border-bottom: 1px solid var(--border);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
+        position: relative; /* Anchor the logos */
         height: 54px;
-        min-height: 54px;
-        user-select: none;
         overflow: hidden;
-        padding: 6px;
       }
+
       .brand-logo {
-        width: 100%;
-        height: 100%;
-        display: block;
-        object-fit: contain;
-        transition: all 0.2s ease;
+        position: absolute; /* Logos stay at a fixed size */
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%); /* Keeps them perfectly centered */
+        height: 40px; /* Fixed height: No growing/shrinking */
+        width: auto;
+        transition: opacity 0.1s; /* Instant swap */
       }
+
+      /* 3. Logic for swapping logos without layout shifts */
       .brand-logo-long {
-        display: block;
-      }
-      .brand-logo-short {
-        display: none;
+        opacity: 1;
       }
       .collapsed .brand-logo-long {
-        display: none;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .brand-logo-short {
+        opacity: 0;
       }
       .collapsed .brand-logo-short {
-        display: block;
+        opacity: 1;
       }
       /* Theme-based logo visibility */
       :root[data-theme="dark"] .logo-light {
