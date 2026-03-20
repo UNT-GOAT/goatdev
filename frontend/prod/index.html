@@ -137,12 +137,12 @@
         z-index: 20;
       }
       .sidebar.collapsed {
-        width: 64px;
+        width: 80px;
       }
 
       .sidebar-brand {
-        padding: 10px 12px;
-        border-bottom: 1px solid var(--border);
+        padding-left: 8px;
+        padding-top: 8px;
         display: flex;
         align-items: center;
         cursor: pointer;
@@ -151,7 +151,7 @@
         overflow: hidden;
       }
       .brand-logo {
-        height: 32px;
+        height: 55px;
         width: auto;
         display: block;
       }
@@ -1320,12 +1320,12 @@
               class="brand-logo brand-logo-short logo-dark"
             />
             <img
-              src="/logos/light_v3.png"
+              src="/logos/light_trans_v3.png"
               alt="HerdSync"
               class="brand-logo brand-logo-long logo-light"
             />
             <img
-              src="/logos/light_v1.png"
+              src="/logos/light_trans_v1.png"
               alt="HerdSync"
               class="brand-logo brand-logo-short logo-light"
             />
@@ -1874,9 +1874,6 @@
                         color: var(--accent);
                       "
                     />
-                    <div class="field-hint" id="gradeSerialHint">
-                      Computing next ID...
-                    </div>
                   </div>
                   <div style="flex: 0 0 120px">
                     <label class="field-label">Species *</label>
@@ -2087,9 +2084,6 @@
                     color: var(--accent);
                   "
                 />
-                <div class="field-hint" id="addAnimalSerialHint">
-                  Auto-assigned
-                </div>
               </div>
             </div>
             <div class="field" id="addAnimalDescWrap">
@@ -2947,9 +2941,14 @@
           return;
         }
         camerasActive = true;
-        const token = HerdAuth.getAccessToken(),
-          cams = ["side", "top", "front"],
-          slots = container.querySelectorAll(".cam-slot");
+        startCameraStreams();
+      }
+
+      function startCameraStreams() {
+        const container = document.getElementById("gradeCams");
+        const token = HerdAuth.getAccessToken();
+        const cams = ["side", "top", "front"];
+        const slots = container.querySelectorAll(".cam-slot");
         slots.forEach((slot, i) => {
           const offline = slot.querySelector(".cam-offline");
           let img = slot.querySelector("img[data-cam]");
@@ -2959,7 +2958,27 @@
             img.alt = cams[i];
             img.onerror = function () {
               this.style.display = "none";
-              if (offline) offline.style.display = "";
+              if (offline) {
+                offline.textContent = piConnected
+                  ? "Stream interrupted — retrying..."
+                  : "Waiting for grader...";
+                offline.style.display = "";
+              }
+              // Retry in 10s
+              clearTimeout(this._retryTimer);
+              this._retryTimer = setTimeout(() => {
+                if (currentPage === "grading" && piConnected) {
+                  this.style.display = "";
+                  this.src =
+                    CONFIG.API_BASE +
+                    "/api/viewfocus/stream/" +
+                    this.dataset.cam +
+                    "?token=" +
+                    HerdAuth.getAccessToken() +
+                    "&t=" +
+                    Date.now();
+                }
+              }, 10000);
             };
             img.onload = function () {
               if (offline) offline.style.display = "none";
@@ -2975,14 +2994,19 @@
             token;
         });
       }
+
       function refreshCameraTokens() {
+        if (!camerasActive || currentPage !== "grading") return;
         const t = HerdAuth.getAccessToken();
         document.querySelectorAll("img[data-cam]").forEach((img) => {
-          if (img.src && img.src.includes("token="))
-            img.src = img.src.split("?")[0] + "?token=" + t;
+          if (img.src && img.src.includes("token=")) {
+            const base = img.src.split("?")[0];
+            img.src = base + "?token=" + t + "&t=" + Date.now();
+          }
         });
       }
-      setInterval(refreshCameraTokens, 13 * 60 * 1000);
+      // Refresh camera tokens every 10 min (well before 15 min expiry)
+      setInterval(refreshCameraTokens, 10 * 60 * 1000);
 
       // ============================================================
       // PI CONNECTION CHECK
@@ -3000,12 +3024,21 @@
           piConnected = true;
           el.innerHTML =
             '<span class="dot green"></span><span>Grader connected</span>';
-          if (wasOffline) updateGradeButtonState();
+          if (wasOffline) {
+            updateGradeButtonState();
+            // Restart camera streams if on grading page
+            if (currentPage === "grading" && camerasActive) {
+              startCameraStreams();
+            } else if (currentPage === "grading") {
+              setCamerasForPage("grading");
+            }
+          }
         } catch (e) {
+          const wasOnline = piConnected;
           piConnected = false;
           el.innerHTML =
             '<span class="dot red"></span><span>Grader offline</span>';
-          updateGradeButtonState();
+          if (wasOnline) updateGradeButtonState();
         }
       }
 
@@ -3021,8 +3054,8 @@
         }
       }
 
-      // Check every 15s
-      setInterval(checkPiConnection, 15000);
+      // Check every 2s
+      setInterval(checkPiConnection, 2000);
 
       // ============================================================
       // NAV
@@ -3353,10 +3386,8 @@
       async function onAddAnimalTypeChange() {
         const type = document.getElementById("addAnimalType").value;
         const hint = document.getElementById("addAnimalSerialHint");
-        hint.textContent = "Fetching next ID...";
         const nextId = await fetchNextGlobalId();
         document.getElementById("addAnimalSerial").value = nextId;
-        hint.textContent = "Auto-assigned";
         const wrap = document.getElementById("addAnimalDescWrap");
         const descSel = document.getElementById("addAnimalDesc");
         if (DESCRIPTION_OPTIONS[type]) {
@@ -3969,15 +4000,11 @@
         const hint = document.getElementById("gradeSerialHint");
         const input = document.getElementById("gradeSerial");
         const btn = document.getElementById("gradeBtn");
-        hint.textContent = "Fetching next ID...";
         hint.className = "field-hint";
         input.value = "";
         btn.disabled = true;
         nextGradeId = await fetchNextGlobalId();
         input.value = nextGradeId;
-        hint.textContent =
-          "Auto-assigned — new " + species + " will be created on save";
-        hint.className = "field-hint valid";
         btn.disabled = !piConnected;
       }
 
