@@ -141,19 +141,24 @@
       }
 
       .sidebar-brand {
-        padding: 10px 12px;
+        padding: 0;
         border-bottom: 1px solid var(--border);
         display: flex;
         align-items: center;
+        justify-content: center;
         cursor: pointer;
+        height: 54px;
         min-height: 54px;
         user-select: none;
         overflow: hidden;
+        padding: 6px;
       }
       .brand-logo {
-        height: 32px;
-        width: auto;
+        width: 100%;
+        height: 100%;
         display: block;
+        object-fit: contain;
+        transition: all 0.2s ease;
       }
       .brand-logo-long {
         display: block;
@@ -1262,12 +1267,12 @@
               class="brand-logo brand-logo-short logo-dark"
             />
             <img
-              src="/logos/light_v3.png"
+              src="/logos/light_trans_v3.png"
               alt="HerdSync"
               class="brand-logo brand-logo-long logo-light"
             />
             <img
-              src="/logos/light_v1.png"
+              src="/logos/light_trans_v1.png"
               alt="HerdSync"
               class="brand-logo brand-logo-short logo-light"
             />

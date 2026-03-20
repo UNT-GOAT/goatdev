@@ -84,7 +84,7 @@ jobs:
       - name: Check for prod changes
         id: check
         run: |
-          if git diff --name-only HEAD~1 | grep -q "^frontend/prod/\|^frontend/js/"; then
+          if git diff --name-only HEAD~1 | grep -q "^frontend/prod/\|^frontend/js/\|^frontend/logos/"; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT
@@ -113,6 +113,16 @@ jobs:
         run: |
           aws s3 sync frontend/js/ s3://goat-web-937249941844/js/
           echo "Auth JS deployed"
+
+      - name: Deploy logos to S3
+        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: us-east-2
+        run: |
+          aws s3 sync frontend/logos/ s3://goat-web-937249941844/logos/
+          echo "Logos deployed"
 
       - name: Deploy assets to S3
         if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
@@ -143,4 +153,4 @@ jobs:
         run: |
           aws cloudfront create-invalidation \
             --distribution-id EB8KCE4E7TGI4 \
-            --paths "/*" "/js/config.js" "/js/*"
+            --paths "/*" "/js/config.js" "/js/*" "/logos/*"
