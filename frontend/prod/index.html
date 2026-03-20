@@ -2992,42 +2992,15 @@
         try {
           const controller = new AbortController();
           const timer = setTimeout(() => controller.abort(), 5000);
-          // Try normal fetch first (works if Pi has CORS headers)
-          let reachable = false;
-          try {
-            const r = await fetch(CONFIG.API_BASE + "/api/prod/status", {
-              signal: controller.signal,
-              headers: { Authorization: "Bearer " + HerdAuth.getAccessToken() },
-            });
-            clearTimeout(timer);
-            reachable = true; // Any response means Pi is reachable
-          } catch (corsErr) {
-            // CORS blocked — try opaque request to detect reachability
-            clearTimeout(timer);
-            try {
-              const controller2 = new AbortController();
-              const timer2 = setTimeout(() => controller2.abort(), 5000);
-              await fetch(CONFIG.API_BASE + "/api/prod/status", {
-                mode: "no-cors",
-                signal: controller2.signal,
-              });
-              clearTimeout(timer2);
-              reachable = true; // Opaque response = server is up
-            } catch (e) {
-              reachable = false;
-            }
-          }
+          const r = await HerdAuth.fetch(CONFIG.API_BASE + "/api/prod/status", {
+            signal: controller.signal,
+          });
+          clearTimeout(timer);
           const wasOffline = !piConnected;
-          piConnected = reachable;
-          if (reachable) {
-            el.innerHTML =
-              '<span class="dot green"></span><span>Grader connected</span>';
-            if (wasOffline) updateGradeButtonState();
-          } else {
-            el.innerHTML =
-              '<span class="dot red"></span><span>Grader offline</span>';
-            updateGradeButtonState();
-          }
+          piConnected = true;
+          el.innerHTML =
+            '<span class="dot green"></span><span>Grader connected</span>';
+          if (wasOffline) updateGradeButtonState();
         } catch (e) {
           piConnected = false;
           el.innerHTML =
@@ -4068,12 +4041,12 @@
           try {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 5000);
-            const ping = await fetch(CONFIG.API_BASE + "/api/prod/status", {
-              signal: controller.signal,
-              headers: { Authorization: "Bearer " + HerdAuth.getAccessToken() },
-            });
+            const ping = await HerdAuth.fetch(
+              CONFIG.API_BASE + "/api/prod/status",
+              { signal: controller.signal },
+            );
             clearTimeout(timer);
-            pingOk = ping.ok || ping.status === 401;
+            pingOk = true;
           } catch (e) {
             /* fall through */
           }

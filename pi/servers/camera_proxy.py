@@ -41,7 +41,7 @@ Endpoints:
 """
 
 from flask import Flask, Response, request, jsonify
-from flask_cors import CORS
+
 import cv2
 import subprocess
 import threading
@@ -57,7 +57,6 @@ sys.path.insert(0, '/home/pi/goatdev/pi')
 from logger.pi_cloudwatch import Logger
 
 app = Flask(__name__)
-CORS(app)
 
 log = Logger('camera-proxy')
 

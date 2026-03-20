@@ -10,7 +10,7 @@ the Pi thin — it only captures and relays.
 """
 
 from flask import Flask, jsonify, request
-from flask_cors import CORS
+
 import subprocess
 import threading
 import requests
@@ -20,7 +20,6 @@ import re
 from datetime import datetime
 
 app = Flask(__name__)
-CORS(app)
 
 from dotenv import load_dotenv
 load_dotenv("/home/pi/goatdev/pi/.env")
