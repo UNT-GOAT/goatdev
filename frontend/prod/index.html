@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1.0, user-scalable=no"
     />
     <title>HerdSync</title>
-    <link rel="icon" href="/logos/dark_trans_v1.png" />
+    <link rel="icon" href="/favicon.ico" />
     <script src="/js/config.js"></script>
     <script src="/js/auth.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -141,35 +141,31 @@
       }
 
       .sidebar-brand {
-        position: relative; /* Anchor the logos */
-        height: 54px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        min-height: 54px;
+        user-select: none;
         overflow: hidden;
       }
-
       .brand-logo {
-        position: absolute; /* Logos stay at a fixed size */
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%); /* Keeps them perfectly centered */
-        height: 40px; /* Fixed height: No growing/shrinking */
+        height: 32px;
         width: auto;
-        transition: opacity 0.1s; /* Instant swap */
+        display: block;
       }
-
-      /* 3. Logic for swapping logos without layout shifts */
       .brand-logo-long {
-        opacity: 1;
+        display: block;
+      }
+      .brand-logo-short {
+        display: none;
       }
       .collapsed .brand-logo-long {
-        opacity: 0;
-        pointer-events: none;
-      }
-
-      .brand-logo-short {
-        opacity: 0;
+        display: none;
       }
       .collapsed .brand-logo-short {
-        opacity: 1;
+        display: block;
       }
       /* Theme-based logo visibility */
       :root[data-theme="dark"] .logo-light {
@@ -1023,6 +1019,64 @@
         margin-bottom: 10px;
       }
 
+      /* Image lightbox */
+      .lightbox-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 2000;
+        background: rgba(0, 0, 0, 0.92);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        cursor: zoom-out;
+        backdrop-filter: blur(6px);
+      }
+      .lightbox-overlay.open {
+        display: flex;
+      }
+      .lightbox-overlay img {
+        max-width: 92vw;
+        max-height: 92vh;
+        border-radius: 8px;
+        box-shadow: 0 20px 80px rgba(0, 0, 0, 0.6);
+        animation: lbIn 0.25s ease;
+      }
+      .lightbox-download {
+        position: absolute;
+        bottom: 24px;
+        right: 24px;
+        background: var(--bg-raised);
+        border: 1px solid var(--border);
+        color: var(--text-primary);
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 12px;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .lightbox-download:hover {
+        background: var(--bg-surface);
+      }
+      @keyframes lbIn {
+        from {
+          transform: scale(0.9);
+          opacity: 0;
+        }
+        to {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+
+      /* Grader status */
+      .pi-status {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 10px;
+        color: var(--text-muted);
+      }
+
       /* ============================================================
    UTILITY
    ============================================================ */
@@ -1266,12 +1320,12 @@
               class="brand-logo brand-logo-short logo-dark"
             />
             <img
-              src="/logos/light_trans_v3.png"
+              src="/logos/light_v3.png"
               alt="HerdSync"
               class="brand-logo brand-logo-long logo-light"
             />
             <img
-              src="/logos/light_trans_v1.png"
+              src="/logos/light_v1.png"
               alt="HerdSync"
               class="brand-logo brand-logo-short logo-light"
             />
@@ -1363,6 +1417,9 @@
             <div class="topbar-right">
               <div class="topbar-status" id="dbStatus">
                 <span class="dot orange"></span><span>Connecting...</span>
+              </div>
+              <div class="pi-status" id="piStatus">
+                <span class="dot red"></span><span>Grader offline</span>
               </div>
               <div class="topbar-user" id="topbarUser"></div>
             </div>
@@ -1864,15 +1921,15 @@
                 <div class="grid-3" id="gradeCams">
                   <div class="cam-slot">
                     <span class="cam-label">Side</span>
-                    <div class="cam-offline">Camera offline</div>
+                    <div class="cam-offline">Waiting for grader...</div>
                   </div>
                   <div class="cam-slot">
                     <span class="cam-label">Top</span>
-                    <div class="cam-offline">Camera offline</div>
+                    <div class="cam-offline">Waiting for grader...</div>
                   </div>
                   <div class="cam-slot">
                     <span class="cam-label">Front</span>
-                    <div class="cam-offline">Camera offline</div>
+                    <div class="cam-offline">Waiting for grader...</div>
                   </div>
                 </div>
                 <div
@@ -2235,16 +2292,68 @@
               <div class="lbl">Total Time</div>
             </div>
           </div>
-          <div class="section-label">Debug Overlays</div>
+          <div class="section-label">
+            Debug Overlays
+            <span
+              style="
+                font-size: 9px;
+                color: var(--text-faint);
+                text-transform: none;
+                letter-spacing: 0;
+              "
+              >(click to enlarge)</span
+            >
+          </div>
           <div class="grid-3 mb-14">
-            <div class="cam-slot" id="reviewSide">
+            <div
+              class="cam-slot"
+              id="reviewSide"
+              style="cursor: pointer"
+              onclick="openLightbox(this)"
+            >
               <span class="cam-label">Side</span>
             </div>
-            <div class="cam-slot" id="reviewTop">
+            <div
+              class="cam-slot"
+              id="reviewTop"
+              style="cursor: pointer"
+              onclick="openLightbox(this)"
+            >
               <span class="cam-label">Top</span>
             </div>
-            <div class="cam-slot" id="reviewFront">
+            <div
+              class="cam-slot"
+              id="reviewFront"
+              style="cursor: pointer"
+              onclick="openLightbox(this)"
+            >
               <span class="cam-label">Front</span>
+            </div>
+          </div>
+          <!-- Edit grade (shown for saved grades) -->
+          <div id="reviewEditSection" style="display: none">
+            <div class="section-label">Edit Grade</div>
+            <div class="flex gap-10 mb-14 items-end">
+              <div style="flex: 0 0 140px">
+                <label class="field-label">Grade</label>
+                <select class="field-select" id="reviewEditGrade">
+                  <option value="">Ungraded</option>
+                  <option value="CAB Prime">CAB Prime</option>
+                  <option value="Prime">Prime</option>
+                  <option value="Choice">Choice</option>
+                  <option value="Select">Select</option>
+                  <option value="No Roll">No Roll</option>
+                </select>
+              </div>
+              <button class="btn btn-accent btn-sm" onclick="saveEditGrade()">
+                Save Grade
+              </button>
+              <button
+                class="btn btn-danger btn-sm"
+                onclick="deleteGradeResult()"
+              >
+                Delete Result
+              </button>
             </div>
           </div>
           <div class="section-label">Measurements</div>
@@ -2464,6 +2573,14 @@
       </div>
     </div>
 
+    <!-- IMAGE LIGHTBOX -->
+    <div class="lightbox-overlay" id="lightbox" onclick="closeLightbox(event)">
+      <img id="lightboxImg" src="" alt="Debug overlay" />
+      <a class="lightbox-download" id="lightboxDl" href="" download="debug.png"
+        >⬇ Download</a
+      >
+    </div>
+
     <div class="toast" id="toast">
       <span class="toast-icon"></span><span class="toast-msg"></span>
     </div>
@@ -2487,7 +2604,10 @@
 
       let pendingGradeResult = null;
       let _gradeAnimalCreated = false;
+      let _gradeExistingId = null; // non-null means grading an existing animal
+      let _reviewGradeId = null; // grade result ID for edit/delete
       let nextGradeId = null;
+      let piConnected = false;
 
       // Description options per species — used by both grading form and edit modal
       const DESCRIPTION_OPTIONS = {
@@ -2691,6 +2811,7 @@
           user.username + " (" + user.role + ")";
         document.getElementById("footerUser").textContent = user.username;
         loadAll();
+        checkPiConnection();
       }
 
       async function loadAll() {
@@ -2862,6 +2983,73 @@
         });
       }
       setInterval(refreshCameraTokens, 13 * 60 * 1000);
+
+      // ============================================================
+      // PI CONNECTION CHECK
+      // ============================================================
+      async function checkPiConnection() {
+        const el = document.getElementById("piStatus");
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 5000);
+          // Try normal fetch first (works if Pi has CORS headers)
+          let reachable = false;
+          try {
+            const r = await fetch(CONFIG.API_BASE + "/api/prod/status", {
+              signal: controller.signal,
+              headers: { Authorization: "Bearer " + HerdAuth.getAccessToken() },
+            });
+            clearTimeout(timer);
+            reachable = true; // Any response means Pi is reachable
+          } catch (corsErr) {
+            // CORS blocked — try opaque request to detect reachability
+            clearTimeout(timer);
+            try {
+              const controller2 = new AbortController();
+              const timer2 = setTimeout(() => controller2.abort(), 5000);
+              await fetch(CONFIG.API_BASE + "/api/prod/status", {
+                mode: "no-cors",
+                signal: controller2.signal,
+              });
+              clearTimeout(timer2);
+              reachable = true; // Opaque response = server is up
+            } catch (e) {
+              reachable = false;
+            }
+          }
+          const wasOffline = !piConnected;
+          piConnected = reachable;
+          if (reachable) {
+            el.innerHTML =
+              '<span class="dot green"></span><span>Grader connected</span>';
+            if (wasOffline) updateGradeButtonState();
+          } else {
+            el.innerHTML =
+              '<span class="dot red"></span><span>Grader offline</span>';
+            updateGradeButtonState();
+          }
+        } catch (e) {
+          piConnected = false;
+          el.innerHTML =
+            '<span class="dot red"></span><span>Grader offline</span>';
+          updateGradeButtonState();
+        }
+      }
+
+      function updateGradeButtonState() {
+        const btn = document.getElementById("gradeBtn");
+        if (currentPage !== "grading") return;
+        if (piConnected) {
+          btn.disabled = false;
+          btn.title = "";
+        } else {
+          btn.disabled = true;
+          btn.title = "Grader is offline — cannot grade";
+        }
+      }
+
+      // Check every 15s
+      setInterval(checkPiConnection, 15000);
 
       // ============================================================
       // NAV
@@ -3113,6 +3301,11 @@
       }
 
       function openGradeForAnimal() {
+        const a = allAnimals.find(
+          (x) =>
+            x.serial_id === selectedAnimalId && x.type === selectedAnimalType,
+        );
+        if (!a) return;
         document
           .querySelectorAll(".nav-btn")
           .forEach((b) => b.classList.remove("active"));
@@ -3124,12 +3317,24 @@
         document.getElementById("pageTitle").textContent = "Grading";
         currentPage = "grading";
         setCamerasForPage("grading");
-        // Pre-select species from selected animal
-        if (selectedAnimalType === "goat" || selectedAnimalType === "lamb") {
-          document.getElementById("gradeSpecies").value = selectedAnimalType;
-          onGradeSpeciesChange();
-        }
-        computeNextGradeId();
+
+        // Set existing animal mode FIRST so onGradeSpeciesChange doesn't reset it
+        _gradeExistingId = a.serial_id;
+
+        // Pre-select species and description from existing animal
+        document.getElementById("gradeSpecies").value = a.type;
+        onGradeSpeciesChange(); // won't call computeNextGradeId because _gradeExistingId is set
+        if (a.description)
+          document.getElementById("gradeDesc").value = a.description;
+
+        document.getElementById("gradeSerial").value = a.serial_id;
+        document.getElementById("gradeSerialHint").textContent =
+          "Grading existing " + a.type + " #" + a.serial_id;
+        document.getElementById("gradeSerialHint").className =
+          "field-hint valid";
+        if (a.live_weight)
+          document.getElementById("gradeWeight").value = a.live_weight;
+        if (piConnected) document.getElementById("gradeBtn").disabled = false;
         document.getElementById("gradeWeight").focus();
       }
 
@@ -3782,10 +3987,11 @@
               "</option>",
           )
           .join("");
-        computeNextGradeId();
+        if (!_gradeExistingId) computeNextGradeId();
       }
 
       async function computeNextGradeId() {
+        _gradeExistingId = null; // Reset — back to new animal mode
         const species = document.getElementById("gradeSpecies").value;
         const hint = document.getElementById("gradeSerialHint");
         const input = document.getElementById("gradeSerial");
@@ -3799,7 +4005,7 @@
         hint.textContent =
           "Auto-assigned — new " + species + " will be created on save";
         hint.className = "field-hint valid";
-        btn.disabled = false;
+        btn.disabled = !piConnected;
       }
 
       function gradeLog(msg, type) {
@@ -3813,7 +4019,15 @@
       }
 
       async function startGrade() {
-        if (!nextGradeId) {
+        // Pi connection check
+        if (!piConnected) {
+          showToast("error", "Grader is offline — cannot start grading");
+          gradeLog("Grader is offline. Check connection and try again.", "err");
+          return;
+        }
+
+        const serialId = _gradeExistingId || nextGradeId;
+        if (!serialId) {
           showToast("error", "No serial ID — try refreshing");
           return;
         }
@@ -3833,9 +4047,10 @@
         btn.disabled = true;
         document.getElementById("gradeLog").innerHTML = "";
         document.getElementById("gradeLog").style.display = "none";
-        const serialId = nextGradeId;
+        const isExisting = !!_gradeExistingId;
         gradeLog(
           "Starting grade for " +
+            (isExisting ? "existing " : "new ") +
             species +
             " (serial " +
             serialId +
@@ -3847,6 +4062,34 @@
         );
 
         try {
+          // Quick Pi reachability check before committing
+          gradeLog("Verifying grader connection...", "info");
+          let pingOk = false;
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 5000);
+            const ping = await fetch(CONFIG.API_BASE + "/api/prod/status", {
+              signal: controller.signal,
+              headers: { Authorization: "Bearer " + HerdAuth.getAccessToken() },
+            });
+            clearTimeout(timer);
+            pingOk = ping.ok || ping.status === 401;
+          } catch (e) {
+            /* fall through */
+          }
+          if (!pingOk) {
+            gradeLog(
+              "Grader is unreachable. Check that the grader is powered on and connected to the network.",
+              "err",
+            );
+            piConnected = false;
+            document.getElementById("piStatus").innerHTML =
+              '<span class="dot red"></span><span>Grader offline</span>';
+            showToast("error", "Grader unreachable — check connection");
+            btn.disabled = false;
+            return;
+          }
+
           gradeLog("POST /api/prod/grade ...", "info");
           const resp = await HerdAuth.fetch(
             CONFIG.API_BASE + "/api/prod/grade",
@@ -3854,7 +4097,7 @@
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                serial_id: serialId,
+                serial_id: String(serialId),
                 live_weight: lw,
                 description: desc,
               }),
@@ -3862,11 +4105,22 @@
           );
           if (!resp.ok) {
             const body = await resp.json().catch(() => ({}));
-            gradeLog(
-              "Rejected: " + (body.message || body.error_code || resp.status),
-              "err",
-            );
+            const errMsg =
+              body.message ||
+              body.error_code ||
+              body.detail ||
+              "HTTP " + resp.status;
+            gradeLog("Rejected: " + errMsg, "err");
             if (body.fix) gradeLog("Fix: " + body.fix, "warn");
+            if (resp.status === 0 || resp.status >= 502) {
+              gradeLog(
+                "Grader may have lost connection during the request.",
+                "warn",
+              );
+              piConnected = false;
+              document.getElementById("piStatus").innerHTML =
+                '<span class="dot red"></span><span>Grader offline</span>';
+            }
             btn.disabled = false;
             return;
           }
@@ -3888,14 +4142,28 @@
               ec2_sec: result.timing?.ec2_sec || null,
               total_sec: result.timing?.total_sec || null,
               warnings: result.warnings || [],
+              _isExisting: isExisting,
             };
             openGradeReview(pendingGradeResult, serialId);
           } else {
             gradeLog("Failed: " + (result?.error || "unknown"), "err");
             if (result?.fix) gradeLog("Fix: " + result.fix, "warn");
+            if (
+              result?.error?.includes("timeout") ||
+              result?.error?.includes("connect")
+            ) {
+              gradeLog("This may be a Grader connectivity issue.", "warn");
+            }
           }
         } catch (err) {
           gradeLog("Network error: " + err.message, "err");
+          gradeLog(
+            "Check that the grader is powered on and reachable.",
+            "warn",
+          );
+          piConnected = false;
+          document.getElementById("piStatus").innerHTML =
+            '<span class="dot red"></span><span>Grader offline</span>';
         } finally {
           btn.disabled = false;
         }
@@ -3941,6 +4209,8 @@
         document.getElementById("reviewFooter").style.display = "";
         document.getElementById("reviewSubtitle").textContent =
           "Review before saving";
+        document.getElementById("reviewEditSection").style.display = "none";
+        _reviewGradeId = null;
         const badgeEl = document.getElementById("reviewGradeBadge");
         badgeEl.textContent = result.grade || "UNGRADED";
         badgeEl.className =
@@ -4006,10 +4276,42 @@
         const species = pendingGradeResult.species;
         const endpoint = "/" + species + "s";
         const label = species.charAt(0).toUpperCase() + species.slice(1);
+        const isExisting = !!pendingGradeResult._isExisting;
 
         try {
-          // Step 1: Create the animal (skip if already created on a previous attempt)
-          if (!_gradeAnimalCreated) {
+          if (isExisting) {
+            // Existing animal — PUT grade update, no animal creation
+            gradeLog(
+              "Updating grade on existing " +
+                species +
+                " #" +
+                pendingGradeResult.serial_id +
+                "...",
+              "info",
+            );
+            const putResp = await HerdAuth.fetch(
+              CONFIG.DB_BASE + endpoint + "/" + pendingGradeResult.serial_id,
+              {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  grade: pendingGradeResult.grade || null,
+                  live_weight: pendingGradeResult.live_weight,
+                }),
+              },
+            );
+            if (!putResp.ok) {
+              const err = await putResp.json().catch(() => ({}));
+              throw new Error(
+                "Grade update failed: " + (err.detail || putResp.status),
+              );
+            }
+            gradeLog(
+              label + " #" + pendingGradeResult.serial_id + " grade updated",
+              "ok",
+            );
+          } else if (!_gradeAnimalCreated) {
+            // New animal — create via species endpoint
             gradeLog(
               "Creating " +
                 species +
@@ -4041,7 +4343,7 @@
             gradeLog(label + " #" + created.serial_id + " created", "ok");
           } else {
             gradeLog(
-              "Retrying grade save for existing " +
+              "Retrying grade save for " +
                 species +
                 " #" +
                 pendingGradeResult.serial_id +
@@ -4050,11 +4352,12 @@
             );
           }
 
-          // Step 2: Save the grade result
+          // Save the grade result
           gradeLog("Saving grade result...", "info");
           const gradePayload = { ...pendingGradeResult };
           delete gradePayload.species;
           delete gradePayload.description;
+          delete gradePayload._isExisting;
           const gradeResp = await HerdAuth.fetch(CONFIG.DB_BASE + "/grading", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -4062,14 +4365,7 @@
           });
           if (!gradeResp.ok) {
             const err = await gradeResp.json().catch(() => ({}));
-            gradeLog(
-              "Grade save failed — " +
-                label +
-                " #" +
-                pendingGradeResult.serial_id +
-                " exists but grade was not saved. Click Retry.",
-              "err",
-            );
+            gradeLog("Grade save failed — click Retry.", "err");
             showToast("error", "Grade save failed — retry or discard");
             btn.disabled = false;
             btn.textContent = "Retry Save";
@@ -4077,21 +4373,27 @@
           }
 
           _gradeAnimalCreated = false;
+          _gradeExistingId = null;
           closeModal("modalGradeReview");
+          const verb = isExisting ? "graded" : "created";
           showToast(
             "success",
             label +
               " #" +
               pendingGradeResult.serial_id +
-              " created — " +
+              " " +
+              verb +
+              " — " +
               (pendingGradeResult.grade || "Ungraded"),
           );
           gradeLog("Saved to database", "ok");
           pendingGradeResult = null;
 
-          const loaders = [loadGrades().catch(() => {})];
-          if (species === "goat") loaders.push(loadGoats().catch(() => {}));
-          else loaders.push(loadLambs().catch(() => {}));
+          const loaders = [
+            loadGrades().catch(() => {}),
+            loadGoats().catch(() => {}),
+            loadLambs().catch(() => {}),
+          ];
           await Promise.all(loaders);
           updateDashboard();
           filterAnimals();
@@ -4116,6 +4418,7 @@
         closeModal("modalGradeReview");
         pendingGradeResult = null;
         _gradeAnimalCreated = false;
+        _gradeExistingId = null;
         gradeLog("Discarded by operator", "warn");
         showToast("success", "Grade discarded");
       }
@@ -4190,9 +4493,103 @@
           );
           document.getElementById("reviewFooter").style.display = "none";
           document.getElementById("reviewSubtitle").textContent =
-            "Saved grade — read only";
+            "Saved grade — click to edit";
+          // Show edit controls
+          _reviewGradeId = resultId;
+          document.getElementById("reviewEditSection").style.display = "";
+          document.getElementById("reviewEditGrade").value = r.grade || "";
         } catch (err) {
           showToast("error", "Could not load grade detail");
+        }
+      }
+
+      // ============================================================
+      // LIGHTBOX — fullscreen debug image viewer
+      // ============================================================
+      function openLightbox(slot) {
+        const img = slot.querySelector("img");
+        if (!img || !img.src) return;
+        const lb = document.getElementById("lightbox");
+        const lbImg = document.getElementById("lightboxImg");
+        const lbDl = document.getElementById("lightboxDl");
+        lbImg.src = img.src;
+        lbDl.href = img.src;
+        lbDl.download = (img.alt || "debug") + ".png";
+        lb.classList.add("open");
+      }
+      function closeLightbox(e) {
+        if (e.target.tagName === "A") return; // Don't close on download click
+        document.getElementById("lightbox").classList.remove("open");
+      }
+      document.addEventListener(
+        "keydown",
+        function (e) {
+          if (
+            e.key === "Escape" &&
+            document.getElementById("lightbox").classList.contains("open")
+          ) {
+            document.getElementById("lightbox").classList.remove("open");
+            e.stopImmediatePropagation(); // Don't also close modals
+          }
+        },
+        true,
+      );
+
+      // ============================================================
+      // GRADE EDIT / DELETE (for saved grade results)
+      // ============================================================
+      async function saveEditGrade() {
+        if (!_reviewGradeId) return;
+        const newGrade =
+          document.getElementById("reviewEditGrade").value || null;
+        try {
+          const r = await HerdAuth.fetch(
+            CONFIG.DB_BASE + "/grading/result/" + _reviewGradeId,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ grade: newGrade }),
+            },
+          );
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || "Failed: " + r.status);
+          }
+          closeModal("modalGradeReview");
+          showToast("success", "Grade updated to " + (newGrade || "Ungraded"));
+          await Promise.all([
+            loadGrades().catch(() => {}),
+            loadGoats().catch(() => {}),
+            loadLambs().catch(() => {}),
+          ]);
+          updateDashboard();
+          filterAnimals();
+          renderGradeHistory();
+        } catch (err) {
+          showToast("error", err.message);
+        }
+      }
+
+      async function deleteGradeResult() {
+        if (!_reviewGradeId) return;
+        if (!confirm("Delete this grade result permanently?")) return;
+        try {
+          const r = await HerdAuth.fetch(
+            CONFIG.DB_BASE + "/grading/result/" + _reviewGradeId,
+            { method: "DELETE" },
+          );
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || "Delete failed: " + r.status);
+          }
+          closeModal("modalGradeReview");
+          showToast("success", "Grade result deleted");
+          _reviewGradeId = null;
+          await loadGrades().catch(() => {});
+          renderGradeHistory();
+          updateDashboard();
+        } catch (err) {
+          showToast("error", err.message);
         }
       }
 

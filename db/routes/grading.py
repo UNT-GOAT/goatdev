@@ -104,6 +104,32 @@ async def delete_grade_result(request: Request, result_id: int):
         return {"deleted": result_id}
 
 
+@router.put("/result/{result_id}")
+async def update_grade_result(request: Request, result_id: int):
+    """Update fields on an existing grading result."""
+    pool = await get_conn(request)
+    body = await request.json()
+
+    # Only allow updating specific fields
+    allowed = {"grade", "live_weight", "all_views_ok"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        raise HTTPException(400, "No valid fields to update")
+
+    async with pool.acquire() as conn:
+        sets = ", ".join(f"{k} = ${i+2}" for i, k in enumerate(updates))
+        vals = [result_id] + list(updates.values())
+        row = await conn.fetchrow(
+            f"UPDATE grade_results SET {sets} WHERE id = $1 RETURNING *", *vals
+        )
+        if not row:
+            raise HTTPException(404, "Grade result not found")
+        d = dict(row)
+        if d.get("measurements") and isinstance(d["measurements"], str):
+            d["measurements"] = json.loads(d["measurements"])
+        return d
+
+
 @router.post("", status_code=201)
 async def create_grade_result(request: Request, body: GradeResultIn):
     """Record a new grading result. Called by frontend after operator confirms."""
