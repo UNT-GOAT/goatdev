@@ -1161,13 +1161,13 @@
           left: 0;
           top: 0;
           bottom: 0;
-          width: 64px;
           z-index: 30;
+          width: 64px !important;
         }
         .sidebar .brand-logo-long,
         .sidebar .nav-label,
         .sidebar .footer-user {
-          display: none;
+          display: none !important;
         }
         .sidebar .brand-logo-short {
           display: block;
@@ -1874,6 +1874,9 @@
                         color: var(--accent);
                       "
                     />
+                    <div class="field-hint" id="gradeSerialHint">
+                      Computing next ID...
+                    </div>
                   </div>
                   <div style="flex: 0 0 120px">
                     <label class="field-label">Species *</label>
@@ -2084,6 +2087,9 @@
                     color: var(--accent);
                   "
                 />
+                <div class="field-hint" id="addAnimalSerialHint">
+                  Auto-assigned
+                </div>
               </div>
             </div>
             <div class="field" id="addAnimalDescWrap">
@@ -2848,7 +2854,7 @@
         const el = document.getElementById("dbStatus");
         if (state === "ok")
           el.innerHTML =
-            '<span class="dot green"></span><span>Connected</span>';
+            '<span class="dot green"></span><span>User Connected</span>';
         else if (state === "partial")
           el.innerHTML = '<span class="dot orange"></span><span>Partial</span>';
         else
@@ -3054,8 +3060,8 @@
         }
       }
 
-      // Check every 2s
-      setInterval(checkPiConnection, 2000);
+      // Check every 10s
+      setInterval(checkPiConnection, 10000);
 
       // ============================================================
       // NAV
@@ -3084,6 +3090,7 @@
         });
       });
       function toggleSidebar() {
+        if (window.innerWidth <= 640) return;
         document.getElementById("sidebar").classList.toggle("collapsed");
       }
 
@@ -3386,8 +3393,10 @@
       async function onAddAnimalTypeChange() {
         const type = document.getElementById("addAnimalType").value;
         const hint = document.getElementById("addAnimalSerialHint");
+        hint.textContent = "Fetching next ID...";
         const nextId = await fetchNextGlobalId();
         document.getElementById("addAnimalSerial").value = nextId;
+        hint.textContent = "Auto-assigned";
         const wrap = document.getElementById("addAnimalDescWrap");
         const descSel = document.getElementById("addAnimalDesc");
         if (DESCRIPTION_OPTIONS[type]) {
@@ -4000,11 +4009,14 @@
         const hint = document.getElementById("gradeSerialHint");
         const input = document.getElementById("gradeSerial");
         const btn = document.getElementById("gradeBtn");
+        hint.textContent = "Fetching next ID...";
         hint.className = "field-hint";
         input.value = "";
         btn.disabled = true;
         nextGradeId = await fetchNextGlobalId();
         input.value = nextGradeId;
+        hint.textContent = "";
+        hint.className = "field-hint valid";
         btn.disabled = !piConnected;
       }
 
