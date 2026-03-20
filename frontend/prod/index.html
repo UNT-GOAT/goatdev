@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1.0, user-scalable=no"
     />
     <title>HerdSync</title>
-    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" href="/logos/favicon.ico" />
     <script src="/js/config.js"></script>
     <script src="/js/auth.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -1163,6 +1163,10 @@
           bottom: 0;
           z-index: 30;
           width: 64px !important;
+        }
+        .sidebar .brand-logo {
+          height: 40px !important; /* Forces 40px on phone-sized screens */
+          width: auto;
         }
         .sidebar .brand-logo-long,
         .sidebar .nav-label,
@@ -3305,9 +3309,17 @@
           a.created_at,
         );
         const acts = document.getElementById("detailActions");
+        const animalGrades = allGrades.filter(
+          (g) => g.serial_id === a.serial_id,
+        );
         acts.innerHTML =
           (a.type === "goat" || a.type === "lamb"
             ? '<button class="btn btn-accent flex-1 btn-sm" onclick="openGradeForAnimal()">Grade</button>'
+            : "") +
+          (animalGrades.length
+            ? '<button class="btn flex-1 btn-sm" onclick="openAnimalGrades()">Grades (' +
+              animalGrades.length +
+              ")</button>"
             : "") +
           '<button class="btn flex-1 btn-sm" onclick="openEditAnimal()">Edit</button>' +
           '<button class="btn btn-danger flex-1 btn-sm" onclick="deleteAnimal()">Delete</button>';
@@ -3349,6 +3361,22 @@
           document.getElementById("gradeWeight").value = a.live_weight;
         if (piConnected) document.getElementById("gradeBtn").disabled = false;
         document.getElementById("gradeWeight").focus();
+      }
+
+      function openAnimalGrades() {
+        const a = allAnimals.find(
+          (x) =>
+            x.serial_id === selectedAnimalId && x.type === selectedAnimalType,
+        );
+        if (!a) return;
+        const animalGrades = allGrades.filter(
+          (g) => g.serial_id === a.serial_id,
+        );
+        if (!animalGrades.length) {
+          showToast("error", "No grades for this animal");
+          return;
+        }
+        viewGradeDetail(animalGrades[0].id);
       }
 
       // ============================================================
