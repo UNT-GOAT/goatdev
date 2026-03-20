@@ -39,7 +39,7 @@ async def peek_next_id(request: Request):
     """Preview what the next serial_id will be (without assigning it)."""
     pool = await get_conn(request)
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT last_value + 1 AS next_id FROM animals_serial_id_seq")
+        row = await conn.fetchrow("SELECT COALESCE(MAX(serial_id), 0) + 1 AS next_id FROM animals")
         return {"next_serial_id": row["next_id"]}
 
 
@@ -84,3 +84,16 @@ async def get_animal(request: Request, serial_id: int):
             result["details"] = None
 
         return result
+
+
+@router.delete("/{serial_id}")
+async def delete_animal(request: Request, serial_id: int):
+    """Delete an animal row by serial_id."""
+    pool = await get_conn(request)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "DELETE FROM animals WHERE serial_id = $1 RETURNING serial_id", serial_id
+        )
+        if not row:
+            raise HTTPException(404, "Animal not found")
+        return {"deleted": serial_id}

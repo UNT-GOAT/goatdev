@@ -2591,10 +2591,28 @@
         const a = allAnimals.filter((x) => x.type === type);
         return a.length ? Math.max(...a.map((x) => x.serial_id)) + 1 : 1;
       }
+
+      let _cachedNextId = null;
+      async function fetchNextGlobalId() {
+        try {
+          const data = await dbFetch("/animals/next");
+          _cachedNextId = data.next_serial_id || data.next_id || data;
+          return _cachedNextId;
+        } catch (err) {
+          // Fallback to client-side if endpoint fails
+          _cachedNextId = allAnimals.length
+            ? Math.max(...allAnimals.map((a) => a.serial_id)) + 1
+            : 1;
+          return _cachedNextId;
+        }
+      }
       function nextGlobalId() {
-        return allAnimals.length
-          ? Math.max(...allAnimals.map((a) => a.serial_id)) + 1
-          : 1;
+        return (
+          _cachedNextId ||
+          (allAnimals.length
+            ? Math.max(...allAnimals.map((a) => a.serial_id)) + 1
+            : 1)
+        );
       }
       function populateProviderSelect(el, selectedId) {
         el.innerHTML =
@@ -3137,9 +3155,13 @@
           )
           .classList.add("active");
       }
-      function onAddAnimalTypeChange() {
+      async function onAddAnimalTypeChange() {
         const type = document.getElementById("addAnimalType").value;
-        document.getElementById("addAnimalSerial").value = nextGlobalId();
+        const hint = document.getElementById("addAnimalSerialHint");
+        hint.textContent = "Fetching next ID...";
+        const nextId = await fetchNextGlobalId();
+        document.getElementById("addAnimalSerial").value = nextId;
+        hint.textContent = "Auto-assigned";
         const wrap = document.getElementById("addAnimalDescWrap");
         const descSel = document.getElementById("addAnimalDesc");
         if (DESCRIPTION_OPTIONS[type]) {
@@ -3188,9 +3210,25 @@
       }
 
       async function saveSingleAnimal() {
-        const type = document.getElementById("addAnimalType").value,
-          sid = nextGlobalId(),
-          body = { serial_id: sid };
+        const type = document.getElementById("addAnimalType").value;
+
+        // Step 1: Create animals row to get the real serial_id from DB
+        const animalResp = await HerdAuth.fetch(CONFIG.DB_BASE + "/animals", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ species: type }),
+        });
+        if (!animalResp.ok) {
+          const err = await animalResp.json().catch(() => ({}));
+          throw new Error(
+            err.detail || "Failed to assign ID: " + animalResp.status,
+          );
+        }
+        const animal = await animalResp.json();
+        const sid = animal.serial_id;
+
+        // Step 2: Create species-specific record with that serial_id
+        const body = { serial_id: sid };
         if (DESCRIPTION_OPTIONS[type])
           body.description = document.getElementById("addAnimalDesc").value;
         const hw = parseFloat(document.getElementById("addAnimalHW").value);
@@ -3203,30 +3241,18 @@
         if (kd) body.kill_date = kd;
         const pd = document.getElementById("addAnimalProc").value;
         if (pd) body.process_date = pd;
-        let resp = await HerdAuth.fetch(CONFIG.DB_BASE + "/" + type + "s", {
+        const resp = await HerdAuth.fetch(CONFIG.DB_BASE + "/" + type + "s", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
-        if (resp.status === 409) {
-          body.serial_id = sid + 1;
-          resp = await HerdAuth.fetch(CONFIG.DB_BASE + "/" + type + "s", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          });
-        }
         if (!resp.ok) {
           const err = await resp.json().catch(() => ({}));
           throw new Error(err.detail || "Failed: " + resp.status);
         }
         showToast(
           "success",
-          type.charAt(0).toUpperCase() +
-            type.slice(1) +
-            " #" +
-            body.serial_id +
-            " added",
+          type.charAt(0).toUpperCase() + type.slice(1) + " #" + sid + " added",
         );
       }
 
@@ -3239,32 +3265,34 @@
           kd = document.getElementById("batchAnimalKill").value,
           pd = document.getElementById("batchAnimalProc").value;
         const status = document.getElementById("batchStatus");
-        let startId = nextGlobalId(),
-          added = 0,
+        let added = 0,
           failed = 0;
         for (let i = 0; i < count; i++) {
           status.textContent = "Adding " + (i + 1) + "/" + count + "...";
           status.className = "field-hint";
-          const body = { serial_id: startId + i };
-          if (prov) body.prov_id = parseInt(prov);
-          if (kd) body.kill_date = kd;
-          if (pd) body.process_date = pd;
           try {
-            let r = await HerdAuth.fetch(CONFIG.DB_BASE + "/" + type + "s", {
+            // Step 1: Create animals row
+            const ar = await HerdAuth.fetch(CONFIG.DB_BASE + "/animals", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ species: type }),
+            });
+            if (!ar.ok) {
+              failed++;
+              continue;
+            }
+            const animal = await ar.json();
+            // Step 2: Create species record
+            const body = { serial_id: animal.serial_id };
+            if (prov) body.prov_id = parseInt(prov);
+            if (kd) body.kill_date = kd;
+            if (pd) body.process_date = pd;
+            const r = await HerdAuth.fetch(CONFIG.DB_BASE + "/" + type + "s", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(body),
             });
-            if (r.status === 409) {
-              body.serial_id = nextGlobalId() + i;
-              r = await HerdAuth.fetch(CONFIG.DB_BASE + "/" + type + "s", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body),
-              });
-              if (r.ok) added++;
-              else failed++;
-            } else if (r.ok) added++;
+            if (r.ok) added++;
             else failed++;
           } catch (e) {
             failed++;
@@ -3408,6 +3436,7 @@
           sid = selectedAnimalId;
         try {
           const grades = allGrades.filter((g) => g.serial_id === sid);
+          // 1. Delete species record
           const r = await HerdAuth.fetch(
             CONFIG.DB_BASE + "/" + type + "s/" + sid,
             { method: "DELETE" },
@@ -3416,6 +3445,10 @@
             const err = await r.json().catch(() => ({}));
             throw new Error(err.detail || "Delete failed: " + r.status);
           }
+          // 2. Delete animals row (grade_results cascade automatically)
+          await HerdAuth.fetch(CONFIG.DB_BASE + "/animals/" + sid, {
+            method: "DELETE",
+          }).catch(() => {});
           showToast(
             "success",
             "Deleted " +
@@ -3763,15 +3796,21 @@
         computeNextGradeId();
       }
 
-      function computeNextGradeId() {
+      async function computeNextGradeId() {
         const species = document.getElementById("gradeSpecies").value;
-        nextGradeId = nextGlobalId();
-        document.getElementById("gradeSerial").value = nextGradeId;
-        document.getElementById("gradeSerialHint").textContent =
+        const hint = document.getElementById("gradeSerialHint");
+        const input = document.getElementById("gradeSerial");
+        const btn = document.getElementById("gradeBtn");
+        hint.textContent = "Fetching next ID...";
+        hint.className = "field-hint";
+        input.value = "";
+        btn.disabled = true;
+        nextGradeId = await fetchNextGlobalId();
+        input.value = nextGradeId;
+        hint.textContent =
           "Auto-assigned — new " + species + " will be created on save";
-        document.getElementById("gradeSerialHint").className =
-          "field-hint valid";
-        document.getElementById("gradeBtn").disabled = false;
+        hint.className = "field-hint valid";
+        btn.disabled = false;
       }
 
       function gradeLog(msg, type) {
@@ -3982,6 +4021,24 @@
         try {
           // Step 1: Create the animal (skip if already created on a previous attempt)
           if (!_gradeAnimalCreated) {
+            gradeLog("Assigning serial ID...", "info");
+            // 1a: Create animals row to get real serial_id
+            const idResp = await HerdAuth.fetch(CONFIG.DB_BASE + "/animals", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ species }),
+            });
+            if (!idResp.ok) {
+              const err = await idResp.json().catch(() => ({}));
+              throw new Error(
+                "Failed to assign ID: " + (err.detail || idResp.status),
+              );
+            }
+            const idData = await idResp.json();
+            pendingGradeResult.serial_id = idData.serial_id;
+            gradeLog("Assigned serial #" + idData.serial_id, "ok");
+
+            // 1b: Create species-specific record
             gradeLog(
               "Creating " +
                 species +
@@ -3990,7 +4047,7 @@
                 "...",
               "info",
             );
-            let animalResp = await HerdAuth.fetch(CONFIG.DB_BASE + endpoint, {
+            const animalResp = await HerdAuth.fetch(CONFIG.DB_BASE + endpoint, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -4000,25 +4057,7 @@
                 description: pendingGradeResult.description || null,
               }),
             });
-            if (animalResp.status === 409) {
-              pendingGradeResult.serial_id = nextGlobalId();
-              gradeLog(
-                "ID conflict — retrying with #" + pendingGradeResult.serial_id,
-                "warn",
-              );
-              animalResp = await HerdAuth.fetch(CONFIG.DB_BASE + endpoint, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  serial_id: pendingGradeResult.serial_id,
-                  live_weight: pendingGradeResult.live_weight,
-                  grade: pendingGradeResult.grade || null,
-                  description: pendingGradeResult.description || null,
-                }),
-              });
-              if (!animalResp.ok)
-                throw new Error(label + " creation failed after retry");
-            } else if (!animalResp.ok) {
+            if (!animalResp.ok) {
               const err = await animalResp.json().catch(() => ({}));
               throw new Error(
                 label +
