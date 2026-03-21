@@ -1,0 +1,1106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HerdSync — AI Livestock Grading Platform</title>
+    <link rel="icon" href="/logos/favicon.ico" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #08080f;
+        --bg-c: #111119;
+        --bg-r: #16161f;
+        --bdr: #1c1c28;
+        --bdr-s: #141420;
+        --tx: #dddde6;
+        --tx2: #999;
+        --tx3: #5a5a6e;
+        --tx4: #3a3a48;
+        --accent: #23783b;
+        --accent-dim: rgba(35, 120, 59, 0.1);
+        --accent-hover: rgba(35, 120, 59, 0.18);
+        --accent-text: #2a9048;
+        --blue: #42a5f5;
+        --blue-dim: rgba(66, 165, 245, 0.08);
+        --sans: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+        --mono: "JetBrains Mono", monospace;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        font-family: var(--sans);
+        background: var(--bg);
+        color: var(--tx);
+        -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      ::selection {
+        background: var(--accent-hover);
+        color: #fff;
+      }
+      .w {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 0 32px;
+      }
+
+      /* NAV */
+      nav {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+        background: rgba(8, 8, 15, 0.85);
+        backdrop-filter: blur(20px);
+        border-bottom: 1px solid var(--bdr-s);
+      }
+      .nav-i {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 80px;
+      }
+      .nav-logo {
+        height: 60px;
+        display: block;
+      }
+      .nav-r {
+        display: flex;
+        align-items: center;
+        gap: 28px;
+      }
+      .nav-r a {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--tx3);
+        transition: color 0.15s;
+        letter-spacing: 0.3px;
+      }
+      .nav-r a:hover {
+        color: var(--tx2);
+      }
+      .nav-signin {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        padding: 6px 16px;
+        border-radius: 6px;
+        border: 1px solid var(--accent);
+        color: var(--accent-text);
+        transition: all 0.15s;
+      }
+      .nav-signin:hover {
+        background: var(--accent-dim);
+      }
+
+      /* HERO */
+      .hero {
+        padding: 150px 0 90px;
+        position: relative;
+      }
+      .hero::before {
+        content: "";
+        position: absolute;
+        top: -300px;
+        left: -200px;
+        width: 700px;
+        height: 700px;
+        background: radial-gradient(
+          circle,
+          rgba(35, 120, 59, 0.035) 0%,
+          transparent 65%
+        );
+        pointer-events: none;
+      }
+      .hero-ey {
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 1.5px;
+        color: var(--tx3);
+        text-transform: uppercase;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .hero-ey::before {
+        content: "";
+        width: 24px;
+        height: 1px;
+        background: var(--accent);
+      }
+      .hero h1 {
+        font-size: clamp(38px, 5.5vw, 64px);
+        font-weight: 700;
+        line-height: 1.08;
+        letter-spacing: -2px;
+        margin-bottom: 20px;
+        max-width: 640px;
+      }
+      .hero h1 .hl {
+        color: var(--accent-text);
+      }
+      .hero-p {
+        font-size: 16px;
+        font-weight: 300;
+        line-height: 1.75;
+        color: var(--tx2);
+        max-width: 480px;
+        margin-bottom: 36px;
+      }
+      .hero-btns {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 11px 22px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        font-family: var(--sans);
+        letter-spacing: 0.2px;
+        transition: all 0.15s;
+        cursor: pointer;
+        border: none;
+      }
+      .btn-a {
+        background: var(--accent);
+        color: #fff;
+      }
+      .btn-a:hover {
+        background: #1e6633;
+      }
+      .btn-g {
+        background: transparent;
+        color: var(--tx2);
+        border: 1px solid var(--bdr);
+      }
+      .btn-g:hover {
+        border-color: var(--tx3);
+        color: var(--tx);
+      }
+      .btn svg {
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+      }
+
+      /* SEPARATOR */
+      .sep {
+        height: 1px;
+        background: var(--bdr);
+      }
+
+      /* SECTION HEADERS */
+      .s-ey {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: var(--tx3);
+        margin-bottom: 10px;
+      }
+      .s-t {
+        font-size: clamp(26px, 3.5vw, 38px);
+        font-weight: 700;
+        letter-spacing: -1px;
+        line-height: 1.15;
+        margin-bottom: 14px;
+      }
+      .s-d {
+        font-size: 15px;
+        color: var(--tx2);
+        line-height: 1.7;
+        font-weight: 300;
+        max-width: 500px;
+      }
+
+      /* ============================================================
+   PROBLEM SECTION
+   ============================================================ */
+      .problem {
+        padding: 80px 0;
+      }
+
+      .problem-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 48px;
+        margin-top: 40px;
+        align-items: start;
+      }
+
+      .problem-left .context {
+        font-size: 14px;
+        line-height: 1.8;
+        color: var(--tx2);
+        font-weight: 300;
+        margin-bottom: 24px;
+      }
+      .problem-left .context a {
+        color: var(--accent-text);
+        border-bottom: 1px solid rgba(42, 144, 72, 0.3);
+        transition: border-color 0.15s;
+      }
+      .problem-left .context a:hover {
+        border-color: var(--accent-text);
+      }
+
+      .problem-left .context strong {
+        color: var(--tx);
+        font-weight: 500;
+      }
+
+      .problem-right {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .prob-card {
+        padding: 20px 22px;
+        border-radius: 8px;
+        border: 1px solid var(--bdr);
+        background: var(--bg-c);
+        transition: border-color 0.2s;
+      }
+      .prob-card:hover {
+        border-color: #282838;
+      }
+
+      .prob-card .prob-label {
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+      }
+      .prob-card.issue .prob-label {
+        color: #e06c75;
+      }
+      .prob-card.exists .prob-label {
+        color: var(--tx3);
+      }
+      .prob-card.solve .prob-label {
+        color: var(--accent-text);
+      }
+
+      .prob-card p {
+        font-size: 13px;
+        line-height: 1.65;
+        color: var(--tx2);
+        font-weight: 300;
+      }
+
+      /* ============================================================
+   PRODUCTS
+   ============================================================ */
+      .products {
+        padding: 80px 0;
+      }
+      .products-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-top: 44px;
+      }
+
+      .pc {
+        border: 1px solid var(--bdr);
+        border-radius: 12px;
+        position: relative;
+        overflow: hidden;
+        transition: border-color 0.2s;
+        display: flex;
+        flex-direction: column;
+      }
+      .pc:hover {
+        border-color: #282838;
+      }
+      .pc-bar {
+        height: 2px;
+        width: 100%;
+      }
+      .pc.hs .pc-bar {
+        background: linear-gradient(90deg, var(--accent) 0%, transparent 100%);
+      }
+      .pc.gg .pc-bar {
+        background: linear-gradient(90deg, var(--blue) 0%, transparent 100%);
+      }
+      .pc-body {
+        padding: 32px 30px 26px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+      }
+      .pc-tag {
+        display: inline-block;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        padding: 4px 10px;
+        border-radius: 4px;
+        margin-bottom: 18px;
+        width: fit-content;
+      }
+      .pc.hs .pc-tag {
+        color: var(--accent-text);
+        background: var(--accent-dim);
+      }
+      .pc.gg .pc-tag {
+        color: var(--blue);
+        background: var(--blue-dim);
+      }
+      .pc h2 {
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: -0.3px;
+        margin-bottom: 8px;
+      }
+      .pc .desc {
+        font-size: 13.5px;
+        line-height: 1.7;
+        color: var(--tx2);
+        font-weight: 300;
+        margin-bottom: 24px;
+      }
+
+      .fl {
+        list-style: none;
+        margin-bottom: auto;
+        padding-bottom: 24px;
+      }
+      .fl li {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        padding: 7px 0;
+        border-bottom: 1px solid var(--bdr-s);
+        font-size: 12.5px;
+        color: var(--tx2);
+        line-height: 1.55;
+      }
+      .fl li:last-child {
+        border-bottom: none;
+      }
+      .fl .tk {
+        flex-shrink: 0;
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        margin-top: 6px;
+      }
+      .hs .fl .tk {
+        background: var(--accent);
+      }
+      .gg .fl .tk {
+        background: var(--blue);
+      }
+
+      .gflow {
+        display: flex;
+        align-items: center;
+        margin: 4px 0 24px;
+        padding: 12px 14px;
+        background: var(--bg-r);
+        border-radius: 6px;
+        border: 1px solid var(--bdr-s);
+        gap: 0;
+        overflow-x: auto;
+      }
+      .gf-s {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        min-width: 64px;
+      }
+      .gf-n {
+        width: 24px;
+        height: 24px;
+        border-radius: 5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--blue-dim);
+        border: 1px solid rgba(66, 165, 245, 0.1);
+        font-family: var(--mono);
+        font-size: 9px;
+        font-weight: 500;
+        color: var(--blue);
+      }
+      .gf-l {
+        font-size: 9px;
+        color: var(--tx3);
+        text-align: center;
+        font-weight: 500;
+        letter-spacing: 0.2px;
+        line-height: 1.2;
+      }
+      .gf-a {
+        color: var(--tx4);
+        font-size: 10px;
+        margin: 0 2px;
+        padding-bottom: 12px;
+      }
+
+      .pc-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 30px;
+        border-top: 1px solid var(--bdr);
+        background: rgba(17, 17, 25, 0.5);
+      }
+      .pc-link {
+        font-size: 11px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        transition: gap 0.15s;
+        letter-spacing: 0.3px;
+      }
+      .hs .pc-link {
+        color: var(--accent-text);
+      }
+      .gg .pc-link {
+        color: var(--blue);
+      }
+      .pc-link:hover {
+        gap: 9px;
+      }
+      .pc-link svg {
+        width: 12px;
+        height: 12px;
+      }
+      .pc-tech {
+        display: flex;
+        gap: 5px;
+      }
+      .pc-tech span {
+        font-size: 9px;
+        font-family: var(--mono);
+        padding: 2px 7px;
+        border-radius: 3px;
+        background: var(--bg-r);
+        color: var(--tx3);
+        border: 1px solid var(--bdr-s);
+      }
+
+      /* ============================================================
+   ARCHITECTURE
+   ============================================================ */
+      .arch {
+        padding: 80px 0;
+      }
+      .arch-frame {
+        margin-top: 36px;
+        border: 1px solid var(--bdr);
+        border-radius: 10px;
+        overflow: hidden;
+        background: var(--bg-c);
+      }
+      .arch-frame img {
+        width: 100%;
+        display: block;
+      }
+      .arch-fallback {
+        display: none;
+        padding: 60px 32px;
+        align-items: center;
+        justify-content: center;
+        color: var(--tx3);
+        font-size: 12px;
+        text-align: center;
+      }
+
+      /* ============================================================
+   TECH STACK
+   ============================================================ */
+      .tech {
+        padding: 80px 0;
+      }
+      .tech-grid {
+        display: grid;
+        grid-template-columns: 1fr 1px 1fr 1px 1fr;
+        gap: 0;
+        margin-top: 40px;
+      }
+      .tech-dv {
+        background: var(--bdr-s);
+      }
+      .tc {
+        padding: 0 28px;
+      }
+      .tc:first-child {
+        padding-left: 0;
+      }
+      .tc:last-child {
+        padding-right: 0;
+      }
+      .tc h3 {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--bdr-s);
+      }
+      .tc.c1 h3 {
+        color: var(--accent-text);
+      }
+      .tc.c2 h3 {
+        color: var(--tx3);
+      }
+      .tc.c3 h3 {
+        color: var(--blue);
+      }
+      .tc ul {
+        list-style: none;
+      }
+      .tc li {
+        font-size: 12px;
+        font-family: var(--mono);
+        color: var(--tx2);
+        padding: 6px 0;
+        border-bottom: 1px solid var(--bdr-s);
+      }
+      .tc li:last-child {
+        border-bottom: none;
+      }
+      .tc .v {
+        color: var(--tx3);
+        font-size: 10px;
+        margin-left: 3px;
+      }
+
+      /* FOOTER */
+      footer {
+        border-top: 1px solid var(--bdr);
+        padding: 32px 0;
+        margin-top: 20px;
+      }
+      .foot {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .foot-l {
+        font-size: 11px;
+        color: var(--tx4);
+      }
+      .foot-r {
+        display: flex;
+        gap: 20px;
+      }
+      .foot-r a {
+        font-size: 11px;
+        color: var(--tx3);
+        transition: color 0.15s;
+      }
+      .foot-r a:hover {
+        color: var(--tx2);
+      }
+
+      /* ANIMATIONS */
+      .sr {
+        opacity: 0;
+        transform: translateY(14px);
+        transition:
+          opacity 0.45s ease,
+          transform 0.45s ease;
+      }
+      .sr.v {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .d1 {
+        transition-delay: 0.06s;
+      }
+      .d2 {
+        transition-delay: 0.12s;
+      }
+      .d3 {
+        transition-delay: 0.18s;
+      }
+      .d4 {
+        transition-delay: 0.24s;
+      }
+
+      /* RESPONSIVE */
+      @media (max-width: 860px) {
+        .problem-grid {
+          grid-template-columns: 1fr;
+          gap: 32px;
+        }
+        .products-grid {
+          grid-template-columns: 1fr;
+        }
+        .tech-grid {
+          grid-template-columns: 1fr;
+          gap: 32px;
+        }
+        .tech-dv {
+          display: none;
+        }
+        .tc {
+          padding: 0;
+        }
+      }
+      @media (max-width: 600px) {
+        .nav-r a:not(.nav-signin) {
+          display: none;
+        }
+        .hero {
+          padding: 120px 0 64px;
+        }
+        .problem,
+        .products,
+        .arch,
+        .tech {
+          padding: 56px 0;
+        }
+        .w {
+          padding: 0 18px;
+        }
+        .pc-body {
+          padding: 24px 20px 20px;
+        }
+        .pc-foot {
+          padding: 12px 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <div class="nav-i w">
+        <img src="/logos/dark_trans_v3.png" alt="HerdSync" class="nav-logo" />
+        <div class="nav-r">
+          <a href="#problem">Problem</a>
+          <a href="#products">Products</a>
+          <a href="#architecture">Architecture</a>
+          <a href="#tech">Stack</a>
+          <a href="https://github.com/UNT-GOAT/goatdev" target="_blank"
+            >GitHub</a
+          >
+          <a href="/prod/" class="nav-signin">Sign in</a>
+        </div>
+      </div>
+    </nav>
+
+    <!-- HERO -->
+    <section class="hero">
+      <div class="w">
+        <div class="hero-ey sr">UNT CS Capstone &middot; Spring 2026</div>
+        <h1 class="sr d1">
+          Two systems.<br />One <span class="hl">platform.</span>
+        </h1>
+        <p class="hero-p sr d2">
+          Hybrid cloud and edge AI for livestock management and real-time
+          computer vision grading. Provides an easy to use, consistent,
+          solution.
+        </p>
+        <div class="hero-btns sr d3">
+          <a href="#problem" class="btn btn-a"
+            >Explore
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+            >
+              <path d="M12 5v14M19 12l-7 7-7-7" /></svg
+          ></a>
+          <a
+            href="https://github.com/UNT-GOAT/goatdev"
+            target="_blank"
+            class="btn btn-g"
+            ><svg
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              style="width: 15px; height: 15px"
+            >
+              <path
+                d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"
+              />
+            </svg>
+            Source</a
+          >
+        </div>
+      </div>
+    </section>
+
+    <div class="sep"></div>
+
+    <!-- PROBLEM -->
+    <section class="problem" id="problem">
+      <div class="w">
+        <div class="s-ey sr">The problem</div>
+        <div class="s-t sr d1">No existing standard.</div>
+
+        <div class="problem-grid">
+          <div class="problem-left sr d2">
+            <p class="context">
+              <a href="https://www.cleanchickens.com" target="_blank"
+                >Clean Chickens</a
+              >
+              is a small livestock facility in Elk River, Minnesota. They
+              process goats, lambs, and chickens for providers across their
+              region. Their current operation runs on an outdated,
+              difficult-to-use database system, and grading is done entirely by
+              eye, with different associates evaluating animals and risk
+              delivering different grading cost standards for their customers.
+            </p>
+            <p class="context">
+              The grades determine what the facility pays their providers for
+              each animal. With no reproducible criteria and no paper trail,
+              providers have no way to understand why one animal may be worth
+              more on a different day. It's a trust problem as much as a
+              consistency problem, and most small-ruminant facilities in the
+              region faces the same issue.
+            </p>
+            <p class="context">
+              <strong>Beef cattle don't have this issue.</strong> USDA yield
+              grading gives cattle operations a standardized, measurement-based
+              system that's consistent across facilities and inspectors. Nothing
+              equivalent exists for goats and lambs. We set out to build it.
+            </p>
+          </div>
+
+          <div class="problem-right sr d3">
+            <div class="prob-card issue">
+              <div class="prob-label">The gap</div>
+              <p>
+                Goat and lamb grading is done by eye. Different people,
+                different angles, different results. No measurements, no
+                documentation, no way for providers to verify or dispute a
+                grade.
+              </p>
+            </div>
+            <div class="prob-card exists">
+              <div class="prob-label">What exists for cattle</div>
+              <p>
+                USDA yield grades use standardized body measurements with ribeye
+                area, fat thickness, carcass weight, to produce consistent,
+                reproducible scores. The system works because it removes
+                subjectivity.
+              </p>
+            </div>
+            <div class="prob-card solve">
+              <div class="prob-label">What we built</div>
+              <p>
+                Camera-based body measurement using computer vision. Three
+                angles, automated segmentation, calibrated pixel-to-centimeter
+                conversion, and a grade with documented reasoning. Consistent
+                every time, hands-free, with a receipt for every animal.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="sep"></div>
+
+    <!-- PRODUCTS -->
+    <section class="products" id="products">
+      <div class="w">
+        <div class="s-t sr d1">What we built.</div>
+        <div class="s-d sr d2">
+          One system manages the data. The other handles cameras and AI systems.
+          They work together and solve completely different problems.
+        </div>
+
+        <div class="products-grid">
+          <div class="pc hs sr d3">
+            <div class="pc-bar"></div>
+            <div class="pc-body">
+              <div class="pc-tag">Web platform</div>
+              <h2>HerdSync</h2>
+              <p class="desc">
+                Livestock management across species. Track animals, manage
+                providers, record grades, and run daily operations from a
+                dashboard served through CloudFront.
+              </p>
+              <ul class="fl">
+                <li>
+                  <span class="tk"></span>RS256 JWT auth with JWKS
+                  discovery&mdash;asymmetric keys, no shared secrets
+                </li>
+                <li>
+                  <span class="tk"></span>Role-based access: admins manage
+                  users, operators grade and record
+                </li>
+                <li>
+                  <span class="tk"></span>Unified serial IDs spanning goats,
+                  lambs, and chickens
+                </li>
+                <li>
+                  <span class="tk"></span>Provider tracking with head counts and
+                  transaction history
+                </li>
+                <li>
+                  <span class="tk"></span>Auth-gated DB proxy&mdash;every
+                  request verified before forwarding
+                </li>
+                <li>
+                  <span class="tk"></span>Dashboard with grade history, search,
+                  filtering by species
+                </li>
+              </ul>
+            </div>
+            <div class="pc-foot">
+              <a href="/prod/" class="pc-link"
+                >Open dashboard
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                >
+                  <path d="M5 12h14M12 5l7 7-7 7" /></svg
+              ></a>
+              <div class="pc-tech">
+                <span>FastAPI</span><span>PostgreSQL</span
+                ><span>CloudFront</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="pc gg sr d4">
+            <div class="pc-bar"></div>
+            <div class="pc-body">
+              <div class="pc-tag">AI + edge hardware</div>
+              <h2>Goat grading</h2>
+              <p class="desc">
+                Computer vision pipeline across a Raspberry Pi and EC2. Three
+                camera angles, YOLO segmentation, calibrated measurements,
+                USDA-style grade in under 30 seconds.
+              </p>
+              <div class="gflow">
+                <div class="gf-s">
+                  <div class="gf-n">1</div>
+                  <div class="gf-l">Capture</div>
+                </div>
+                <div class="gf-a">&rarr;</div>
+                <div class="gf-s">
+                  <div class="gf-n">2</div>
+                  <div class="gf-l">Upload</div>
+                </div>
+                <div class="gf-a">&rarr;</div>
+                <div class="gf-s">
+                  <div class="gf-n">3</div>
+                  <div class="gf-l">Segment</div>
+                </div>
+                <div class="gf-a">&rarr;</div>
+                <div class="gf-s">
+                  <div class="gf-n">4</div>
+                  <div class="gf-l">Grade</div>
+                </div>
+                <div class="gf-a">&rarr;</div>
+                <div class="gf-s">
+                  <div class="gf-n">5</div>
+                  <div class="gf-l">Archive</div>
+                </div>
+              </div>
+              <ul class="fl">
+                <li>
+                  <span class="tk"></span>3x Arducam 16MP USB cameras with pair
+                  rotation for controller limits
+                </li>
+                <li>
+                  <span class="tk"></span>YOLO segmentation: side, top, front
+                  views with calibrated pixel-to-cm
+                </li>
+                <li>
+                  <span class="tk"></span>MJPEG streams through Cloudflare
+                  Tunnel for facility bandwidth
+                </li>
+                <li>
+                  <span class="tk"></span>DS18B20 thermostat with EMI filtering,
+                  spike rejection, and failsafe
+                </li>
+                <li>
+                  <span class="tk"></span>20-frame burst capture for training
+                  data, direct to S3
+                </li>
+                <li>
+                  <span class="tk"></span>SPI LCD showing server health, temps,
+                  cameras, WiFi
+                </li>
+              </ul>
+            </div>
+            <div class="pc-foot">
+              <a
+                href="https://github.com/UNT-GOAT/goatdev/tree/main/pi"
+                target="_blank"
+                class="pc-link"
+                >View Pi source
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                >
+                  <path d="M5 12h14M12 5l7 7-7 7" /></svg
+              ></a>
+              <div class="pc-tech">
+                <span>PyTorch</span><span>YOLO</span><span>RPi 4</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="sep"></div>
+
+    <!-- ARCHITECTURE -->
+    <section class="arch" id="architecture">
+      <div class="w">
+        <div class="s-ey sr">System design</div>
+        <div class="s-t sr d1">Hybrid cloud + edge.</div>
+        <div class="s-d sr d2">
+          AWS runs the platform and inference. A Raspberry Pi at the facility
+          owns cameras and sensors. Cloudflare Tunnel bridges them. GitHub
+          Actions deploys everything.
+        </div>
+        <div class="arch-frame sr d3">
+          <img
+            src="/herdsync_architecture.png"
+            alt="HerdSync Architecture"
+            onerror="
+              this.style.display = 'none';
+              this.parentElement.querySelector('.arch-fallback').style.display =
+                'flex';
+            "
+            loading="lazy"
+          />
+          <div class="arch-fallback">
+            Architecture diagram&mdash;see
+            <a
+              href="https://github.com/UNT-GOAT/goatdev"
+              style="color: var(--accent-text)"
+              >GitHub</a
+            >
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="sep"></div>
+
+    <!-- TECH -->
+    <section class="tech" id="tech">
+      <div class="w">
+        <div class="s-ey sr">Under the hood</div>
+        <div class="s-t sr d1">Built with.</div>
+        <div class="tech-grid sr d2">
+          <div class="tc c1">
+            <h3>HerdSync</h3>
+            <ul>
+              <li>FastAPI <span class="v">0.115</span></li>
+              <li>PostgreSQL <span class="v">17.2</span></li>
+              <li>SQLAlchemy <span class="v">2.0</span></li>
+              <li>asyncpg <span class="v">0.29</span></li>
+              <li>PyJWT <span class="v">RS256</span></li>
+              <li>bcrypt</li>
+              <li>CloudFront + ALB</li>
+              <li>Vanilla JS</li>
+            </ul>
+          </div>
+          <div class="tech-dv"></div>
+          <div class="tc c2">
+            <h3>Shared infra</h3>
+            <ul>
+              <li>AWS EC2 <span class="v">t3.medium</span></li>
+              <li>RDS <span class="v">db.t4g.micro</span></li>
+              <li>S3 <span class="v">4 buckets</span></li>
+              <li>ECR <span class="v">4 repos</span></li>
+              <li>Docker</li>
+              <li>GitHub Actions</li>
+              <li>Cloudflare Tunnel</li>
+              <li>Tailscale VPN</li>
+            </ul>
+          </div>
+          <div class="tech-dv"></div>
+          <div class="tc c3">
+            <h3>Goat grading</h3>
+            <ul>
+              <li>PyTorch <span class="v">2.5 CPU</span></li>
+              <li>YOLO <span class="v">ultralytics</span></li>
+              <li>OpenCV</li>
+              <li>Raspberry Pi 4 <span class="v">4GB</span></li>
+              <li>Flask + gunicorn</li>
+              <li>Caddy</li>
+              <li>3x Arducam <span class="v">16MP</span></li>
+              <li>DS18B20 + GPIO</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="sep"></div>
+
+    <footer>
+      <div class="w">
+        <div class="foot">
+          <div class="foot-l">UNT GOAT &middot; 2026</div>
+          <div class="foot-r">
+            <a href="https://github.com/UNT-GOAT/goatdev" target="_blank"
+              >GitHub</a
+            >
+            <a href="/prod/">Dashboard</a>
+          </div>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      const o = new IntersectionObserver(
+        (e) => {
+          e.forEach((e) => {
+            if (e.isIntersecting) {
+              e.target.classList.add("v");
+              o.unobserve(e.target);
+            }
+          });
+        },
+        { threshold: 0.06, rootMargin: "0px 0px -40px 0px" },
+      );
+      document.querySelectorAll(".sr").forEach((e) => o.observe(e));
+    </script>
+  </body>
+</html>
