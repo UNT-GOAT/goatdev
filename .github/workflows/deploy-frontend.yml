@@ -84,7 +84,7 @@ jobs:
       - name: Check for prod changes
         id: check
         run: |
-          if git diff --name-only HEAD~1 | grep -q "^frontend/prod/\|^frontend/js/\|^frontend/logos/"; then
+          if git diff --name-only HEAD~1 | grep -q "^frontend/index\.html\|^frontend/prod/\|^frontend/js/\|^frontend/logos/"; then
             echo "changed=true" >> $GITHUB_OUTPUT
           else
             echo "changed=false" >> $GITHUB_OUTPUT

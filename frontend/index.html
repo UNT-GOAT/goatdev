@@ -239,7 +239,7 @@
         max-width: 500px;
       }
 
-      /* ============================================================
+      /* ===========================================================
    PROBLEM SECTION
    ============================================================ */
       .problem {
@@ -601,34 +601,6 @@
         margin-left: 3px;
       }
 
-      /* FOOTER */
-      footer {
-        border-top: 1px solid var(--bdr);
-        padding: 32px 0;
-        margin-top: 20px;
-      }
-      .foot {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .foot-l {
-        font-size: 11px;
-        color: var(--tx4);
-      }
-      .foot-r {
-        display: flex;
-        gap: 20px;
-      }
-      .foot-r a {
-        font-size: 11px;
-        color: var(--tx3);
-        transition: color 0.15s;
-      }
-      .foot-r a:hover {
-        color: var(--tx2);
-      }
-
       /* ANIMATIONS */
       .sr {
         opacity: 0;
@@ -711,7 +683,7 @@
           <a href="https://github.com/UNT-GOAT/goatdev" target="_blank"
             >GitHub</a
           >
-          <a href="/prod/" class="nav-signin">Sign in</a>
+          <a href="/dashboard/" class="nav-signin">Sign in</a>
         </div>
       </div>
     </nav>
@@ -879,7 +851,7 @@
               </ul>
             </div>
             <div class="pc-foot">
-              <a href="/prod/" class="pc-link"
+              <a href="/dashboard/" class="pc-link"
                 >Open dashboard
                 <svg
                   viewBox="0 0 24 24"
@@ -1073,20 +1045,6 @@
     </section>
 
     <div class="sep"></div>
-
-    <footer>
-      <div class="w">
-        <div class="foot">
-          <div class="foot-l">UNT GOAT &middot; 2026</div>
-          <div class="foot-r">
-            <a href="https://github.com/UNT-GOAT/goatdev" target="_blank"
-              >GitHub</a
-            >
-            <a href="/prod/">Dashboard</a>
-          </div>
-        </div>
-      </div>
-    </footer>
 
     <script>
       const o = new IntersectionObserver(
