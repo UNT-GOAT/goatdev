@@ -23,10 +23,6 @@
         margin: 0;
         padding: 0;
       }
-
-      /* ===========================================================
-   DARK THEME (default)
-   ============================================================ */
       :root,
       :root[data-theme="dark"] {
         --bg-deep: #08080f;
@@ -36,12 +32,10 @@
         --bg-input: #0a0a12;
         --border: #1c1c28;
         --border-subtle: #141420;
-
         --text-primary: #e0e0e8;
         --text-secondary: #999;
         --text-muted: #5a5a6e;
         --text-faint: #3a3a48;
-
         --accent: #23783b;
         --accent-dim: rgba(35, 120, 59, 0.1);
         --accent-hover: rgba(35, 120, 59, 0.18);
@@ -50,14 +44,9 @@
         --red: #e53935;
         --purple: #9c27b0;
         --teal: #26a69a;
-
         --modal-bg: rgba(0, 0, 0, 0.65);
         --shadow: rgba(0, 0, 0, 0.4);
       }
-
-      /* ============================================================
-   LIGHT THEME
-   ============================================================ */
       :root[data-theme="light"] {
         --bg-deep: #f0f1f4;
         --bg-base: #ffffff;
@@ -66,12 +55,10 @@
         --bg-input: #f2f3f6;
         --border: #d8dae0;
         --border-subtle: #e8e9ed;
-
         --text-primary: #1a1b2e;
         --text-secondary: #555;
         --text-muted: #888;
         --text-faint: #aaa;
-
         --accent: #23783b;
         --accent-dim: rgba(35, 120, 59, 0.08);
         --accent-hover: rgba(35, 120, 59, 0.14);
@@ -80,11 +67,9 @@
         --red: #c62828;
         --purple: #7b1fa2;
         --teal: #00897b;
-
         --modal-bg: rgba(0, 0, 0, 0.3);
         --shadow: rgba(0, 0, 0, 0.06);
       }
-
       html,
       body {
         height: 100%;
@@ -115,16 +100,10 @@
       textarea {
         font-family: inherit;
       }
-
-      /* ============================================================
-   LAYOUT
-   ============================================================ */
       .shell {
         display: flex;
         height: 100%;
       }
-
-      /* Sidebar */
       .sidebar {
         width: 210px;
         background: var(--bg-base);
@@ -139,7 +118,6 @@
       .sidebar.collapsed {
         width: 80px;
       }
-
       .sidebar-brand {
         padding-left: 8px;
         padding-top: 8px;
@@ -167,14 +145,12 @@
       .collapsed .brand-logo-short {
         display: block;
       }
-      /* Theme-based logo visibility */
       :root[data-theme="dark"] .logo-light {
         display: none !important;
       }
       :root[data-theme="light"] .logo-dark {
         display: none !important;
       }
-
       .sidebar-nav {
         flex: 1;
         padding: 8px;
@@ -220,7 +196,6 @@
         justify-content: center;
         padding: 9px;
       }
-
       .sidebar-footer {
         padding: 8px 10px;
         border-top: 1px solid var(--border);
@@ -261,8 +236,6 @@
       .collapsed .footer-user {
         display: none;
       }
-
-      /* Main */
       .main {
         flex: 1;
         display: flex;
@@ -270,7 +243,6 @@
         overflow: hidden;
         min-width: 0;
       }
-
       .topbar {
         height: 50px;
         padding: 0 20px;
@@ -302,7 +274,6 @@
         font-size: 10px;
         color: var(--text-faint);
       }
-
       .dot {
         width: 7px;
         height: 7px;
@@ -318,7 +289,6 @@
       .dot.red {
         background: var(--red);
       }
-
       .content {
         flex: 1;
         overflow: hidden;
@@ -334,12 +304,6 @@
         flex-direction: column;
         height: 100%;
       }
-
-      /* ============================================================
-   SHARED COMPONENTS
-   ============================================================ */
-
-      /* Stat cards */
       .stat-row {
         display: flex;
         gap: 12px;
@@ -384,8 +348,6 @@
         color: var(--text-faint);
         margin-top: 4px;
       }
-
-      /* Badges */
       .badge {
         display: inline-flex;
         align-items: center;
@@ -441,8 +403,6 @@
         color: var(--blue);
         background: rgba(66, 165, 245, 0.1);
       }
-
-      /* Panel / Table */
       .panel {
         background: var(--bg-surface);
         border-radius: 10px;
@@ -479,8 +439,6 @@
       .tbl-row:last-child {
         border-bottom: none;
       }
-
-      /* Buttons */
       .btn {
         padding: 8px 16px;
         border: 1px solid var(--border);
@@ -531,8 +489,6 @@
       .btn-danger:hover {
         background: rgba(229, 57, 53, 0.08);
       }
-
-      /* Search */
       .search-bar {
         display: flex;
         align-items: center;
@@ -584,8 +540,6 @@
         flex-shrink: 0;
         white-space: nowrap;
       }
-
-      /* Filter row + chips */
       .filter-row {
         display: flex;
         gap: 8px;
@@ -616,8 +570,6 @@
         padding: 4px 9px;
         font-size: 10px;
       }
-
-      /* Misc */
       .match {
         background: rgba(35, 120, 59, 0.18);
         color: var(--accent);
@@ -635,8 +587,6 @@
         color: var(--text-faint);
         margin-top: 5px;
       }
-
-      /* Camera slots */
       .cam-slot {
         aspect-ratio: 4/3;
         background: var(--bg-input);
@@ -676,8 +626,6 @@
         line-height: 1.4;
         padding: 8px;
       }
-
-      /* Grids */
       .grid-2 {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -694,8 +642,6 @@
         gap: 12px;
         align-content: start;
       }
-
-      /* Detail panel */
       .detail-panel {
         width: 290px;
         flex-shrink: 0;
@@ -723,10 +669,6 @@
         border-radius: 8px;
         padding: 10px;
       }
-
-      /* ============================================================
-   MODAL
-   ============================================================ */
       .modal-overlay {
         position: fixed;
         inset: 0;
@@ -793,10 +735,6 @@
         justify-content: flex-end;
         gap: 8px;
       }
-
-      /* ============================================================
-   FORM FIELDS
-   ============================================================ */
       .field {
         margin-bottom: 14px;
       }
@@ -872,8 +810,6 @@
       .field-row .field {
         flex: 1;
       }
-
-      /* Tab switcher (inside modals) */
       .tab-switcher {
         display: flex;
         border-bottom: 1px solid var(--border-subtle);
@@ -900,8 +836,6 @@
       .tab-pane.active {
         display: block;
       }
-
-      /* Grade log */
       .grade-log {
         background: #000;
         border-radius: 6px;
@@ -924,8 +858,6 @@
       .grade-log .info {
         color: var(--text-muted);
       }
-
-      /* Grade review */
       .preview-grade-badge {
         font-size: 24px;
         font-weight: 700;
@@ -952,8 +884,6 @@
         letter-spacing: 1px;
         margin-top: 3px;
       }
-
-      /* Toast */
       .toast {
         position: fixed;
         bottom: 20px;
@@ -987,8 +917,6 @@
       .toast.error .toast-icon {
         color: var(--red);
       }
-
-      /* Spinner / Loading */
       .spinner {
         width: 16px;
         height: 16px;
@@ -1018,8 +946,6 @@
         font-size: 11px;
         margin-bottom: 10px;
       }
-
-      /* Image lightbox */
       .lightbox-overlay {
         position: fixed;
         inset: 0;
@@ -1067,8 +993,6 @@
           opacity: 1;
         }
       }
-
-      /* Grader status */
       .pi-status {
         display: flex;
         align-items: center;
@@ -1076,10 +1000,73 @@
         font-size: 10px;
         color: var(--text-muted);
       }
-
-      /* ============================================================
-   UTILITY
-   ============================================================ */
+      /* Profile page */
+      .profile-card {
+        background: var(--bg-surface);
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        padding: 20px;
+        margin-bottom: 14px;
+      }
+      .profile-card h3 {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      .profile-info-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border-subtle);
+        font-size: 13px;
+      }
+      .profile-info-row:last-child {
+        border-bottom: none;
+      }
+      .profile-info-row .label {
+        color: var(--text-muted);
+      }
+      .profile-info-row .value {
+        color: var(--text-primary);
+        font-weight: 500;
+      }
+      .user-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border-subtle);
+        transition: background 0.12s;
+      }
+      .user-row:hover {
+        background: var(--accent-dim);
+      }
+      .user-row:last-child {
+        border-bottom: none;
+      }
+      .user-row .user-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .user-row .user-name {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+      .user-row .user-role {
+        font-size: 10px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      .user-row .user-actions {
+        display: flex;
+        gap: 6px;
+      }
       .flex {
         display: flex;
       }
@@ -1135,10 +1122,6 @@
       .text-mono {
         font-family: "JetBrains Mono", monospace;
       }
-
-      /* ============================================================
-   RESPONSIVE
-   ============================================================ */
       @media (max-width: 900px) {
         .grid-2 {
           grid-template-columns: 1fr;
@@ -1154,7 +1137,6 @@
           gap: 0;
         }
       }
-
       @media (max-width: 640px) {
         .sidebar {
           position: fixed;
@@ -1165,7 +1147,7 @@
           width: 64px !important;
         }
         .sidebar .brand-logo {
-          height: 40px !important; /* Forces 40px on phone-sized screens */
+          height: 40px !important;
           width: auto;
         }
         .sidebar .brand-logo-long,
@@ -1317,8 +1299,7 @@
               src="/logos/dark_trans_v3.png"
               alt="HerdSync"
               class="brand-logo brand-logo-long logo-dark"
-            />
-            <img
+            /><img
               src="/logos/dark_trans_v1.png"
               alt="HerdSync"
               class="brand-logo brand-logo-short logo-dark"
@@ -1327,14 +1308,12 @@
               src="/logos/light_trans_v3.png"
               alt="HerdSync"
               class="brand-logo brand-logo-long logo-light"
-            />
-            <img
+            /><img
               src="/logos/light_trans_v1.png"
               alt="HerdSync"
               class="brand-logo brand-logo-short logo-light"
             />
           </div>
-
           <nav class="sidebar-nav">
             <button class="nav-btn active" data-page="dashboard">
               <svg
@@ -1346,9 +1325,8 @@
                 <rect x="3" y="3" width="7" height="7" rx="1" />
                 <rect x="14" y="3" width="7" height="7" rx="1" />
                 <rect x="3" y="14" width="7" height="7" rx="1" />
-                <rect x="14" y="14" width="7" height="7" rx="1" />
-              </svg>
-              <span class="nav-label">Dashboard</span>
+                <rect x="14" y="14" width="7" height="7" rx="1" /></svg
+              ><span class="nav-label">Dashboard</span>
             </button>
             <button class="nav-btn" data-page="animals">
               <svg
@@ -1362,9 +1340,8 @@
                 <path
                   d="M12.586 2.586A2 2 0 0011.172 2H4a2 2 0 00-2 2v7.172a2 2 0 00.586 1.414l8.704 8.704a2.426 2.426 0 003.42 0l6.58-6.58a2.426 2.426 0 000-3.42z"
                 />
-                <circle cx="7.5" cy="7.5" r=".5" fill="currentColor" />
-              </svg>
-              <span class="nav-label">Animals</span>
+                <circle cx="7.5" cy="7.5" r=".5" fill="currentColor" /></svg
+              ><span class="nav-label">Animals</span>
             </button>
             <button class="nav-btn" data-page="providers">
               <svg
@@ -1375,9 +1352,8 @@
               >
                 <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
                 <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 00-3-3.87" />
-              </svg>
-              <span class="nav-label">Providers</span>
+                <path d="M23 21v-2a4 4 0 00-3-3.87" /></svg
+              ><span class="nav-label">Providers</span>
             </button>
             <button class="nav-btn" data-page="grading">
               <svg
@@ -1389,12 +1365,23 @@
                 stroke-linejoin="round"
               >
                 <circle cx="12" cy="8" r="6" />
-                <path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11" />
-              </svg>
-              <span class="nav-label">Grading</span>
+                <path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11" /></svg
+              ><span class="nav-label">Grading</span>
+            </button>
+            <button class="nav-btn" data-page="profile">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+                <circle cx="12" cy="7" r="4" /></svg
+              ><span class="nav-label">Profile</span>
             </button>
           </nav>
-
           <div class="sidebar-footer">
             <span class="footer-user" id="footerUser">—</span>
             <button
@@ -1414,7 +1401,6 @@
             </button>
           </div>
         </aside>
-
         <div class="main">
           <header class="topbar">
             <h1 id="pageTitle">Dashboard</h1>
@@ -1428,7 +1414,6 @@
               <div class="topbar-user" id="topbarUser"></div>
             </div>
           </header>
-
           <div class="content">
             <!-- ========== DASHBOARD ========== -->
             <div class="page active" id="page-dashboard">
@@ -1505,48 +1490,41 @@
                     stroke-width="2"
                   >
                     <circle cx="11" cy="11" r="8" />
-                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                  </svg>
-                  <input
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" /></svg
+                  ><input
                     type="text"
                     id="animalSearch"
                     placeholder="Search serial, description, grade, provider..."
                     oninput="filterAnimals()"
-                  />
-                  <button
+                  /><button
                     class="search-clear"
                     id="animalClear"
                     onclick="clearAnimalSearch()"
                   >
-                    &times;
-                  </button>
-                  <span class="result-count" id="animalCount"></span>
+                    &times;</button
+                  ><span class="result-count" id="animalCount"></span>
                 </div>
                 <button
                   class="filter-chip active"
                   onclick="setAnimalFilter(this, 'all')"
                 >
-                  All
-                </button>
-                <button
+                  All</button
+                ><button
                   class="filter-chip"
                   onclick="setAnimalFilter(this, 'goats')"
                 >
-                  Goats
-                </button>
-                <button
+                  Goats</button
+                ><button
                   class="filter-chip"
                   onclick="setAnimalFilter(this, 'chickens')"
                 >
-                  Chickens
-                </button>
-                <button
+                  Chickens</button
+                ><button
                   class="filter-chip"
                   onclick="setAnimalFilter(this, 'lambs')"
                 >
-                  Lambs
-                </button>
-                <button
+                  Lambs</button
+                ><button
                   class="filter-chip"
                   onclick="setAnimalFilter(this, 'graded')"
                 >
@@ -1565,44 +1543,37 @@
                     letter-spacing: 1px;
                   "
                   >Sort</span
-                >
-                <button
+                ><button
                   class="filter-chip small active"
                   onclick="setAnimalSort(this, 'id-desc')"
                 >
-                  ID ↓
-                </button>
-                <button
+                  ID ↓</button
+                ><button
                   class="filter-chip small"
                   onclick="setAnimalSort(this, 'id-asc')"
                 >
-                  ID ↑
-                </button>
-                <button
+                  ID ↑</button
+                ><button
                   class="filter-chip small"
                   onclick="setAnimalSort(this, 'weight-desc')"
                 >
-                  Weight ↓
-                </button>
-                <button
+                  Weight ↓</button
+                ><button
                   class="filter-chip small"
                   onclick="setAnimalSort(this, 'weight-asc')"
                 >
-                  Weight ↑
-                </button>
-                <button
+                  Weight ↑</button
+                ><button
                   class="filter-chip small"
                   onclick="setAnimalSort(this, 'grade')"
                 >
-                  Grade
-                </button>
-                <button
+                  Grade</button
+                ><button
                   class="filter-chip small"
                   onclick="setAnimalSort(this, 'created-desc')"
                 >
-                  Newest
-                </button>
-                <button
+                  Newest</button
+                ><button
                   class="filter-chip small"
                   onclick="setAnimalSort(this, 'created-asc')"
                 >
@@ -1782,15 +1753,13 @@
                     stroke-width="2"
                   >
                     <circle cx="11" cy="11" r="8" />
-                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                  </svg>
-                  <input
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" /></svg
+                  ><input
                     type="text"
                     id="provSearch"
                     placeholder="Search name, company, email, phone..."
                     oninput="filterProviders()"
-                  />
-                  <button
+                  /><button
                     class="search-clear"
                     id="provClear"
                     onclick="clearProvSearch()"
@@ -1802,15 +1771,13 @@
                   class="filter-chip active"
                   onclick="setProvFilter(this, 'all')"
                 >
-                  All
-                </button>
-                <button
+                  All</button
+                ><button
                   class="filter-chip"
                   onclick="setProvFilter(this, 'active')"
                 >
-                  Active
-                </button>
-                <button
+                  Active</button
+                ><button
                   class="btn btn-accent btn-sm"
                   onclick="openAddProvider()"
                 >
@@ -1836,8 +1803,8 @@
                     align-items: center;
                   "
                 >
-                  <span>All Providers</span>
-                  <span
+                  <span>All Providers</span
+                  ><span
                     id="provCount"
                     style="
                       font-size: 10px;
@@ -1865,8 +1832,8 @@
                 <div class="section-label mb-14">New Grade</div>
                 <div class="flex gap-12 mb-14 flex-wrap items-end">
                   <div style="flex: 1; min-width: 100px">
-                    <label class="field-label">Next Serial ID</label>
-                    <input
+                    <label class="field-label">Next Serial ID</label
+                    ><input
                       class="field-input"
                       id="gradeSerial"
                       type="text"
@@ -1883,8 +1850,8 @@
                     </div>
                   </div>
                   <div style="flex: 0 0 120px">
-                    <label class="field-label">Species *</label>
-                    <select
+                    <label class="field-label">Species *</label
+                    ><select
                       class="field-select"
                       id="gradeSpecies"
                       onchange="onGradeSpeciesChange()"
@@ -1894,16 +1861,16 @@
                     </select>
                   </div>
                   <div style="flex: 0 0 120px">
-                    <label class="field-label">Description *</label>
-                    <select class="field-select" id="gradeDesc">
+                    <label class="field-label">Description *</label
+                    ><select class="field-select" id="gradeDesc">
                       <option value="meat">Meat</option>
                       <option value="dairy">Dairy</option>
                       <option value="cross">Cross</option>
                     </select>
                   </div>
                   <div style="flex: 1; min-width: 120px">
-                    <label class="field-label">Live Weight (lbs) *</label>
-                    <input
+                    <label class="field-label">Live Weight (lbs) *</label
+                    ><input
                       class="field-input"
                       id="gradeWeight"
                       type="number"
@@ -1920,6 +1887,22 @@
                     >
                       Start Grade
                     </button>
+                  </div>
+                </div>
+                <div class="flex gap-12 mb-14 flex-wrap items-end">
+                  <div style="flex: 1; min-width: 160px">
+                    <label class="field-label">Provider</label
+                    ><select class="field-select" id="gradeProv">
+                      <option value="">None</option>
+                    </select>
+                  </div>
+                  <div style="flex: 0 0 160px">
+                    <label class="field-label">Kill Date</label
+                    ><input
+                      class="field-input"
+                      id="gradeKillDate"
+                      type="date"
+                    />
                   </div>
                 </div>
                 <div class="grid-3" id="gradeCams">
@@ -1961,14 +1944,94 @@
                 </div>
               </div>
             </div>
+
+            <!-- ========== PROFILE ========== -->
+            <div class="page" id="page-profile">
+              <div style="max-width: 600px">
+                <div class="profile-card">
+                  <h3>Account</h3>
+                  <div class="profile-info-row">
+                    <span class="label">Username</span
+                    ><span class="value" id="profileUsername">—</span>
+                  </div>
+                  <div class="profile-info-row">
+                    <span class="label">Role</span
+                    ><span class="value" id="profileRole">—</span>
+                  </div>
+                </div>
+                <div class="profile-card">
+                  <h3>Change Password</h3>
+                  <div class="field">
+                    <label class="field-label">Current Password</label
+                    ><input
+                      class="field-input"
+                      id="profileCurPw"
+                      type="password"
+                      placeholder="Enter current password"
+                    />
+                  </div>
+                  <div class="field">
+                    <label class="field-label">New Password</label
+                    ><input
+                      class="field-input"
+                      id="profileNewPw"
+                      type="password"
+                      placeholder="Enter new password"
+                    />
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Confirm New Password</label
+                    ><input
+                      class="field-input"
+                      id="profileConfirmPw"
+                      type="password"
+                      placeholder="Confirm new password"
+                    />
+                  </div>
+                  <button
+                    class="btn-solid btn-sm mt-10"
+                    onclick="changeOwnPassword()"
+                  >
+                    Update Password
+                  </button>
+                </div>
+                <!-- Admin-only section -->
+                <div
+                  class="profile-card"
+                  id="adminSection"
+                  style="display: none"
+                >
+                  <h3>
+                    User Management
+                    <span
+                      style="
+                        font-size: 9px;
+                        color: var(--accent);
+                        text-transform: uppercase;
+                        letter-spacing: 1px;
+                        margin-left: 8px;
+                      "
+                      >Admin</span
+                    >
+                  </h3>
+                  <div id="adminUserList">
+                    <div class="loading-row"><span class="spinner"></span></div>
+                  </div>
+                  <button
+                    class="btn btn-accent btn-sm mt-10"
+                    onclick="openCreateUser()"
+                  >
+                    + Create User
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- ============================================================
-     MODALS
-     ============================================================ -->
+    <!-- ===== MODALS ===== -->
 
     <!-- ADD PROVIDER -->
     <div class="modal-overlay" id="modalAddProvider">
@@ -2055,9 +2118,8 @@
               class="tab-switch-btn active"
               onclick="switchAddAnimalTab('single', this)"
             >
-              Single
-            </button>
-            <button
+              Single</button
+            ><button
               class="tab-switch-btn"
               onclick="switchAddAnimalTab('multiple', this)"
             >
@@ -2067,8 +2129,8 @@
           <div class="tab-pane active" id="addAnimalSingle">
             <div class="field-row">
               <div class="field">
-                <label class="field-label">Type *</label>
-                <select
+                <label class="field-label">Type *</label
+                ><select
                   class="field-select"
                   id="addAnimalType"
                   onchange="onAddAnimalTypeChange()"
@@ -2079,8 +2141,8 @@
                 </select>
               </div>
               <div class="field">
-                <label class="field-label">Serial ID</label>
-                <input
+                <label class="field-label">Serial ID</label
+                ><input
                   class="field-input"
                   id="addAnimalSerial"
                   type="text"
@@ -2097,8 +2159,19 @@
               </div>
             </div>
             <div class="field" id="addAnimalDescWrap">
-              <label class="field-label">Description *</label>
-              <select class="field-select" id="addAnimalDesc"></select>
+              <label class="field-label">Description *</label
+              ><select class="field-select" id="addAnimalDesc"></select>
+            </div>
+            <div class="field" id="addAnimalGradeWrap" style="display: none">
+              <label class="field-label">Grade</label
+              ><select class="field-select" id="addAnimalGrade">
+                <option value="">Ungraded</option>
+                <option value="CAB Prime">CAB Prime</option>
+                <option value="Prime">Prime</option>
+                <option value="Choice">Choice</option>
+                <option value="Select">Select</option>
+                <option value="No Roll">No Roll</option>
+              </select>
             </div>
             <div class="field-row">
               <div class="field">
@@ -2215,8 +2288,19 @@
             </div>
           </div>
           <div class="field" id="editAnimalDescWrap">
-            <label class="field-label">Description</label>
-            <select class="field-select" id="editAnimalDesc"></select>
+            <label class="field-label">Description</label
+            ><select class="field-select" id="editAnimalDesc"></select>
+          </div>
+          <div class="field" id="editAnimalGradeWrap" style="display: none">
+            <label class="field-label">Grade</label
+            ><select class="field-select" id="editAnimalGrade">
+              <option value="">Ungraded</option>
+              <option value="CAB Prime">CAB Prime</option>
+              <option value="Prime">Prime</option>
+              <option value="Choice">Choice</option>
+              <option value="Select">Select</option>
+              <option value="No Roll">No Roll</option>
+            </select>
           </div>
           <div class="field-row">
             <div class="field">
@@ -2296,7 +2380,6 @@
               <div class="lbl">Total Time</div>
             </div>
           </div>
-          <!-- Grade failure explanation — hidden by default -->
           <div id="reviewFailure" style="display: none" class="mb-14">
             <div
               style="
@@ -2376,13 +2459,12 @@
               <span class="cam-label">Front</span>
             </div>
           </div>
-          <!-- Edit grade (shown for saved grades) -->
           <div id="reviewEditSection" style="display: none">
             <div class="section-label">Edit Grade</div>
             <div class="flex gap-10 mb-14 items-end">
               <div style="flex: 0 0 140px">
-                <label class="field-label">Grade</label>
-                <select class="field-select" id="reviewEditGrade">
+                <label class="field-label">Grade</label
+                ><select class="field-select" id="reviewEditGrade">
                   <option value="">Ungraded</option>
                   <option value="CAB Prime">CAB Prime</option>
                   <option value="Prime">Prime</option>
@@ -2392,9 +2474,8 @@
                 </select>
               </div>
               <button class="btn btn-accent btn-sm" onclick="saveEditGrade()">
-                Save Grade
-              </button>
-              <button
+                Save Grade</button
+              ><button
                 class="btn btn-danger btn-sm"
                 onclick="deleteGradeResult()"
               >
@@ -2428,10 +2509,8 @@
           </div>
         </div>
         <div class="modal-footer" id="reviewFooter">
-          <button class="btn btn-danger" onclick="rejectGrade()">
-            Discard
-          </button>
-          <button
+          <button class="btn btn-danger" onclick="rejectGrade()">Discard</button
+          ><button
             class="btn-solid btn-sm"
             onclick="acceptGrade()"
             id="acceptGradeBtn"
@@ -2440,8 +2519,8 @@
           </button>
         </div>
         <div class="modal-footer" id="reviewRetryFooter" style="display: none">
-          <button class="btn" onclick="confirmDiscard()">Dismiss</button>
-          <button class="btn-solid btn-sm" onclick="retryGrade()">
+          <button class="btn" onclick="confirmDiscard()">Dismiss</button
+          ><button class="btn-solid btn-sm" onclick="retryGrade()">
             Retry Grade
           </button>
         </div>
@@ -2465,9 +2544,8 @@
         </div>
         <div class="modal-footer">
           <button class="btn" onclick="closeModal('modalDiscard')">
-            Cancel
-          </button>
-          <button
+            Cancel</button
+          ><button
             class="btn btn-danger"
             style="font-weight: 600"
             onclick="confirmDiscard()"
@@ -2493,10 +2571,8 @@
           <span id="deleteMsg">This will permanently remove this record.</span>
         </div>
         <div class="modal-footer">
-          <button class="btn" onclick="closeModal('modalDelete')">
-            Cancel
-          </button>
-          <button
+          <button class="btn" onclick="closeModal('modalDelete')">Cancel</button
+          ><button
             class="btn btn-danger"
             style="font-weight: 600"
             onclick="confirmDelete()"
@@ -2565,8 +2641,8 @@
             />
           </div>
           <div class="field">
-            <label class="field-label">Status</label>
-            <select class="field-select" id="editProvStatus">
+            <label class="field-label">Status</label
+            ><select class="field-select" id="editProvStatus">
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
             </select>
@@ -2585,9 +2661,8 @@
           </button>
           <div style="flex: 1"></div>
           <button class="btn" onclick="closeModal('modalEditProvider')">
-            Cancel
-          </button>
-          <button class="btn-solid btn-sm" onclick="saveEditProvider()">
+            Cancel</button
+          ><button class="btn-solid btn-sm" onclick="saveEditProvider()">
             Save Changes
           </button>
         </div>
@@ -2612,9 +2687,8 @@
         </div>
         <div class="modal-footer">
           <button class="btn" onclick="closeModal('modalDeleteProvider')">
-            Cancel
-          </button>
-          <button
+            Cancel</button
+          ><button
             class="btn btn-danger"
             style="font-weight: 600"
             onclick="confirmDeleteProvider()"
@@ -2625,72 +2699,158 @@
       </div>
     </div>
 
+    <!-- ADMIN: CREATE USER -->
+    <div class="modal-overlay" id="modalCreateUser">
+      <div class="modal small">
+        <div class="modal-header">
+          <h2>Create User</h2>
+          <button class="modal-close" onclick="closeModal('modalCreateUser')">
+            &times;
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="field">
+            <label class="field-label">Username *</label
+            ><input
+              class="field-input"
+              id="newUserName"
+              placeholder="e.g. operator1"
+            />
+          </div>
+          <div class="field">
+            <label class="field-label">Password *</label
+            ><input
+              class="field-input"
+              id="newUserPw"
+              type="password"
+              placeholder="Temporary password"
+            />
+          </div>
+          <div class="field">
+            <label class="field-label">Role</label
+            ><select class="field-select" id="newUserRole">
+              <option value="operator">Operator</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" onclick="closeModal('modalCreateUser')">
+            Cancel</button
+          ><button class="btn-solid btn-sm" onclick="createUser()">
+            Create
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADMIN: RESET PASSWORD -->
+    <div class="modal-overlay" id="modalResetPw">
+      <div class="modal small">
+        <div class="modal-header">
+          <h2>Reset Password</h2>
+          <button class="modal-close" onclick="closeModal('modalResetPw')">
+            &times;
+          </button>
+        </div>
+        <div class="modal-body">
+          <div
+            style="
+              font-size: 12px;
+              color: var(--text-muted);
+              margin-bottom: 12px;
+            "
+          >
+            Resetting password for
+            <strong id="resetPwUser" style="color: var(--text-primary)"
+              >—</strong
+            >
+          </div>
+          <div class="field">
+            <label class="field-label">New Password *</label
+            ><input
+              class="field-input"
+              id="resetPwValue"
+              type="password"
+              placeholder="Enter new password"
+            />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" onclick="closeModal('modalResetPw')">
+            Cancel</button
+          ><button class="btn-solid btn-sm" onclick="adminResetPassword()">
+            Reset Password
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- IMAGE LIGHTBOX -->
     <div class="lightbox-overlay" id="lightbox" onclick="closeLightbox(event)">
-      <img id="lightboxImg" src="" alt="Debug overlay" />
-      <a class="lightbox-download" id="lightboxDl" href="" download="debug.png"
+      <img id="lightboxImg" src="" alt="Debug overlay" /><a
+        class="lightbox-download"
+        id="lightboxDl"
+        href=""
+        download="debug.png"
         >⬇ Download</a
       >
     </div>
-
     <div class="toast" id="toast">
       <span class="toast-icon"></span><span class="toast-msg"></span>
     </div>
 
     <script>
-      // ============================================================
-      // STATE
-      // ============================================================
-      let allAnimals = [];
-      let allProviders = [];
-      let allGrades = [];
-      let providerMap = {};
-      let loadErrors = [];
-
-      let animalFilter = "all";
-      let animalSort = "id-desc";
-      let provFilter = "all";
-      let selectedAnimalId = null;
-      let selectedAnimalType = null;
-      let currentPage = "dashboard";
-
-      let pendingGradeResult = null;
-      let _gradeAnimalCreated = false;
-      let _gradeExistingId = null; // non-null means grading an existing animal
-      let _reviewGradeId = null; // grade result ID for edit/delete
-      let nextGradeId = null;
-      let piConnected = false;
-
-      // Description options per species — used by both grading form and edit modal
+      let allAnimals = [],
+        allProviders = [],
+        allGrades = [],
+        providerMap = {},
+        loadErrors = [];
+      let animalFilter = "all",
+        animalSort = "id-desc",
+        provFilter = "all",
+        selectedAnimalId = null,
+        selectedAnimalType = null,
+        currentPage = "dashboard";
+      let pendingGradeResult = null,
+        _gradeAnimalCreated = false,
+        _gradeExistingId = null,
+        _reviewGradeId = null,
+        nextGradeId = null,
+        piConnected = false;
+      let _currentUser = null;
       const DESCRIPTION_OPTIONS = {
         goat: ["meat", "dairy", "cross"],
         lamb: ["lamb", "ewe"],
       };
+      const GRADE_OPTIONS = [
+        "CAB Prime",
+        "Prime",
+        "Choice",
+        "Select",
+        "No Roll",
+      ];
 
-      // ============================================================
       // THEME
-      // ============================================================
       function initTheme() {
-        const saved = localStorage.getItem("herdsync-theme") || "dark";
-        document.documentElement.dataset.theme = saved;
-        updateThemeIcon(saved);
+        const s = localStorage.getItem("herdsync-theme") || "dark";
+        document.documentElement.dataset.theme = s;
+        updateThemeIcon(s);
       }
       function toggleTheme() {
-        const next =
+        const n =
           document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-        document.documentElement.dataset.theme = next;
-        localStorage.setItem("herdsync-theme", next);
-        updateThemeIcon(next);
+        document.documentElement.dataset.theme = n;
+        localStorage.setItem("herdsync-theme", n);
+        updateThemeIcon(n);
       }
-      function updateThemeIcon(theme) {
+      function updateThemeIcon(t) {
         document.getElementById("themeBtn").textContent =
-          theme === "dark" ? "☀" : "☾";
+          t === "dark" ? "☀" : "☾";
       }
       initTheme();
 
-      // ============================================================
       // UTILITY
-      // ============================================================
       function esc(s) {
         if (!s) return "";
         const d = document.createElement("div");
@@ -2730,10 +2890,12 @@
           year: "numeric",
         });
       }
+      function todayISO() {
+        return new Date().toISOString().split("T")[0];
+      }
       function wt(v) {
         return v != null ? parseFloat(v).toFixed(1) : "—";
       }
-
       const GRADE_ORDER = {
         "CAB Prime": 1,
         Prime: 2,
@@ -2776,11 +2938,6 @@
       function openModal(id) {
         document.getElementById(id).classList.add("open");
       }
-      function nextIdForType(type) {
-        const a = allAnimals.filter((x) => x.type === type);
-        return a.length ? Math.max(...a.map((x) => x.serial_id)) + 1 : 1;
-      }
-
       let _cachedNextId = null;
       async function fetchNextGlobalId() {
         try {
@@ -2788,7 +2945,6 @@
           _cachedNextId = data.next_serial_id || data.next_id || data;
           return _cachedNextId;
         } catch (err) {
-          // Fallback to client-side if endpoint fails
           _cachedNextId = allAnimals.length
             ? Math.max(...allAnimals.map((a) => a.serial_id)) + 1
             : 1;
@@ -2805,8 +2961,7 @@
       }
       function populateProviderSelect(el, selectedId) {
         el.innerHTML =
-          '<option value="">None</option>' +
-          '<option value="__new__">+ Add new provider...</option>' +
+          '<option value="">None</option><option value="__new__">+ Add new provider...</option>' +
           allProviders
             .map(
               (p) =>
@@ -2829,14 +2984,10 @@
         el._provHandler = handler;
         el.addEventListener("change", handler);
       }
-
-      // Track which select triggered the inline add, so we can re-select after save
       let _inlineProviderSelect = null;
-
       function openAddProviderInline(selectEl) {
         _inlineProviderSelect = selectEl;
-        const modal = document.getElementById("modalAddProvider");
-        modal.classList.add("stacked"); // z-index above other modals
+        document.getElementById("modalAddProvider").classList.add("stacked");
         openModal("modalAddProvider");
         [
           "provNameInput",
@@ -2854,18 +3005,22 @@
         setTimeout(() => document.getElementById("provNameInput").focus(), 100);
       }
 
-      // ============================================================
       // AUTH + INIT
-      // ============================================================
       function showApp(user) {
+        _currentUser = user;
         document.getElementById("app").style.display = "block";
         document.getElementById("topbarUser").textContent =
           user.username + " (" + user.role + ")";
         document.getElementById("footerUser").textContent = user.username;
+        document.getElementById("profileUsername").textContent = user.username;
+        document.getElementById("profileRole").textContent = user.role;
+        if (user.role === "admin") {
+          document.getElementById("adminSection").style.display = "";
+          loadUsers();
+        }
         loadAll();
         checkPiConnection();
       }
-
       async function loadAll() {
         loadErrors = [];
         try {
@@ -2901,7 +3056,6 @@
           showLoadErrors();
         }
       }
-
       function setDbStatus(state) {
         const el = document.getElementById("dbStatus");
         if (state === "ok")
@@ -2920,13 +3074,14 @@
           .join("");
       }
 
-      // ============================================================
       // DATA LOADING
-      // ============================================================
       async function dbFetch(path) {
         const r = await HerdAuth.fetch(CONFIG.DB_BASE + path);
         if (!r.ok) throw new Error(r.status + " on " + path);
         return r.json();
+      }
+      async function authFetch(path, opts) {
+        return HerdAuth.fetch(CONFIG.AUTH_BASE + path, opts);
       }
       async function loadProviders() {
         allProviders = await dbFetch("/providers");
@@ -2976,12 +3131,10 @@
           );
       }
       async function loadGrades() {
-        allGrades = await dbFetch("/grading?limit=50");
+        allGrades = await dbFetch("/grading?limit=100");
       }
 
-      // ============================================================
       // CAMERAS
-      // ============================================================
       let camerasActive = false;
       function setCamerasForPage(page) {
         const want = page === "grading";
@@ -3001,7 +3154,6 @@
         camerasActive = true;
         startCameraStreams();
       }
-
       function startCameraStreams() {
         const container = document.getElementById("gradeCams");
         const token = HerdAuth.getAccessToken();
@@ -3022,7 +3174,6 @@
                   : "Waiting for grader...";
                 offline.style.display = "";
               }
-              // Retry in 10s
               clearTimeout(this._retryTimer);
               this._retryTimer = setTimeout(() => {
                 if (currentPage === "grading" && piConnected) {
@@ -3052,7 +3203,6 @@
             token;
         });
       }
-
       function refreshCameraTokens() {
         if (!camerasActive || currentPage !== "grading") return;
         const t = HerdAuth.getAccessToken();
@@ -3063,18 +3213,15 @@
           }
         });
       }
-      // Refresh camera tokens every 10 min (well before 15 min expiry)
       setInterval(refreshCameraTokens, 10 * 60 * 1000);
 
-      // ============================================================
       // PI CONNECTION CHECK
-      // ============================================================
       async function checkPiConnection() {
         const el = document.getElementById("piStatus");
         try {
           const controller = new AbortController();
           const timer = setTimeout(() => controller.abort(), 5000);
-          const r = await HerdAuth.fetch(CONFIG.API_BASE + "/api/prod/status", {
+          await HerdAuth.fetch(CONFIG.API_BASE + "/api/prod/status", {
             signal: controller.signal,
           });
           clearTimeout(timer);
@@ -3084,12 +3231,9 @@
             '<span class="dot green"></span><span>Grader connected</span>';
           if (wasOffline) {
             updateGradeButtonState();
-            // Restart camera streams if on grading page
-            if (currentPage === "grading" && camerasActive) {
+            if (currentPage === "grading" && camerasActive)
               startCameraStreams();
-            } else if (currentPage === "grading") {
-              setCamerasForPage("grading");
-            }
+            else if (currentPage === "grading") setCamerasForPage("grading");
           }
         } catch (e) {
           const wasOnline = piConnected;
@@ -3099,30 +3243,21 @@
           if (wasOnline) updateGradeButtonState();
         }
       }
-
       function updateGradeButtonState() {
         const btn = document.getElementById("gradeBtn");
         if (currentPage !== "grading") return;
-        if (piConnected) {
-          btn.disabled = false;
-          btn.title = "";
-        } else {
-          btn.disabled = true;
-          btn.title = "Grader is offline — cannot grade";
-        }
+        btn.disabled = !piConnected;
+        btn.title = piConnected ? "" : "Grader is offline — cannot grade";
       }
-
-      // Check every 10s
       setInterval(checkPiConnection, 10000);
 
-      // ============================================================
       // NAV
-      // ============================================================
       const TITLES = {
         dashboard: "Dashboard",
         animals: "Animals",
         providers: "Providers",
         grading: "Grading",
+        profile: "Profile",
       };
       document.querySelectorAll(".nav-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
@@ -3139,6 +3274,7 @@
           document.getElementById("pageTitle").textContent = TITLES[pg] || pg;
           setCamerasForPage(pg);
           if (pg === "grading") computeNextGradeId();
+          if (pg === "profile" && _currentUser?.role === "admin") loadUsers();
         });
       });
       function toggleSidebar() {
@@ -3146,9 +3282,7 @@
         document.getElementById("sidebar").classList.toggle("collapsed");
       }
 
-      // ============================================================
       // DASHBOARD
-      // ============================================================
       function updateDashboard() {
         const goats = allAnimals.filter((a) => a.type === "goat"),
           chickens = allAnimals.filter((a) => a.type === "chicken"),
@@ -3163,7 +3297,6 @@
           lambs.filter((l) => l.grade).length + " graded";
         document.getElementById("statProviders").textContent =
           allProviders.length;
-
         const gradeEl = document.getElementById("dashRecentGrades");
         if (!allGrades.length) {
           gradeEl.innerHTML =
@@ -3193,7 +3326,6 @@
             )
             .join("");
         }
-
         const provEl = document.getElementById("dashProviders");
         if (!allProviders.length) {
           provEl.innerHTML =
@@ -3214,9 +3346,7 @@
         }
       }
 
-      // ============================================================
       // ANIMALS
-      // ============================================================
       function filterAnimals() {
         const q = (document.getElementById("animalSearch")?.value || "")
           .trim()
@@ -3285,7 +3415,6 @@
         animalSort = v;
         filterAnimals();
       }
-
       function renderAnimalTable(animals, q) {
         const body = document.getElementById("animalTableBody");
         if (!animals.length) {
@@ -3329,7 +3458,6 @@
           })
           .join("");
       }
-
       function selectAnimal(sid, type) {
         const a = allAnimals.find(
           (x) => x.serial_id === sid && x.type === type,
@@ -3358,7 +3486,7 @@
         );
         const acts = document.getElementById("detailActions");
         const animalGrades = allGrades.filter(
-          (g) => g.serial_id === a.serial_id,
+          (g) => g.serial_id == a.serial_id,
         );
         acts.innerHTML =
           (a.type === "goat" || a.type === "lamb"
@@ -3369,10 +3497,8 @@
               animalGrades.length +
               ")</button>"
             : "") +
-          '<button class="btn flex-1 btn-sm" onclick="openEditAnimal()">Edit</button>' +
-          '<button class="btn btn-danger flex-1 btn-sm" onclick="deleteAnimal()">Delete</button>';
+          '<button class="btn flex-1 btn-sm" onclick="openEditAnimal()">Edit</button><button class="btn btn-danger flex-1 btn-sm" onclick="deleteAnimal()">Delete</button>';
       }
-
       function openGradeForAnimal() {
         const a = allAnimals.find(
           (x) =>
@@ -3390,16 +3516,11 @@
         document.getElementById("pageTitle").textContent = "Grading";
         currentPage = "grading";
         setCamerasForPage("grading");
-
-        // Set existing animal mode FIRST so onGradeSpeciesChange doesn't reset it
         _gradeExistingId = a.serial_id;
-
-        // Pre-select species and description from existing animal
         document.getElementById("gradeSpecies").value = a.type;
-        onGradeSpeciesChange(); // won't call computeNextGradeId because _gradeExistingId is set
+        onGradeSpeciesChange();
         if (a.description)
           document.getElementById("gradeDesc").value = a.description;
-
         document.getElementById("gradeSerial").value = a.serial_id;
         document.getElementById("gradeSerialHint").textContent =
           "Grading existing " + a.type + " #" + a.serial_id;
@@ -3407,10 +3528,13 @@
           "field-hint valid";
         if (a.live_weight)
           document.getElementById("gradeWeight").value = a.live_weight;
+        populateProviderSelect(document.getElementById("gradeProv"), a.prov_id);
+        document.getElementById("gradeKillDate").value = a.kill_date
+          ? a.kill_date.split("T")[0]
+          : todayISO();
         if (piConnected) document.getElementById("gradeBtn").disabled = false;
         document.getElementById("gradeWeight").focus();
       }
-
       function openAnimalGrades() {
         const a = allAnimals.find(
           (x) =>
@@ -3418,7 +3542,7 @@
         );
         if (!a) return;
         const animalGrades = allGrades.filter(
-          (g) => g.serial_id === a.serial_id,
+          (g) => g.serial_id == a.serial_id,
         );
         if (!animalGrades.length) {
           showToast("error", "No grades for this animal");
@@ -3427,9 +3551,7 @@
         viewGradeDetail(animalGrades[0].id);
       }
 
-      // ============================================================
       // ADD ANIMAL
-      // ============================================================
       function openAddAnimal() {
         openModal("modalAddAnimal");
         switchAddAnimalTab(
@@ -3491,8 +3613,11 @@
         } else {
           wrap.style.display = "none";
         }
+        const gradeWrap = document.getElementById("addAnimalGradeWrap");
+        gradeWrap.style.display =
+          type === "goat" || type === "lamb" ? "" : "none";
+        document.getElementById("addAnimalGrade").value = "";
       }
-
       async function saveAnimal() {
         const isMultiple = document
           .getElementById("addAnimalMultiple")
@@ -3519,12 +3644,13 @@
           btn.textContent = "Save";
         }
       }
-
       async function saveSingleAnimal() {
         const type = document.getElementById("addAnimalType").value;
         const body = {};
         if (DESCRIPTION_OPTIONS[type])
           body.description = document.getElementById("addAnimalDesc").value;
+        const grade = document.getElementById("addAnimalGrade").value;
+        if (grade) body.grade = grade;
         const hw = parseFloat(document.getElementById("addAnimalHW").value);
         if (hw > 0) body.hang_weight = hw;
         const lw = parseFloat(document.getElementById("addAnimalLW").value);
@@ -3554,7 +3680,6 @@
             " added",
         );
       }
-
       async function saveBatchAnimals() {
         const type = document.getElementById("batchAnimalType").value,
           count = parseInt(document.getElementById("batchAnimalCount").value);
@@ -3594,9 +3719,7 @@
         showToast("success", added + " " + type + "s added");
       }
 
-      // ============================================================
       // EDIT ANIMAL
-      // ============================================================
       function openEditAnimal() {
         const a = allAnimals.find(
           (x) =>
@@ -3641,6 +3764,13 @@
         } else {
           descWrap.style.display = "none";
         }
+        const gradeWrap = document.getElementById("editAnimalGradeWrap");
+        if (a.type === "goat" || a.type === "lamb") {
+          gradeWrap.style.display = "";
+          document.getElementById("editAnimalGrade").value = a.grade || "";
+        } else {
+          gradeWrap.style.display = "none";
+        }
         populateProviderSelect(
           document.getElementById("editAnimalProv"),
           a.prov_id,
@@ -3652,7 +3782,6 @@
           ? a.process_date.split("T")[0]
           : "";
       }
-
       async function saveEditAnimal() {
         const type = document.getElementById("editAnimalType").value,
           sid = parseInt(document.getElementById("editAnimalSerial").value),
@@ -3663,6 +3792,12 @@
           document.getElementById("editAnimalDescWrap").style.display !== "none"
         )
           body.description = desc || null;
+        if (
+          document.getElementById("editAnimalGradeWrap").style.display !==
+          "none"
+        ) {
+          body.grade = document.getElementById("editAnimalGrade").value || null;
+        }
         const hw = parseFloat(document.getElementById("editAnimalHW").value);
         if (!isNaN(hw)) body.hang_weight = hw;
         const lw = parseFloat(document.getElementById("editAnimalLW").value);
@@ -3696,16 +3831,14 @@
         }
       }
 
-      // ============================================================
       // DELETE ANIMAL
-      // ============================================================
       function deleteAnimal() {
         const a = allAnimals.find(
           (x) =>
             x.serial_id === selectedAnimalId && x.type === selectedAnimalType,
         );
         if (!a) return;
-        const grades = allGrades.filter((g) => g.serial_id === a.serial_id);
+        const grades = allGrades.filter((g) => g.serial_id == a.serial_id);
         let msg = "Permanently delete " + a.type + " #" + a.serial_id + "?";
         if (grades.length)
           msg +=
@@ -3722,8 +3855,7 @@
         const type = selectedAnimalType,
           sid = selectedAnimalId;
         try {
-          const grades = allGrades.filter((g) => g.serial_id === sid);
-          // Delete via species endpoint (factory handles both species + animals tables)
+          const grades = allGrades.filter((g) => g.serial_id == sid);
           const r = await HerdAuth.fetch(
             CONFIG.DB_BASE + "/" + type + "s/" + sid,
             { method: "DELETE" },
@@ -3763,9 +3895,7 @@
         }
       }
 
-      // ============================================================
       // PROVIDERS
-      // ============================================================
       function filterProviders() {
         const q = (document.getElementById("provSearch")?.value || "")
           .trim()
@@ -3800,7 +3930,6 @@
         provFilter = v;
         filterProviders();
       }
-
       function renderProviderGrid(providers, q) {
         const grid = document.getElementById("provGrid");
         if (!providers.length) {
@@ -3830,8 +3959,7 @@
             return (
               '<div class="row-item" style="padding:12px 16px;cursor:pointer;transition:background .12s" onclick="openEditProvider(' +
               p.id +
-              ')" onmouseenter="this.style.background=\'var(--accent-dim)\'" onmouseleave="this.style.background=\'transparent\'">' +
-              '<div class="flex justify-between items-center" style="margin-bottom:3px"><div style="font-size:14px;font-weight:600;color:var(--text-primary)">' +
+              ')" onmouseenter="this.style.background=\'var(--accent-dim)\'" onmouseleave="this.style.background=\'transparent\'"><div class="flex justify-between items-center" style="margin-bottom:3px"><div style="font-size:14px;font-weight:600;color:var(--text-primary)">' +
               highlight(p.name, q) +
               '</div><div class="flex items-center gap-8"><span style="font-size:9px;color:var(--text-faint);text-transform:uppercase;letter-spacing:1px">' +
               (p.status || "active") +
@@ -3853,11 +3981,9 @@
           })
           .join("");
       }
-
       function openAddProvider() {
-        _inlineProviderSelect = null; // Not inline — called from Providers page
-        const modal = document.getElementById("modalAddProvider");
-        modal.classList.remove("stacked");
+        _inlineProviderSelect = null;
+        document.getElementById("modalAddProvider").classList.remove("stacked");
         openModal("modalAddProvider");
         [
           "provNameInput",
@@ -3874,7 +4000,6 @@
           .forEach((e) => e.classList.remove("visible"));
         setTimeout(() => document.getElementById("provNameInput").focus(), 100);
       }
-
       async function saveProvider() {
         let ok = true;
         const name = document.getElementById("provNameInput").value.trim(),
@@ -3927,27 +4052,23 @@
           await loadProviders();
           filterProviders();
           updateDashboard();
-
-          // If triggered from a provider select inside another modal, refresh that select
           if (wasInline) {
             const newId =
               newProv.id || allProviders[allProviders.length - 1]?.id;
             document
               .querySelectorAll(
-                "#addAnimalProv, #batchAnimalProv, #editAnimalProv",
+                "#addAnimalProv,#batchAnimalProv,#editAnimalProv,#gradeProv",
               )
               .forEach((sel) => {
                 populateProviderSelect(sel, newId);
                 sel.value = String(newId);
               });
           }
-
           showToast("success", "Provider added — " + name);
         } catch (err) {
           showToast("error", "Save failed: " + err.message);
         }
       }
-
       function openEditProvider(id) {
         const p = allProviders.find((x) => x.id === id);
         if (!p) return;
@@ -3966,7 +4087,6 @@
           p.active_since || p.created_at,
         );
       }
-
       async function saveEditProvider() {
         const id = parseInt(document.getElementById("editProvId").value);
         const name = document.getElementById("editProvName").value.trim();
@@ -4008,7 +4128,6 @@
           showToast("error", err.message);
         }
       }
-
       function deleteProvider() {
         const id = parseInt(document.getElementById("editProvId").value);
         const p = allProviders.find((x) => x.id === id);
@@ -4023,12 +4142,10 @@
             : "");
         openModal("modalDeleteProvider");
       }
-
       async function confirmDeleteProvider() {
         const id = parseInt(document.getElementById("editProvId").value);
         closeModal("modalDeleteProvider");
         try {
-          const linked = allAnimals.filter((a) => a.prov_id === id);
           const r = await HerdAuth.fetch(CONFIG.DB_BASE + "/providers/" + id, {
             method: "DELETE",
           });
@@ -4037,13 +4154,7 @@
             throw new Error(err.detail || "Delete failed: " + r.status);
           }
           closeModal("modalEditProvider");
-          showToast(
-            "success",
-            "Provider deleted" +
-              (linked.length
-                ? " — " + linked.length + " animals unlinked"
-                : ""),
-          );
+          showToast("success", "Provider deleted");
           await Promise.all([
             loadProviders().catch(() => {}),
             loadGoats().catch(() => {}),
@@ -4058,9 +4169,7 @@
         }
       }
 
-      // ============================================================
-      // GRADING — species/description + auto-increment
-      // ============================================================
+      // GRADING
       function onGradeSpeciesChange() {
         const species = document.getElementById("gradeSpecies").value;
         const descEl = document.getElementById("gradeDesc");
@@ -4078,10 +4187,8 @@
           .join("");
         if (!_gradeExistingId) computeNextGradeId();
       }
-
       async function computeNextGradeId() {
-        _gradeExistingId = null; // Reset — back to new animal mode
-        const species = document.getElementById("gradeSpecies").value;
+        _gradeExistingId = null;
         const hint = document.getElementById("gradeSerialHint");
         const input = document.getElementById("gradeSerial");
         const btn = document.getElementById("gradeBtn");
@@ -4094,8 +4201,10 @@
         hint.textContent = "";
         hint.className = "field-hint valid";
         btn.disabled = !piConnected;
+        populateProviderSelect(document.getElementById("gradeProv"));
+        if (!document.getElementById("gradeKillDate").value)
+          document.getElementById("gradeKillDate").value = todayISO();
       }
-
       function gradeLog(msg, type) {
         const el = document.getElementById("gradeLog");
         el.style.display = "";
@@ -4105,18 +4214,15 @@
         el.appendChild(div);
         el.scrollTop = el.scrollHeight;
       }
-
       async function startGrade() {
-        // Pi connection check
         if (!piConnected) {
-          showToast("error", "Grader is offline — cannot start grading");
-          gradeLog("Grader is offline. Check connection and try again.", "err");
+          showToast("error", "Grader is offline");
+          gradeLog("Grader is offline.", "err");
           return;
         }
-
         const serialId = _gradeExistingId || nextGradeId;
         if (!serialId) {
-          showToast("error", "No serial ID — try refreshing");
+          showToast("error", "No serial ID");
           return;
         }
         const species = document.getElementById("gradeSpecies").value;
@@ -4130,7 +4236,6 @@
           showToast("error", "Enter a valid live weight");
           return;
         }
-
         const btn = document.getElementById("gradeBtn");
         btn.disabled = true;
         document.getElementById("gradeLog").innerHTML = "";
@@ -4148,36 +4253,27 @@
             lw +
             " lbs",
         );
-
         try {
-          // Quick Pi reachability check before committing
           gradeLog("Verifying grader connection...", "info");
           let pingOk = false;
           try {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 5000);
-            const ping = await HerdAuth.fetch(
-              CONFIG.API_BASE + "/api/prod/status",
-              { signal: controller.signal },
-            );
+            await HerdAuth.fetch(CONFIG.API_BASE + "/api/prod/status", {
+              signal: controller.signal,
+            });
             clearTimeout(timer);
             pingOk = true;
-          } catch (e) {
-            /* fall through */
-          }
+          } catch (e) {}
           if (!pingOk) {
-            gradeLog(
-              "Grader is unreachable. Check that the grader is powered on and connected to the network.",
-              "err",
-            );
+            gradeLog("Grader is unreachable.", "err");
             piConnected = false;
             document.getElementById("piStatus").innerHTML =
               '<span class="dot red"></span><span>Grader offline</span>';
-            showToast("error", "Grader unreachable — check connection");
+            showToast("error", "Grader unreachable");
             btn.disabled = false;
             return;
           }
-
           gradeLog("POST /api/prod/grade ...", "info");
           const resp = await HerdAuth.fetch(
             CONFIG.API_BASE + "/api/prod/grade",
@@ -4193,26 +4289,18 @@
           );
           if (!resp.ok) {
             const body = await resp.json().catch(() => ({}));
-            const errMsg =
-              body.message ||
-              body.error_code ||
-              body.detail ||
-              "HTTP " + resp.status;
-            gradeLog("Rejected: " + errMsg, "err");
+            gradeLog(
+              "Rejected: " +
+                (body.message ||
+                  body.error_code ||
+                  body.detail ||
+                  "HTTP " + resp.status),
+              "err",
+            );
             if (body.fix) gradeLog("Fix: " + body.fix, "warn");
-            if (resp.status === 0 || resp.status >= 502) {
-              gradeLog(
-                "Grader may have lost connection during the request.",
-                "warn",
-              );
-              piConnected = false;
-              document.getElementById("piStatus").innerHTML =
-                '<span class="dot red"></span><span>Grader offline</span>';
-            }
             btn.disabled = false;
             return;
           }
-
           gradeLog("Capturing images...", "ok");
           const result = await pollGradeStatus();
           if (result && result.success !== false && !result.error) {
@@ -4237,19 +4325,9 @@
           } else {
             gradeLog("Failed: " + (result?.error || "unknown"), "err");
             if (result?.fix) gradeLog("Fix: " + result.fix, "warn");
-            if (
-              result?.error?.includes("timeout") ||
-              result?.error?.includes("connect")
-            ) {
-              gradeLog("This may be a Grader connectivity issue.", "warn");
-            }
           }
         } catch (err) {
           gradeLog("Network error: " + err.message, "err");
-          gradeLog(
-            "Check that the grader is powered on and reachable.",
-            "warn",
-          );
           piConnected = false;
           document.getElementById("piStatus").innerHTML =
             '<span class="dot red"></span><span>Grader offline</span>';
@@ -4257,7 +4335,6 @@
           btn.disabled = false;
         }
       }
-
       async function pollGradeStatus() {
         let lastProgress = null;
         for (let i = 0; i < 240; i++) {
@@ -4290,20 +4367,17 @@
         return { success: false, error: "Timed out" };
       }
 
-      // ============================================================
-      // GRADE REVIEW
-      // ============================================================
+      // GRADE REVIEW — with failure/retry
       function openGradeReview(result, serialId) {
         openModal("modalGradeReview");
         document.getElementById("reviewSubtitle").textContent =
           "Review before saving";
         document.getElementById("reviewEditSection").style.display = "none";
         _reviewGradeId = null;
-
         const isOk = result.all_views_ok;
-
-        // Badge
         const badgeEl = document.getElementById("reviewGradeBadge");
+        badgeEl.style.color = "";
+        badgeEl.style.background = "";
         if (isOk && result.grade) {
           badgeEl.textContent = result.grade;
           badgeEl.className =
@@ -4318,8 +4392,6 @@
           badgeEl.className = "preview-grade-badge badge lg badge-ungraded";
         }
         badgeEl.style.fontSize = "24px";
-
-        // Metrics
         document.getElementById("reviewWeight").textContent = result.live_weight
           ? result.live_weight + " lbs"
           : "—";
@@ -4337,8 +4409,6 @@
         document.getElementById("reviewTime").textContent = result.total_sec
           ? parseFloat(result.total_sec).toFixed(1) + "s"
           : "—";
-
-        // Debug images
         const token = HerdAuth.getAccessToken();
         ["side", "top", "front"].forEach((view) => {
           const slot = document.getElementById(
@@ -4361,14 +4431,10 @@
           };
           slot.insertBefore(img, slot.firstChild);
         });
-
-        // Measurements
         document.getElementById("reviewMeasurements").textContent =
           result.measurements
             ? JSON.stringify(result.measurements, null, 2)
             : "None";
-
-        // Warnings
         const ww = document.getElementById("reviewWarningsWrap"),
           wl = document.getElementById("reviewWarningsList");
         if (result.warnings && result.warnings.length) {
@@ -4379,42 +4445,33 @@
         } else {
           ww.style.display = "none";
         }
-
-        // === FAILURE vs SUCCESS routing ===
         const failureEl = document.getElementById("reviewFailure");
         const reasonsEl = document.getElementById("reviewFailureReasons");
         const okFooter = document.getElementById("reviewFooter");
         const retryFooter = document.getElementById("reviewRetryFooter");
-
         if (!isOk) {
-          // Build human-readable failure reasons
           const reasons = [];
           if (result.view_errors && result.view_errors.length) {
-            result.view_errors.forEach(function (ve) {
-              const viewName =
-                ve.view.charAt(0).toUpperCase() + ve.view.slice(1);
+            result.view_errors.forEach((ve) => {
+              const vn =
+                (ve.view || "").charAt(0).toUpperCase() +
+                (ve.view || "").slice(1);
               reasons.push(
-                "<strong>" + viewName + " view:</strong> " + esc(ve.error),
+                "<strong>" + vn + " view:</strong> " + esc(ve.error || ve),
               );
             });
           }
           if (result.warnings && result.warnings.length) {
-            result.warnings.forEach(function (w) {
-              if (w.toLowerCase().includes("confidence")) {
-                reasons.push(esc(w));
-              }
+            result.warnings.forEach((w) => {
+              if (w.toLowerCase().includes("confidence")) reasons.push(esc(w));
             });
           }
-          if (reasons.length === 0) {
+          if (reasons.length === 0)
             reasons.push(
               "One or more camera views did not produce usable data.",
             );
-          }
-
           reasonsEl.innerHTML = reasons
-            .map(function (r) {
-              return "<li>" + r + "</li>";
-            })
+            .map((r) => "<li>" + r + "</li>")
             .join("");
           failureEl.style.display = "";
           okFooter.style.display = "none";
@@ -4427,14 +4484,30 @@
           retryFooter.style.display = "none";
         }
       }
-
       function retryGrade() {
         closeModal("modalGradeReview");
         pendingGradeResult = null;
         _gradeAnimalCreated = false;
         gradeLog("Retrying — previous attempt had view failures", "warn");
-        // Focus weight field so operator can quickly hit Start Grade again
         document.getElementById("gradeWeight").focus();
+      }
+      function confirmDiscard() {
+        closeModal("modalDiscard");
+        closeModal("modalGradeReview");
+        pendingGradeResult = null;
+        _gradeAnimalCreated = false;
+        _gradeExistingId = null;
+        gradeLog("Discarded by operator", "warn");
+        showToast("success", "Grade discarded");
+        document.getElementById("gradeWeight").value = "";
+        document.getElementById("gradeProv").value = "";
+        document.getElementById("gradeKillDate").value = "";
+        document.getElementById("gradeLog").innerHTML = "";
+        document.getElementById("gradeLog").style.display = "none";
+        computeNextGradeId();
+      }
+      function rejectGrade() {
+        openModal("modalDiscard");
       }
 
       async function acceptGrade() {
@@ -4446,41 +4519,43 @@
         const endpoint = "/" + species + "s";
         const label = species.charAt(0).toUpperCase() + species.slice(1);
         const isExisting = !!pendingGradeResult._isExisting;
-
+        const gradeProv = document.getElementById("gradeProv").value;
+        const gradeKillDate = document.getElementById("gradeKillDate").value;
         try {
           if (isExisting) {
-            // Existing animal — PUT grade update, no animal creation
             gradeLog(
-              "Updating grade on existing " +
+              "Updating existing " +
                 species +
                 " #" +
                 pendingGradeResult.serial_id +
                 "...",
               "info",
             );
+            const putBody = {
+              grade: pendingGradeResult.grade || null,
+              live_weight: pendingGradeResult.live_weight,
+            };
+            if (gradeProv) putBody.prov_id = parseInt(gradeProv);
+            if (gradeKillDate) putBody.kill_date = gradeKillDate;
             const putResp = await HerdAuth.fetch(
               CONFIG.DB_BASE + endpoint + "/" + pendingGradeResult.serial_id,
               {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  grade: pendingGradeResult.grade || null,
-                  live_weight: pendingGradeResult.live_weight,
-                }),
+                body: JSON.stringify(putBody),
               },
             );
             if (!putResp.ok) {
               const err = await putResp.json().catch(() => ({}));
               throw new Error(
-                "Grade update failed: " + (err.detail || putResp.status),
+                "Update failed: " + (err.detail || putResp.status),
               );
             }
             gradeLog(
-              label + " #" + pendingGradeResult.serial_id + " grade updated",
+              label + " #" + pendingGradeResult.serial_id + " updated",
               "ok",
             );
           } else if (!_gradeAnimalCreated) {
-            // New animal — create via species endpoint
             gradeLog(
               "Creating " +
                 species +
@@ -4489,14 +4564,17 @@
                 "...",
               "info",
             );
+            const createBody = {
+              live_weight: pendingGradeResult.live_weight,
+              grade: pendingGradeResult.grade || null,
+              description: pendingGradeResult.description || null,
+            };
+            if (gradeProv) createBody.prov_id = parseInt(gradeProv);
+            if (gradeKillDate) createBody.kill_date = gradeKillDate;
             const animalResp = await HerdAuth.fetch(CONFIG.DB_BASE + endpoint, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                live_weight: pendingGradeResult.live_weight,
-                grade: pendingGradeResult.grade || null,
-                description: pendingGradeResult.description || null,
-              }),
+              body: JSON.stringify(createBody),
             });
             if (!animalResp.ok) {
               const err = await animalResp.json().catch(() => ({}));
@@ -4510,60 +4588,45 @@
             pendingGradeResult.serial_id = created.serial_id;
             _gradeAnimalCreated = true;
             gradeLog(label + " #" + created.serial_id + " created", "ok");
-          } else {
-            gradeLog(
-              "Retrying grade save for " +
-                species +
-                " #" +
-                pendingGradeResult.serial_id +
-                "...",
-              "info",
-            );
           }
-
-          // Save the grade result
           gradeLog("Saving grade result...", "info");
           const gradePayload = { ...pendingGradeResult };
           delete gradePayload.species;
           delete gradePayload.description;
           delete gradePayload._isExisting;
+          delete gradePayload.view_errors;
           const gradeResp = await HerdAuth.fetch(CONFIG.DB_BASE + "/grading", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(gradePayload),
           });
           if (!gradeResp.ok) {
-            const err = await gradeResp.json().catch(() => ({}));
             gradeLog("Grade save failed — click Retry.", "err");
             showToast("error", "Grade save failed — retry or discard");
             btn.disabled = false;
             btn.textContent = "Retry Save";
             return;
           }
-
           _gradeAnimalCreated = false;
           _gradeExistingId = null;
           closeModal("modalGradeReview");
-          const verb = isExisting ? "graded" : "created";
           showToast(
             "success",
             label +
               " #" +
               pendingGradeResult.serial_id +
               " " +
-              verb +
+              (isExisting ? "graded" : "created") +
               " — " +
               (pendingGradeResult.grade || "Ungraded"),
           );
           gradeLog("Saved to database", "ok");
           pendingGradeResult = null;
-
-          const loaders = [
+          await Promise.all([
             loadGrades().catch(() => {}),
             loadGoats().catch(() => {}),
             loadLambs().catch(() => {}),
-          ];
-          await Promise.all(loaders);
+          ]);
           updateDashboard();
           filterAnimals();
           renderGradeHistory();
@@ -4579,22 +4642,7 @@
         }
       }
 
-      function rejectGrade() {
-        openModal("modalDiscard");
-      }
-      function confirmDiscard() {
-        closeModal("modalDiscard");
-        closeModal("modalGradeReview");
-        pendingGradeResult = null;
-        _gradeAnimalCreated = false;
-        _gradeExistingId = null;
-        gradeLog("Discarded by operator", "warn");
-        showToast("success", "Grade discarded");
-      }
-
-      // ============================================================
       // GRADE HISTORY
-      // ============================================================
       function renderGradeHistory() {
         const body = document.getElementById("gradeHistoryBody");
         if (!allGrades.length) {
@@ -4619,8 +4667,7 @@
                 "</span>"
               : '<span style="color:var(--text-faint);font-size:10px">—</span>';
             return (
-              '<div class="tbl-row" style="grid-template-columns:70px 65px 65px 90px 70px 55px 50px 1fr 50px">' +
-              "<span style=\"color:var(--text-primary);font-weight:600;font-family:'JetBrains Mono',monospace;font-size:12px\">" +
+              '<div class="tbl-row" style="grid-template-columns:70px 65px 65px 90px 70px 55px 50px 1fr 50px"><span style="color:var(--text-primary);font-weight:600;font-family:\'JetBrains Mono\',monospace;font-size:12px">' +
               g.serial_id +
               "</span>" +
               speciesCol +
@@ -4643,7 +4690,6 @@
           })
           .join("");
       }
-
       async function viewGradeDetail(resultId) {
         try {
           const r = await dbFetch("/grading/result/" + resultId);
@@ -4657,13 +4703,14 @@
               warnings: r.warnings,
               species: r.species || null,
               description: r.description || null,
+              view_errors: r.view_errors || [],
             },
             r.serial_id,
           );
           document.getElementById("reviewFooter").style.display = "none";
+          document.getElementById("reviewRetryFooter").style.display = "none";
           document.getElementById("reviewSubtitle").textContent =
             "Saved grade — click to edit";
-          // Show edit controls
           _reviewGradeId = resultId;
           document.getElementById("reviewEditSection").style.display = "";
           document.getElementById("reviewEditGrade").value = r.grade || "";
@@ -4672,41 +4719,7 @@
         }
       }
 
-      // ============================================================
-      // LIGHTBOX — fullscreen debug image viewer
-      // ============================================================
-      function openLightbox(slot) {
-        const img = slot.querySelector("img");
-        if (!img || !img.src) return;
-        const lb = document.getElementById("lightbox");
-        const lbImg = document.getElementById("lightboxImg");
-        const lbDl = document.getElementById("lightboxDl");
-        lbImg.src = img.src;
-        lbDl.href = img.src;
-        lbDl.download = (img.alt || "debug") + ".png";
-        lb.classList.add("open");
-      }
-      function closeLightbox(e) {
-        if (e.target.tagName === "A") return; // Don't close on download click
-        document.getElementById("lightbox").classList.remove("open");
-      }
-      document.addEventListener(
-        "keydown",
-        function (e) {
-          if (
-            e.key === "Escape" &&
-            document.getElementById("lightbox").classList.contains("open")
-          ) {
-            document.getElementById("lightbox").classList.remove("open");
-            e.stopImmediatePropagation(); // Don't also close modals
-          }
-        },
-        true,
-      );
-
-      // ============================================================
-      // GRADE EDIT / DELETE (for saved grade results)
-      // ============================================================
+      // GRADE EDIT/DELETE — syncs to animal record
       async function saveEditGrade() {
         if (!_reviewGradeId) return;
         const newGrade =
@@ -4724,6 +4737,28 @@
             const err = await r.json().catch(() => ({}));
             throw new Error(err.detail || "Failed: " + r.status);
           }
+          const gradeResult = allGrades.find((g) => g.id === _reviewGradeId);
+          if (gradeResult) {
+            const animal = allAnimals.find(
+              (a) =>
+                a.serial_id == gradeResult.serial_id &&
+                (a.type === gradeResult.species || !gradeResult.species),
+            );
+            if (animal) {
+              const syncResp = await HerdAuth.fetch(
+                CONFIG.DB_BASE + "/" + animal.type + "s/" + animal.serial_id,
+                {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ grade: newGrade }),
+                },
+              );
+              if (!syncResp.ok)
+                throw new Error(
+                  "Grade saved but animal record failed to update — try editing the animal directly",
+                );
+            }
+          }
           closeModal("modalGradeReview");
           showToast("success", "Grade updated to " + (newGrade || "Ungraded"));
           await Promise.all([
@@ -4738,7 +4773,6 @@
           showToast("error", err.message);
         }
       }
-
       async function deleteGradeResult() {
         if (!_reviewGradeId) return;
         if (!confirm("Delete this grade result permanently?")) return;
@@ -4762,9 +4796,187 @@
         }
       }
 
+      // LIGHTBOX
+      function openLightbox(slot) {
+        const img = slot.querySelector("img");
+        if (!img || !img.src) return;
+        document.getElementById("lightboxImg").src = img.src;
+        document.getElementById("lightboxDl").href = img.src;
+        document.getElementById("lightboxDl").download =
+          (img.alt || "debug") + ".png";
+        document.getElementById("lightbox").classList.add("open");
+      }
+      function closeLightbox(e) {
+        if (e.target.tagName === "A") return;
+        document.getElementById("lightbox").classList.remove("open");
+      }
+      document.addEventListener(
+        "keydown",
+        function (e) {
+          if (
+            e.key === "Escape" &&
+            document.getElementById("lightbox").classList.contains("open")
+          ) {
+            document.getElementById("lightbox").classList.remove("open");
+            e.stopImmediatePropagation();
+          }
+        },
+        true,
+      );
+
       // ============================================================
+      // PROFILE + USER MANAGEMENT
+      // ============================================================
+      async function changeOwnPassword() {
+        const cur = document.getElementById("profileCurPw").value;
+        const newPw = document.getElementById("profileNewPw").value;
+        const confirm = document.getElementById("profileConfirmPw").value;
+        if (!cur) {
+          showToast("error", "Enter your current password");
+          return;
+        }
+        if (!newPw || newPw.length < 8) {
+          showToast(
+            "error",
+            "8+ chars with uppercase, lowercase, number, and special character",
+          );
+          return;
+        }
+        if (newPw !== confirm) {
+          showToast("error", "Passwords do not match");
+          return;
+        }
+        try {
+          const r = await authFetch("/auth/change-password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              current_password: cur,
+              new_password: newPw,
+            }),
+          });
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || "Password change failed");
+          }
+          document.getElementById("profileCurPw").value = "";
+          document.getElementById("profileNewPw").value = "";
+          document.getElementById("profileConfirmPw").value = "";
+          showToast("success", "Password updated");
+        } catch (err) {
+          showToast("error", err.message);
+        }
+      }
+
+      async function loadUsers() {
+        try {
+          const r = await authFetch("/auth/users");
+          if (!r.ok) throw new Error("Failed");
+          const data = await r.json();
+          const users = data.users || [];
+          const list = document.getElementById("adminUserList");
+          if (!users.length) {
+            list.innerHTML =
+              '<div style="padding:8px;color:var(--text-muted);font-size:12px">No users</div>';
+            return;
+          }
+          list.innerHTML = users
+            .map(
+              (u) =>
+                '<div class="user-row"><div class="user-info"><span class="user-name">' +
+                esc(u.username) +
+                '</span><span class="user-role">' +
+                esc(u.role) +
+                '</span></div><div class="user-actions"><button class="btn btn-sm" onclick="openResetPassword(' +
+                u.id +
+                ",'" +
+                esc(u.username) +
+                "')\">Reset PW</button></div></div>",
+            )
+            .join("");
+        } catch (err) {
+          document.getElementById("adminUserList").innerHTML =
+            '<div style="padding:8px;color:var(--text-muted);font-size:12px">Could not load users</div>';
+        }
+      }
+
+      function openCreateUser() {
+        openModal("modalCreateUser");
+        document.getElementById("newUserName").value = "";
+        document.getElementById("newUserPw").value = "";
+        document.getElementById("newUserRole").value = "operator";
+      }
+      async function createUser() {
+        const username = document.getElementById("newUserName").value.trim();
+        const password = document.getElementById("newUserPw").value;
+        const role = document.getElementById("newUserRole").value;
+        if (!username) {
+          showToast("error", "Username is required");
+          return;
+        }
+        if (!password || password.length < 8) {
+          showToast(
+            "error",
+            "Password must be 8+ chars with uppercase, lowercase, number, and special character",
+          );
+          return;
+        }
+        try {
+          const r = await authFetch("/auth/users", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, password, role }),
+          });
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || "Create failed");
+          }
+          closeModal("modalCreateUser");
+          showToast("success", "User " + username + " created");
+          loadUsers();
+        } catch (err) {
+          showToast("error", err.message);
+        }
+      }
+
+      function openResetPassword(userId, username) {
+        document.getElementById("resetPwUser").textContent = username;
+        document.getElementById("resetPwUser").dataset.userId = userId;
+        document.getElementById("resetPwValue").value = "";
+        openModal("modalResetPw");
+      }
+      async function adminResetPassword() {
+        const userId = document.getElementById("resetPwUser").dataset.userId;
+        const newPw = document.getElementById("resetPwValue").value;
+        if (!newPw || newPw.length < 8) {
+          showToast(
+            "error",
+            "Password must be 8+ chars with uppercase, lowercase, number, and special character",
+          );
+          return;
+        }
+        try {
+          const r = await authFetch("/auth/users/" + userId, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: newPw }),
+          });
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || "Reset failed");
+          }
+          closeModal("modalResetPw");
+          showToast(
+            "success",
+            "Password reset for " +
+              document.getElementById("resetPwUser").textContent,
+          );
+        } catch (err) {
+          showToast("error", err.message);
+        }
+      }
+
       // TOAST
-      // ============================================================
       let toastTimer;
       function showToast(type, msg) {
         const t = document.getElementById("toast");
@@ -4777,12 +4989,9 @@
         toastTimer = setTimeout(() => t.classList.remove("show"), 3500);
       }
 
-      // ============================================================
       // KEYBOARD + MODAL OVERLAY CLICKS
-      // ============================================================
       document.addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
-          // Close only the topmost modal (stacked first, then regular)
           const stacked = document.querySelector(".modal-overlay.open.stacked");
           if (stacked) {
             stacked.classList.remove("open", "stacked");
@@ -4799,9 +5008,7 @@
         });
       });
 
-      // ============================================================
       // BOOT
-      // ============================================================
       HerdAuth.requireAuth().then((user) => showApp(user));
     </script>
   </body>

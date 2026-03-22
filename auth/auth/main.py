@@ -28,7 +28,7 @@ from .config import ADMIN_USERNAME, ADMIN_PASSWORD, ALLOWED_ORIGINS
 from .database import create_tables, SessionLocal
 from .db_models import User
 from .security import hash_password, _ensure_keys
-from .routes import login, verify, users
+from .routes import login, verify, users, account
 
 logger = logging.getLogger("auth")
 
