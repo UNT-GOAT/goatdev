@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign In — HerdSync</title>
+    <link rel="icon" href="https://herd-sync.com/logos/favicon.ico?v=2" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="/js/config.js"></script>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      :root {
+        --bg: #08080f;
+        --bg-c: #111119;
+        --bg-r: #16161f;
+        --bdr: #1c1c28;
+        --bdr-s: #141420;
+        --tx: #dddde6;
+        --tx2: #999;
+        --tx3: #5a5a6e;
+        --tx4: #3a3a48;
+        --accent: #23783b;
+        --accent-hover: #1e6633;
+        --red: #e53935;
+        --sans: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+      html,
+      body {
+        height: 100%;
+        font-family: var(--sans);
+        background: var(--bg);
+        color: var(--tx);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .page {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        position: relative;
+      }
+      .page::before {
+        content: "";
+        position: absolute;
+        top: -200px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 600px;
+        height: 600px;
+        background: radial-gradient(
+          circle,
+          rgba(35, 120, 59, 0.03) 0%,
+          transparent 65%
+        );
+        pointer-events: none;
+      }
+
+      .card {
+        width: 380px;
+        max-width: 92vw;
+        position: relative;
+      }
+
+      .logo-wrap {
+        text-align: center;
+        margin-bottom: 32px;
+      }
+      .logo-wrap img {
+        height: 48px;
+      }
+
+      .box {
+        background: var(--bg-c);
+        border: 1px solid var(--bdr);
+        border-radius: 12px;
+        padding: 32px 28px 28px;
+      }
+
+      .box h1 {
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: -0.3px;
+        margin-bottom: 4px;
+      }
+      .box .sub {
+        font-size: 13px;
+        color: var(--tx3);
+        font-weight: 300;
+        margin-bottom: 24px;
+      }
+
+      .field {
+        margin-bottom: 16px;
+      }
+      .field label {
+        display: block;
+        font-size: 10px;
+        color: var(--tx3);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 5px;
+        font-weight: 500;
+      }
+      .field input {
+        width: 100%;
+        padding: 10px 12px;
+        font-size: 14px;
+        font-family: var(--sans);
+        border: 1px solid var(--bdr);
+        border-radius: 8px;
+        background: var(--bg);
+        color: var(--tx);
+        outline: none;
+        transition: border-color 0.15s;
+      }
+      .field input:focus {
+        border-color: var(--accent);
+      }
+      .field input::placeholder {
+        color: var(--tx4);
+      }
+
+      .error-msg {
+        font-size: 12px;
+        color: var(--red);
+        min-height: 20px;
+        margin-bottom: 8px;
+      }
+
+      .btn-signin {
+        width: 100%;
+        padding: 11px;
+        border: none;
+        border-radius: 8px;
+        background: var(--accent);
+        color: #fff;
+        font-size: 14px;
+        font-weight: 600;
+        font-family: var(--sans);
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .btn-signin:hover {
+        background: var(--accent-hover);
+      }
+      .btn-signin:disabled {
+        background: var(--bdr);
+        color: var(--tx4);
+        cursor: not-allowed;
+      }
+
+      .footer {
+        text-align: center;
+        margin-top: 20px;
+      }
+      .footer a {
+        font-size: 12px;
+        color: var(--tx4);
+        text-decoration: none;
+        transition: color 0.15s;
+      }
+      .footer a:hover {
+        color: var(--tx3);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="card">
+        <div class="logo-wrap">
+          <img src="/logos/dark_trans_v3.png" alt="HerdSync" />
+        </div>
+        <div class="box">
+          <h1>Sign in</h1>
+          <p class="sub">Enter your credentials to continue</p>
+          <p class="error-msg" id="errorMsg"></p>
+          <div class="field">
+            <label>Username</label>
+            <input
+              type="text"
+              id="username"
+              placeholder="Username"
+              autocomplete="username"
+            />
+          </div>
+          <div class="field">
+            <label>Password</label>
+            <input
+              type="password"
+              id="password"
+              placeholder="Password"
+              autocomplete="current-password"
+            />
+          </div>
+          <button class="btn-signin" id="signinBtn">Sign In</button>
+        </div>
+        <div class="footer">
+          <a href="/">&larr; Back to herd-sync.com</a>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const AUTH_BASE =
+        typeof CONFIG !== "undefined" && CONFIG.AUTH_BASE
+          ? CONFIG.AUTH_BASE
+          : "";
+
+      const KEYS = {
+        accessToken: "herdsync_access_token",
+        refreshToken: "herdsync_refresh_token",
+        expiresAt: "herdsync_token_expires_at",
+        user: "herdsync_user",
+      };
+
+      // If already authenticated, skip straight to dashboard
+      (function checkExisting() {
+        const token = sessionStorage.getItem(KEYS.accessToken);
+        const expiresAt = parseInt(
+          sessionStorage.getItem(KEYS.expiresAt) || "0",
+        );
+        if (token && Date.now() < expiresAt) {
+          window.location.href = "/dashboard/";
+          return;
+        }
+        // Try refresh token
+        const refresh = localStorage.getItem(KEYS.refreshToken);
+        if (refresh) {
+          fetch(AUTH_BASE + "/auth/refresh", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refresh_token: refresh }),
+          })
+            .then((r) => {
+              if (r.ok) return r.json();
+              throw new Error("expired");
+            })
+            .then((data) => {
+              sessionStorage.setItem(KEYS.accessToken, data.access_token);
+              sessionStorage.setItem(
+                KEYS.expiresAt,
+                (Date.now() + data.expires_in * 1000).toString(),
+              );
+              if (data.refresh_token)
+                localStorage.setItem(KEYS.refreshToken, data.refresh_token);
+              localStorage.setItem(
+                KEYS.user,
+                JSON.stringify(data.user || localStorage.getItem(KEYS.user)),
+              );
+              window.location.href = "/dashboard/";
+            })
+            .catch(() => {
+              // Refresh failed — stay on login page
+              localStorage.removeItem(KEYS.refreshToken);
+            });
+        }
+      })();
+
+      const usernameInput = document.getElementById("username");
+      const passwordInput = document.getElementById("password");
+      const btn = document.getElementById("signinBtn");
+      const errorEl = document.getElementById("errorMsg");
+
+      async function handleLogin() {
+        const username = usernameInput.value.trim();
+        const password = passwordInput.value;
+        if (!username || !password) {
+          errorEl.textContent = "Enter username and password";
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = "Signing in...";
+        errorEl.textContent = "";
+
+        try {
+          const resp = await fetch(AUTH_BASE + "/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, password }),
+          });
+
+          if (!resp.ok) {
+            const err = await resp
+              .json()
+              .catch(() => ({ detail: "Login failed" }));
+            throw new Error(err.detail || "Login failed");
+          }
+
+          const data = await resp.json();
+
+          // Store tokens
+          const expiresAt = Date.now() + data.expires_in * 1000;
+          sessionStorage.setItem(KEYS.accessToken, data.access_token);
+          sessionStorage.setItem(KEYS.expiresAt, expiresAt.toString());
+          if (data.refresh_token)
+            localStorage.setItem(KEYS.refreshToken, data.refresh_token);
+          localStorage.setItem(KEYS.user, JSON.stringify(data.user));
+
+          // Redirect to dashboard
+          window.location.href = "/dashboard/";
+        } catch (err) {
+          errorEl.textContent = err.message;
+          btn.disabled = false;
+          btn.textContent = "Sign In";
+          passwordInput.value = "";
+          passwordInput.focus();
+        }
+      }
+
+      btn.addEventListener("click", handleLogin);
+      passwordInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") handleLogin();
+      });
+      usernameInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") passwordInput.focus();
+      });
+      setTimeout(() => usernameInput.focus(), 50);
+    </script>
+  </body>
+</html>

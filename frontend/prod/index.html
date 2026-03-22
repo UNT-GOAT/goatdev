@@ -3007,6 +3007,19 @@
 
       // AUTH + INIT
       function showApp(user) {
+        // Reset all state from previous session
+        allAnimals = [];
+        allProviders = [];
+        allGrades = [];
+        providerMap = {};
+        loadErrors = [];
+        selectedAnimalId = null;
+        selectedAnimalType = null;
+        pendingGradeResult = null;
+        _gradeAnimalCreated = false;
+        _gradeExistingId = null;
+        _reviewGradeId = null;
+
         _currentUser = user;
         document.getElementById("app").style.display = "block";
         document.getElementById("topbarUser").textContent =
@@ -3017,6 +3030,8 @@
         if (user.role === "admin") {
           document.getElementById("adminSection").style.display = "";
           loadUsers();
+        } else {
+          document.getElementById("adminSection").style.display = "none";
         }
         loadAll();
         checkPiConnection();

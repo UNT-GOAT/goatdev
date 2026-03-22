@@ -145,6 +145,7 @@ jobs:
         run: |
           aws s3 sync frontend/prod/ s3://goat-web-937249941844/dashboard/
           aws s3 cp frontend/index.html s3://goat-web-937249941844/index.html
+          aws s3 sync frontend/signin/ s3://goat-web-937249941844/signin/
           echo "Prod UI deployed"
 
       - name: Invalidate CloudFront (prod + config + auth)
