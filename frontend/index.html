@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>HerdSync — AI Livestock Grading Platform</title>
-    <link rel="icon" href="/logos/favicon.ico" />
+    <link rel="icon" href="https://herd-sync.com/logos/favicon.ico?v=2" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link
       href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap"
@@ -741,7 +741,7 @@
           <div class="problem-left sr d2">
             <p class="context">
               <a href="https://www.cleanchickens.com" target="_blank"
-                >Clean Chickens</a
+                >Clean Chickens and Co.</a
               >
               is a small livestock facility in Elk River, Minnesota. They
               process goats, lambs, and chickens for providers across their
@@ -804,6 +804,7 @@
     <!-- PRODUCTS -->
     <section class="products" id="products">
       <div class="w">
+        <div class="s-ey sr">The build</div>
         <div class="s-t sr d1">Our Solution.</div>
         <div class="s-d sr d2">
           One system manages the data. The other handles cameras and AI systems.
@@ -900,8 +901,8 @@
                   Tunnel for facility bandwidth
                 </li>
                 <li>
-                  <span class="tk"></span>DS18B20 thermostat with EMI filtering,
-                  spike rejection, and failsafe
+                  <span class="tk"></span>DS18B20 thermostat solution for robust
+                  outdoor temperauture management
                 </li>
                 <li>
                   <span class="tk"></span>20-frame burst capture for training
@@ -1009,6 +1010,11 @@
     <div class="sep"></div>
 
     <script>
+      if (window.location.hash) {
+        history.replaceState(null, "", window.location.pathname);
+        window.scrollTo(0, 0);
+      }
+
       const o = new IntersectionObserver(
         (e) => {
           e.forEach((e) => {
