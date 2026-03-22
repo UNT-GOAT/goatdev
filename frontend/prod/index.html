@@ -2296,6 +2296,48 @@
               <div class="lbl">Total Time</div>
             </div>
           </div>
+          <!-- Grade failure explanation — hidden by default -->
+          <div id="reviewFailure" style="display: none" class="mb-14">
+            <div
+              style="
+                background: rgba(229, 57, 53, 0.06);
+                border: 1px solid rgba(229, 57, 53, 0.15);
+                border-radius: 10px;
+                padding: 16px 18px;
+              "
+            >
+              <div
+                style="
+                  font-size: 12px;
+                  font-weight: 600;
+                  color: var(--red);
+                  margin-bottom: 8px;
+                "
+              >
+                Grade could not be completed
+              </div>
+              <ul
+                id="reviewFailureReasons"
+                style="
+                  margin: 0;
+                  padding-left: 16px;
+                  font-size: 12px;
+                  color: var(--text-secondary);
+                  line-height: 1.8;
+                "
+              ></ul>
+              <div
+                style="
+                  margin-top: 10px;
+                  font-size: 11px;
+                  color: var(--text-muted);
+                "
+              >
+                Check that the animal is fully visible in all three camera
+                views, well-lit, and not moving. Then retry.
+              </div>
+            </div>
+          </div>
           <div class="section-label">
             Debug Overlays
             <span
@@ -2395,6 +2437,12 @@
             id="acceptGradeBtn"
           >
             Accept &amp; Save
+          </button>
+        </div>
+        <div class="modal-footer" id="reviewRetryFooter" style="display: none">
+          <button class="btn" onclick="confirmDiscard()">Dismiss</button>
+          <button class="btn-solid btn-sm" onclick="retryGrade()">
+            Retry Grade
           </button>
         </div>
       </div>
@@ -4182,6 +4230,7 @@
               ec2_sec: result.timing?.ec2_sec || null,
               total_sec: result.timing?.total_sec || null,
               warnings: result.warnings || [],
+              view_errors: result.view_errors || [],
               _isExisting: isExisting,
             };
             openGradeReview(pendingGradeResult, serialId);
@@ -4246,16 +4295,31 @@
       // ============================================================
       function openGradeReview(result, serialId) {
         openModal("modalGradeReview");
-        document.getElementById("reviewFooter").style.display = "";
         document.getElementById("reviewSubtitle").textContent =
           "Review before saving";
         document.getElementById("reviewEditSection").style.display = "none";
         _reviewGradeId = null;
+
+        const isOk = result.all_views_ok;
+
+        // Badge
         const badgeEl = document.getElementById("reviewGradeBadge");
-        badgeEl.textContent = result.grade || "UNGRADED";
-        badgeEl.className =
-          "preview-grade-badge badge lg " + gradeClass(result.grade);
+        if (isOk && result.grade) {
+          badgeEl.textContent = result.grade;
+          badgeEl.className =
+            "preview-grade-badge badge lg " + gradeClass(result.grade);
+        } else if (!isOk) {
+          badgeEl.textContent = "FAILED";
+          badgeEl.className = "preview-grade-badge badge lg";
+          badgeEl.style.color = "var(--red)";
+          badgeEl.style.background = "rgba(229,57,53,0.08)";
+        } else {
+          badgeEl.textContent = "UNGRADED";
+          badgeEl.className = "preview-grade-badge badge lg badge-ungraded";
+        }
         badgeEl.style.fontSize = "24px";
+
+        // Metrics
         document.getElementById("reviewWeight").textContent = result.live_weight
           ? result.live_weight + " lbs"
           : "—";
@@ -4264,12 +4328,17 @@
             result.species.slice(1) +
             (result.description ? " / " + result.description : "")
           : "—";
-        document.getElementById("reviewViews").textContent = result.all_views_ok
-          ? "Yes"
-          : "No";
+        document.getElementById("reviewViews").textContent = isOk
+          ? "3/3"
+          : "Failed";
+        document.getElementById("reviewViews").style.color = isOk
+          ? ""
+          : "var(--red)";
         document.getElementById("reviewTime").textContent = result.total_sec
           ? parseFloat(result.total_sec).toFixed(1) + "s"
           : "—";
+
+        // Debug images
         const token = HerdAuth.getAccessToken();
         ["side", "top", "front"].forEach((view) => {
           const slot = document.getElementById(
@@ -4292,10 +4361,14 @@
           };
           slot.insertBefore(img, slot.firstChild);
         });
+
+        // Measurements
         document.getElementById("reviewMeasurements").textContent =
           result.measurements
             ? JSON.stringify(result.measurements, null, 2)
             : "None";
+
+        // Warnings
         const ww = document.getElementById("reviewWarningsWrap"),
           wl = document.getElementById("reviewWarningsList");
         if (result.warnings && result.warnings.length) {
@@ -4306,6 +4379,62 @@
         } else {
           ww.style.display = "none";
         }
+
+        // === FAILURE vs SUCCESS routing ===
+        const failureEl = document.getElementById("reviewFailure");
+        const reasonsEl = document.getElementById("reviewFailureReasons");
+        const okFooter = document.getElementById("reviewFooter");
+        const retryFooter = document.getElementById("reviewRetryFooter");
+
+        if (!isOk) {
+          // Build human-readable failure reasons
+          const reasons = [];
+          if (result.view_errors && result.view_errors.length) {
+            result.view_errors.forEach(function (ve) {
+              const viewName =
+                ve.view.charAt(0).toUpperCase() + ve.view.slice(1);
+              reasons.push(
+                "<strong>" + viewName + " view:</strong> " + esc(ve.error),
+              );
+            });
+          }
+          if (result.warnings && result.warnings.length) {
+            result.warnings.forEach(function (w) {
+              if (w.toLowerCase().includes("confidence")) {
+                reasons.push(esc(w));
+              }
+            });
+          }
+          if (reasons.length === 0) {
+            reasons.push(
+              "One or more camera views did not produce usable data.",
+            );
+          }
+
+          reasonsEl.innerHTML = reasons
+            .map(function (r) {
+              return "<li>" + r + "</li>";
+            })
+            .join("");
+          failureEl.style.display = "";
+          okFooter.style.display = "none";
+          retryFooter.style.display = "";
+          document.getElementById("reviewSubtitle").textContent =
+            "Grade failed — review and retry";
+        } else {
+          failureEl.style.display = "none";
+          okFooter.style.display = "";
+          retryFooter.style.display = "none";
+        }
+      }
+
+      function retryGrade() {
+        closeModal("modalGradeReview");
+        pendingGradeResult = null;
+        _gradeAnimalCreated = false;
+        gradeLog("Retrying — previous attempt had view failures", "warn");
+        // Focus weight field so operator can quickly hit Start Grade again
+        document.getElementById("gradeWeight").focus();
       }
 
       async function acceptGrade() {
