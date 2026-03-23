@@ -132,3 +132,26 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
     CREATE TRIGGER trg_lambs_updated BEFORE UPDATE ON lambs FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+
+-- ============================================================
+-- Audit Logs
+-- Tracks all mutations (create, update, delete) across the system.
+-- Written by db-proxy after successful upstream responses.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id              SERIAL PRIMARY KEY,
+    timestamp       TIMESTAMPTZ DEFAULT NOW(),
+    username        TEXT NOT NULL,
+    role            TEXT,
+    action          VARCHAR(20) NOT NULL,
+    resource_type   VARCHAR(30) NOT NULL,
+    resource_id     TEXT,
+    detail          JSONB,
+    ip_address      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_username ON audit_logs(username);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs(resource_type);

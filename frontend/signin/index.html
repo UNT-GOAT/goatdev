@@ -22,7 +22,6 @@
       :root {
         --bg: #08080f;
         --bg-c: #111119;
-        --bg-r: #16161f;
         --bdr: #1c1c28;
         --bdr-s: #141420;
         --tx: #dddde6;
@@ -224,7 +223,7 @@
         user: "herdsync_user",
       };
 
-      // If already authenticated, skip straight to dashboard
+      // If already authenticated, skip to dashboard
       (function checkExisting() {
         const token = sessionStorage.getItem(KEYS.accessToken);
         const expiresAt = parseInt(
@@ -254,14 +253,11 @@
               );
               if (data.refresh_token)
                 localStorage.setItem(KEYS.refreshToken, data.refresh_token);
-              localStorage.setItem(
-                KEYS.user,
-                JSON.stringify(data.user || localStorage.getItem(KEYS.user)),
-              );
+              if (data.user)
+                localStorage.setItem(KEYS.user, JSON.stringify(data.user));
               window.location.href = "/dashboard/";
             })
             .catch(() => {
-              // Refresh failed — stay on login page
               localStorage.removeItem(KEYS.refreshToken);
             });
         }
@@ -301,14 +297,16 @@
           const data = await resp.json();
 
           // Store tokens
-          const expiresAt = Date.now() + data.expires_in * 1000;
           sessionStorage.setItem(KEYS.accessToken, data.access_token);
-          sessionStorage.setItem(KEYS.expiresAt, expiresAt.toString());
+          sessionStorage.setItem(
+            KEYS.expiresAt,
+            (Date.now() + data.expires_in * 1000).toString(),
+          );
           if (data.refresh_token)
             localStorage.setItem(KEYS.refreshToken, data.refresh_token);
           localStorage.setItem(KEYS.user, JSON.stringify(data.user));
 
-          // Redirect to dashboard
+          // Navigate to dashboard — full page load, clean state
           window.location.href = "/dashboard/";
         } catch (err) {
           errorEl.textContent = err.message;

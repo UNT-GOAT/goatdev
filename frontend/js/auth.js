@@ -1,15 +1,14 @@
 /**
  * HerdSync Auth Module
  *
- * Drop-in authentication for all frontend pages. Handles:
+ * Drop-in authentication for protected pages. Handles:
  *   - Token storage (sessionStorage for access, localStorage for refresh)
  *   - Automatic token refresh before expiry
  *   - Authenticated fetch() wrapper
- *   - Auth gate (redirects to /signin if not authenticated)
- *   - Logout (clears tokens, redirects to /signin)
+ *   - Auth gate (redirects to /signin/ if not authenticated)
+ *   - Logout (clears tokens, redirects to /signin/)
  *
- * Usage in any page:
- *
+ * Usage:
  *   <script src="/js/config.js"></script>
  *   <script src="/js/auth.js"></script>
  *   <script>
@@ -17,26 +16,21 @@
  *       console.log('Logged in as', user.username, user.role);
  *     });
  *
- *     const resp = await HerdAuth.fetch(CONFIG.DB_BASE + '/goats', opts);
- *
+ *     const resp = await HerdAuth.fetch(CONFIG.DB_BASE + '/goats');
  *     HerdAuth.logout();
  *   </script>
  *
- * Login is handled by /signin/index.html — this module no longer
- * renders a login modal. All auth failures redirect to /signin.
+ * Login is handled by /signin/index.html — this module does not
+ * render any UI. All auth failures redirect to /signin/.
  */
 
 const HerdAuth = (() => {
-    // ==========================================================================
-    // CONFIG
-    // ==========================================================================
-
     const AUTH_BASE =
         (typeof CONFIG !== "undefined" && CONFIG.AUTH_BASE)
             ? CONFIG.AUTH_BASE
             : "";
 
-    const REFRESH_BUFFER_SEC = 120;
+    const REFRESH_BUFFER_SEC = 120; // refresh 2 min before expiry
 
     const KEYS = {
         accessToken: 'herdsync_access_token',
@@ -48,9 +42,9 @@ const HerdAuth = (() => {
     let _refreshTimer = null;
     let _currentUser = null;
 
-    // ==========================================================================
+    // ======================================================================
     // TOKEN STORAGE
-    // ==========================================================================
+    // ======================================================================
 
     function saveTokens(accessToken, refreshToken, expiresIn, user) {
         const expiresAt = Date.now() + (expiresIn * 1000);
@@ -59,8 +53,10 @@ const HerdAuth = (() => {
         if (refreshToken) {
             localStorage.setItem(KEYS.refreshToken, refreshToken);
         }
-        localStorage.setItem(KEYS.user, JSON.stringify(user));
-        _currentUser = user;
+        if (user) {
+            localStorage.setItem(KEYS.user, JSON.stringify(user));
+            _currentUser = user;
+        }
         _scheduleRefresh(expiresIn);
     }
 
@@ -101,14 +97,12 @@ const HerdAuth = (() => {
         return token && Date.now() < expiresAt;
     }
 
-    // ==========================================================================
+    // ======================================================================
     // AUTO-REFRESH
-    // ==========================================================================
+    // ======================================================================
 
     function _scheduleRefresh(expiresInSec) {
-        if (_refreshTimer) {
-            clearTimeout(_refreshTimer);
-        }
+        if (_refreshTimer) clearTimeout(_refreshTimer);
         const refreshIn = Math.max((expiresInSec - REFRESH_BUFFER_SEC) * 1000, 10000);
         _refreshTimer = setTimeout(async () => {
             try {
@@ -119,15 +113,13 @@ const HerdAuth = (() => {
         }, refreshIn);
     }
 
-    // ==========================================================================
-    // AUTH API CALLS
-    // ==========================================================================
+    // ======================================================================
+    // AUTH API
+    // ======================================================================
 
     async function refreshAccessToken() {
         const refreshToken = getRefreshToken();
-        if (!refreshToken) {
-            throw new Error('No refresh token');
-        }
+        if (!refreshToken) throw new Error('No refresh token');
 
         const resp = await fetch(`${AUTH_BASE}/auth/refresh`, {
             method: 'POST',
@@ -145,9 +137,11 @@ const HerdAuth = (() => {
 
         // Refresh MJPEG streams with new token
         document.querySelectorAll('img[src*="token="]').forEach(img => {
-            const url = new URL(img.src);
-            url.searchParams.set('token', data.access_token);
-            img.src = url.toString();
+            try {
+                const url = new URL(img.src);
+                url.searchParams.set('token', data.access_token);
+                img.src = url.toString();
+            } catch {}
         });
 
         return data.access_token;
@@ -167,7 +161,7 @@ const HerdAuth = (() => {
                     body: JSON.stringify({ refresh_token: refreshToken }),
                 });
             } catch {
-                // Best-effort
+                // Best-effort server-side revocation
             }
         }
         clearTokens();
@@ -175,13 +169,14 @@ const HerdAuth = (() => {
         _redirectToSignin();
     }
 
-    // ==========================================================================
+    // ======================================================================
     // AUTHENTICATED FETCH
-    // ==========================================================================
+    // ======================================================================
 
     async function authFetch(url, opts = {}) {
         let token = getAccessToken();
 
+        // If access token expired, try refreshing
         if (!isAccessTokenValid()) {
             try {
                 token = await refreshAccessToken();
@@ -191,6 +186,7 @@ const HerdAuth = (() => {
             }
         }
 
+        // Add auth header
         opts.headers = opts.headers || {};
         if (opts.headers instanceof Headers) {
             opts.headers.set('Authorization', `Bearer ${token}`);
@@ -215,9 +211,9 @@ const HerdAuth = (() => {
         return resp;
     }
 
-    // ==========================================================================
+    // ======================================================================
     // PUBLIC API
-    // ==========================================================================
+    // ======================================================================
 
     function requireAuth() {
         return new Promise(async (resolve) => {
@@ -227,7 +223,7 @@ const HerdAuth = (() => {
                 return;
             }
 
-            // Try refreshing with stored refresh token
+            // Try refresh token
             const refreshToken = getRefreshToken();
             if (refreshToken) {
                 try {
@@ -235,11 +231,11 @@ const HerdAuth = (() => {
                     resolve(getUser());
                     return;
                 } catch {
-                    // Refresh failed
+                    // Refresh failed — need full login
                 }
             }
 
-            // No valid session — redirect to signin
+            // No valid session — redirect to signin page
             _redirectToSignin();
         });
     }

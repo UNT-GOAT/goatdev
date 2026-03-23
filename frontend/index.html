@@ -239,9 +239,7 @@
         max-width: 500px;
       }
 
-      /* ===========================================================
-   PROBLEM SECTION
-   ============================================================ */
+      /* PROBLEM SECTION */
       .problem {
         padding: 80px 0;
       }
@@ -316,9 +314,7 @@
         font-weight: 300;
       }
 
-      /* ============================================================
-   PRODUCTS
-   ============================================================ */
+      /* PRODUCTS */
       .products {
         padding: 80px 0;
       }
@@ -513,9 +509,7 @@
         border: 1px solid var(--bdr-s);
       }
 
-      /* ============================================================
-   ARCHITECTURE
-   ============================================================ */
+      /* ARCHITECTURE */
       .arch {
         padding: 80px 0;
       }
@@ -538,9 +532,7 @@
         text-align: center;
       }
 
-      /* ============================================================
-   TECH STACK
-   ============================================================ */
+      /* TECH STACK */
       .tech {
         padding: 80px 0;
       }
@@ -742,7 +734,7 @@
           <div class="problem-left sr d2">
             <p class="context">
               <a href="https://www.cleanchickens.com" target="_blank"
-                >Clean Chickens and Co.</a
+                >Clean Chicken and Co.s</a
               >
               is a small livestock facility in Elk River, Minnesota. They
               process goats, lambs, and chickens for providers across their
@@ -790,9 +782,9 @@
               <div class="prob-label">What we built</div>
               <p>
                 Camera-based body measurement using computer vision. Three
-                angles, automated segmentation, careful calibration , and a
-                grade with documented reasoning. Consistent every time,
-                hands-free, with a receipt for every animal.
+                angles, automated segmentation, careful calibration, and a grade
+                with documented reasoning. Consistent every time, hands-free,
+                with a receipt for every animal.
               </p>
             </div>
           </div>
@@ -944,7 +936,7 @@
             loading="lazy"
           />
           <div class="arch-fallback">
-            Architecture diagram - see
+            Architecture diagram&mdash;see
             <a
               href="https://github.com/UNT-GOAT/goatdev"
               style="color: var(--accent-text)"
@@ -1011,6 +1003,7 @@
     <div class="sep"></div>
 
     <script>
+      // Strip hash on load so shared links open at top
       if (window.location.hash) {
         history.replaceState(null, "", window.location.pathname);
         window.scrollTo(0, 0);
