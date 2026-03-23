@@ -1590,17 +1590,7 @@
                   class="filter-chip small"
                   onclick="setAnimalSort(this, 'grade')"
                 >
-                  Grade</button
-                ><button
-                  class="filter-chip small"
-                  onclick="setAnimalSort(this, 'created-desc')"
-                >
-                  Newest</button
-                ><button
-                  class="filter-chip small"
-                  onclick="setAnimalSort(this, 'created-asc')"
-                >
-                  Oldest
+                  Grade
                 </button>
               </div>
               <div class="flex gap-14" style="flex: 1; min-height: 0">
@@ -2248,6 +2238,25 @@
                   </button>
                 </div>
                 <!-- Admin-only section -->
+                <div class="profile-card">
+                  <h3>Danger Zone</h3>
+                  <div
+                    style="
+                      font-size: 12px;
+                      color: var(--text-muted);
+                      margin-bottom: 12px;
+                      line-height: 1.6;
+                    "
+                  >
+                    Permanently delete your account. This cannot be undone.
+                  </div>
+                  <button
+                    class="btn btn-danger btn-sm"
+                    onclick="deleteOwnAccount()"
+                  >
+                    Delete My Account
+                  </button>
+                </div>
                 <div
                   class="profile-card"
                   id="adminSection"
@@ -5160,7 +5169,15 @@
                 u.id +
                 ",'" +
                 esc(u.username) +
-                "')\">Reset PW</button></div></div>",
+                "')\">Reset PW</button>" +
+                (u.role !== "admin"
+                  ? '<button class="btn btn-danger btn-sm" onclick="adminDeleteUser(' +
+                    u.id +
+                    ",'" +
+                    esc(u.username) +
+                    "')\">Delete</button>"
+                  : "") +
+                "</div></div>",
             )
             .join("");
         } catch (err) {
@@ -5439,13 +5456,6 @@
           update: "var(--blue)",
           delete: "var(--red)",
         };
-        const resourceIcons = {
-          goat: "🐐",
-          lamb: "🐑",
-          chicken: "🐔",
-          provider: "👤",
-          grade: "📊",
-        };
         body.innerHTML = logs
           .map((l) => {
             const ts = l.timestamp
@@ -5458,13 +5468,9 @@
                 })
               : "—";
             const actionColor = actionColors[l.action] || "var(--text-muted)";
-            const icon = resourceIcons[l.resource_type] || "📋";
-            let desc = _formatAuditDetail(l);
+            const desc = _formatAuditDetail(l);
             return (
               '<div style="padding:10px 16px;border-bottom:1px solid var(--border-subtle);display:flex;gap:12px;align-items:flex-start">' +
-              '<div style="flex-shrink:0;width:28px;height:28px;border-radius:6px;background:var(--bg-raised);display:flex;align-items:center;justify-content:center;font-size:13px">' +
-              icon +
-              "</div>" +
               '<div style="flex:1;min-width:0">' +
               '<div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">' +
               '<span style="font-size:12px;font-weight:600;color:var(--text-primary)">' +
@@ -5481,7 +5487,7 @@
               "</span>" +
               "</div>" +
               (desc
-                ? '<div style="font-size:11px;color:var(--text-muted);line-height:1.5">' +
+                ? '<div style="font-size:11px;color:var(--text-muted);line-height:1.6">' +
                   desc +
                   "</div>"
                 : "") +
@@ -5497,31 +5503,83 @@
       function _formatAuditDetail(log) {
         if (!log.detail) return "";
         const d = log.detail;
-        const parts = [];
-        if (log.action === "create") {
-          if (d.serial_id) parts.push("Serial #" + d.serial_id);
-          if (d.name) parts.push(esc(d.name));
-          if (d.description) parts.push(esc(d.description));
-          if (d.grade) parts.push("Grade: " + esc(d.grade));
-          if (d.live_weight) parts.push(d.live_weight + " lbs");
-        } else if (log.action === "update") {
-          const keys = Object.keys(d).filter(
-            (k) => k !== "id" && k !== "serial_id",
-          );
-          if (keys.length <= 4) {
-            parts.push(
-              keys
-                .map((k) => esc(k) + ": " + esc(String(d[k] ?? "null")))
-                .join(", "),
-            );
-          } else {
-            parts.push(keys.length + " fields changed");
-          }
-        } else if (log.action === "delete") {
-          if (d.serial_id) parts.push("Serial #" + d.serial_id);
-          if (d.name) parts.push(esc(d.name));
+        const lines = [];
+        function fmtVal(v) {
+          if (v === null || v === undefined)
+            return '<span style="color:var(--text-faint);font-style:italic">none</span>';
+          if (typeof v === "boolean") return v ? "yes" : "no";
+          if (typeof v === "object") return JSON.stringify(v);
+          return esc(String(v));
         }
-        return parts.join(" · ");
+        function fmtKey(k) {
+          return k.replace(/_/g, " ").replace(/\bid\b/g, "ID");
+        }
+        function provLookup(id) {
+          if (!id) return null;
+          const p = providerMap[id];
+          return p ? p.name + " (#" + id + ")" : "#" + id;
+        }
+        if (log.action === "create") {
+          const rec = d.record || d;
+          if (rec.serial_id)
+            lines.push("Serial <strong>#" + rec.serial_id + "</strong>");
+          if (rec.name)
+            lines.push("Name: <strong>" + esc(rec.name) + "</strong>");
+          if (rec.species)
+            lines.push(
+              esc(rec.species.charAt(0).toUpperCase() + rec.species.slice(1)),
+            );
+          if (rec.description) lines.push(esc(rec.description));
+          if (rec.grade)
+            lines.push("Grade: <strong>" + esc(rec.grade) + "</strong>");
+          if (rec.live_weight)
+            lines.push("Live wt: " + rec.live_weight + " lbs");
+          if (rec.hang_weight)
+            lines.push("Hang wt: " + rec.hang_weight + " lbs");
+          if (rec.prov_id) {
+            const pn = provLookup(rec.prov_id);
+            if (pn) lines.push("Provider: " + esc(pn));
+          }
+          if (rec.kill_date) lines.push("Kill: " + rec.kill_date);
+          if (rec.phone) lines.push(esc(rec.phone));
+          if (rec.email) lines.push(esc(rec.email));
+          if (rec.company) lines.push(esc(rec.company));
+        } else if (log.action === "update") {
+          const changed = d.changed || d;
+          const after = d.after || null;
+          if (after && after.name && log.resource_type === "provider")
+            lines.push("<strong>" + esc(after.name) + "</strong>");
+          else if (after && after.serial_id)
+            lines.push("Serial #" + after.serial_id);
+          const keys = Object.keys(changed).filter(
+            (k) => k !== "id" && k !== "serial_id" && !k.endsWith("_at"),
+          );
+          keys.forEach((k) => {
+            const newVal = changed[k];
+            const label = fmtKey(k);
+            if (k === "prov_id") {
+              const pn = provLookup(newVal);
+              lines.push(
+                esc(label) +
+                  " → <strong>" +
+                  esc(pn || String(newVal)) +
+                  "</strong>",
+              );
+            } else if (k === "password") {
+              lines.push("password → <strong>••••••</strong>");
+            } else {
+              lines.push(
+                esc(label) + " → <strong>" + fmtVal(newVal) + "</strong>",
+              );
+            }
+          });
+        } else if (log.action === "delete") {
+          if (d.serial_id)
+            lines.push("Serial <strong>#" + d.serial_id + "</strong>");
+          if (d.deleted) lines.push("ID: " + d.deleted);
+          if (d.name) lines.push(esc(d.name));
+        }
+        return lines.join(" · ");
       }
 
       // TOAST
@@ -5555,6 +5613,57 @@
           if (e.target === this) this.classList.remove("open");
         });
       });
+
+      // ============================================================
+      // ACCOUNT DELETION
+      // ============================================================
+      async function deleteOwnAccount() {
+        if (
+          !confirm(
+            "Are you sure you want to permanently delete your account? You will be logged out immediately.",
+          )
+        )
+          return;
+        const typed = prompt("Type your username to confirm deletion:");
+        if (typed !== _currentUser.username) {
+          showToast("error", "Username did not match — account not deleted");
+          return;
+        }
+        try {
+          const r = await authFetch("/auth/me", { method: "DELETE" });
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || "Delete failed");
+          }
+          showToast("success", "Account deleted — logging out...");
+          setTimeout(() => HerdAuth.logout(), 1500);
+        } catch (err) {
+          showToast("error", err.message);
+        }
+      }
+      async function adminDeleteUser(userId, username) {
+        if (
+          !confirm(
+            "Permanently delete user '" +
+              username +
+              "'? This cannot be undone.",
+          )
+        )
+          return;
+        try {
+          const r = await authFetch("/auth/users/" + userId, {
+            method: "DELETE",
+          });
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || "Delete failed");
+          }
+          showToast("success", "User " + username + " deleted");
+          loadUsers();
+        } catch (err) {
+          showToast("error", err.message);
+        }
+      }
 
       // BOOT
       HerdAuth.requireAuth().then((user) => showApp(user));

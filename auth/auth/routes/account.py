@@ -60,3 +60,28 @@ def change_password(
     db.commit()
 
     return {"status": "ok", "message": "Password updated"}
+
+
+@router.delete("/me")
+def delete_own_account(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Delete the authenticated user's own account.
+
+    Admins can only delete themselves if at least one other admin remains.
+    Operators can always delete themselves.
+    """
+    if user.role == "admin":
+        admin_count = db.query(User).filter(User.role == "admin").count()
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete the last admin account"
+            )
+
+    db.delete(user)
+    db.commit()
+
+    return {"status": "ok", "message": f"Account '{user.username}' deleted"}

@@ -224,24 +224,63 @@ def _parse_resource(path: str) -> Tuple[Optional[str], Optional[str]]:
     return resource_type, resource_id
 
 
-def _extract_detail(method: str, body: bytes, upstream_body: bytes) -> Optional[dict]:
+def _extract_detail(method: str, body: bytes, upstream_body: bytes, before_body: bytes = b"") -> Optional[dict]:
     """
     Extract a concise detail dict for the audit log.
 
-    For creates: includes the response body (has the created record).
-    For updates: includes the request body (what was changed).
-    For deletes: minimal info.
+    For creates: includes the response body (the created record).
+    For updates: includes changed fields with before→after values.
+    For deletes: includes the response body if available.
     """
+    _EXCLUDE = {"measurements", "warnings", "side_raw_s3_key", "top_raw_s3_key",
+                "front_raw_s3_key", "side_debug_s3_key", "top_debug_s3_key",
+                "front_debug_s3_key", "created_at", "updated_at", "graded_at",
+                "password_hash"}
+
+    def _clean(data: dict) -> dict:
+        return {k: v for k, v in data.items() if k not in _EXCLUDE}
+
     try:
         if method == "POST" and upstream_body:
             data = json.loads(upstream_body)
-            # Don't log huge blobs — keep it concise
             if isinstance(data, dict):
-                return {k: v for k, v in data.items() if k not in ("measurements", "warnings")}
-        elif method in ("PUT", "PATCH") and body:
-            data = json.loads(body)
+                return {"record": _clean(data)}
+        elif method in ("PUT", "PATCH"):
+            result = {}
+            # What fields were sent in the request
+            changed_fields = {}
+            if body:
+                req = json.loads(body)
+                if isinstance(req, dict):
+                    changed_fields = {k: v for k, v in req.items() if k not in _EXCLUDE}
+
+            # Before state (pre-mutation snapshot)
+            before = {}
+            if before_body:
+                try:
+                    before = json.loads(before_body)
+                    if not isinstance(before, dict):
+                        before = {}
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    pass
+
+            # Build from→to for each changed field
+            changes = {}
+            for k, new_val in changed_fields.items():
+                old_val = before.get(k)
+                if old_val != new_val:
+                    changes[k] = {"from": old_val, "to": new_val}
+
+            if changes:
+                result["changes"] = changes
+            else:
+                result["changed"] = changed_fields
+
+            return result if result else None
+        elif method == "DELETE" and upstream_body:
+            data = json.loads(upstream_body)
             if isinstance(data, dict):
-                return data
+                return _clean(data)
     except (json.JSONDecodeError, UnicodeDecodeError):
         pass
     return None
@@ -253,6 +292,7 @@ async def _fire_audit_log(
     path: str,
     request_body: bytes,
     upstream_body: bytes,
+    before_body: bytes,
     ip_address: str,
 ):
     """
@@ -275,7 +315,7 @@ async def _fire_audit_log(
     if resource_type == "audit-logs":
         return
 
-    detail = _extract_detail(method, request_body, upstream_body)
+    detail = _extract_detail(method, request_body, upstream_body, before_body)
 
     payload = {
         "username": user_info.get("username", "unknown"),
@@ -405,6 +445,16 @@ async def proxy(path: str, request: Request):
     body = await request.body()
     forward_headers = _pick_forward_headers(request)
 
+    # For updates, snapshot the record BEFORE the mutation (for from→to audit)
+    before_body = b""
+    if request.method in ("PUT", "PATCH"):
+        try:
+            before_resp = await _db_client.get(f"{DB_INTERNAL}/{path}")
+            if before_resp.status_code == 200:
+                before_body = before_resp.content
+        except Exception:
+            pass  # Best-effort; don't block the request
+
     assert _db_client is not None
     upstream_resp = await _db_client.request(
         request.method,
@@ -420,7 +470,7 @@ async def proxy(path: str, request: Request):
     if is_mutation and is_success:
         ip = _get_client_ip(request)
         asyncio.ensure_future(
-            _fire_audit_log(user_info, request.method, path, body, upstream_resp.content, ip)
+            _fire_audit_log(user_info, request.method, path, body, upstream_resp.content, before_body, ip)
         )
 
     # Minimal safe response headers
