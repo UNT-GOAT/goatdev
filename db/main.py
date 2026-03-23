@@ -14,6 +14,7 @@ import os
 import json
 
 from routes import providers, animals, chickens, goats, lambs, grading
+from routes import providers, animals, chickens, goats, lambs, grading, audit
 
 
 # ============================================================
@@ -70,6 +71,7 @@ app.include_router(chickens.router, prefix="/chickens", tags=["chickens"])
 app.include_router(goats.router, prefix="/goats", tags=["goats"])
 app.include_router(lambs.router, prefix="/lambs", tags=["lambs"])
 app.include_router(grading.router, prefix="/grading", tags=["grading"])
+app.include_router(audit.router, prefix="/audit-logs", tags=["audit"])
 
 
 @app.get("/health")
