@@ -1937,6 +1937,125 @@
                     <div class="cam-offline">Waiting for grader...</div>
                   </div>
                 </div>
+                <!-- DEV ONLY: Manual image upload for grading without cameras -->
+                <div id="devUploadSection" style="display: none" class="mt-10">
+                  <div
+                    style="
+                      border: 1px dashed var(--border);
+                      border-radius: 8px;
+                      padding: 14px;
+                      background: var(--bg-input);
+                    "
+                  >
+                    <div
+                      style="
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        margin-bottom: 10px;
+                      "
+                    >
+                      <span
+                        style="
+                          font-size: 9px;
+                          font-weight: 600;
+                          letter-spacing: 1.5px;
+                          text-transform: uppercase;
+                          color: var(--orange);
+                        "
+                        >Dev Only</span
+                      ><span style="font-size: 10px; color: var(--text-faint)"
+                        >Upload images directly to EC2 — bypasses Pi
+                        cameras</span
+                      >
+                    </div>
+                    <div class="grid-3" style="margin-bottom: 10px">
+                      <div>
+                        <label class="field-label">Side</label>
+                        <div
+                          class="cam-slot"
+                          id="devDrop-side"
+                          style="cursor: pointer; position: relative"
+                        >
+                          <span
+                            style="font-size: 10px; color: var(--text-faint)"
+                            >click or drop</span
+                          ><input
+                            type="file"
+                            accept="image/*"
+                            onchange="handleDevUpload('side', this)"
+                            style="
+                              position: absolute;
+                              inset: 0;
+                              opacity: 0;
+                              cursor: pointer;
+                            "
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label class="field-label">Top</label>
+                        <div
+                          class="cam-slot"
+                          id="devDrop-top"
+                          style="cursor: pointer; position: relative"
+                        >
+                          <span
+                            style="font-size: 10px; color: var(--text-faint)"
+                            >click or drop</span
+                          ><input
+                            type="file"
+                            accept="image/*"
+                            onchange="handleDevUpload('top', this)"
+                            style="
+                              position: absolute;
+                              inset: 0;
+                              opacity: 0;
+                              cursor: pointer;
+                            "
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label class="field-label">Front</label>
+                        <div
+                          class="cam-slot"
+                          id="devDrop-front"
+                          style="cursor: pointer; position: relative"
+                        >
+                          <span
+                            style="font-size: 10px; color: var(--text-faint)"
+                            >click or drop</span
+                          ><input
+                            type="file"
+                            accept="image/*"
+                            onchange="handleDevUpload('front', this)"
+                            style="
+                              position: absolute;
+                              inset: 0;
+                              opacity: 0;
+                              cursor: pointer;
+                            "
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div class="flex gap-8 items-center">
+                      <button
+                        class="btn btn-accent btn-sm"
+                        id="devGradeBtn"
+                        onclick="startDevGrade()"
+                        disabled
+                      >
+                        Grade with Uploads</button
+                      ><span
+                        id="devUploadStatus"
+                        style="font-size: 10px; color: var(--text-faint)"
+                        >0/3 images</span
+                      >
+                    </div>
+                  </div>
+                </div>
                 <div
                   class="grade-log mt-10"
                   id="gradeLog"
@@ -3150,6 +3269,7 @@
         } else {
           document.getElementById("adminSection").style.display = "none";
         }
+        _showDevUploadIfDev();
         loadAll();
         checkPiConnection();
       }
@@ -3622,16 +3742,18 @@
         const animalGrades = allGrades.filter(
           (g) => g.serial_id == a.serial_id,
         );
+        const hasGrade = animalGrades.length > 0;
+        const gradeLabel = hasGrade ? "Regrade" : "Grade";
         acts.innerHTML =
           (a.type === "goat" || a.type === "lamb"
-            ? '<button class="btn btn-accent flex-1 btn-sm" onclick="openGradeForAnimal()">Grade</button>'
+            ? '<button class="btn btn-accent flex-1 btn-sm" onclick="openGradeForAnimal()">' +
+              gradeLabel +
+              "</button>"
             : "") +
-          (animalGrades.length
-            ? '<button class="btn flex-1 btn-sm" onclick="openAnimalGrades()">Grades (' +
-              animalGrades.length +
-              ")</button>"
+          (hasGrade
+            ? '<button class="btn flex-1 btn-sm" onclick="openAnimalGrades()">Edit Grade</button>'
             : "") +
-          '<button class="btn flex-1 btn-sm" onclick="openEditAnimal()">Edit</button><button class="btn btn-danger flex-1 btn-sm" onclick="deleteAnimal()">Delete</button>';
+          '<button class="btn flex-1 btn-sm" onclick="openEditAnimal()">Edit Animal</button><button class="btn btn-danger flex-1 btn-sm" onclick="deleteAnimal()">Delete</button>';
       }
       function openGradeForAnimal() {
         const a = allAnimals.find(
@@ -5107,6 +5229,121 @@
           );
         } catch (err) {
           showToast("error", err.message);
+        }
+      }
+
+      // ============================================================
+      // DEV-ONLY: Manual Image Upload Grading
+      // ============================================================
+      const _devFiles = { side: null, top: null, front: null };
+      function _isDevUser() {
+        return _currentUser && _currentUser.username === "dev";
+      }
+      function _showDevUploadIfDev() {
+        const el = document.getElementById("devUploadSection");
+        if (el) el.style.display = _isDevUser() ? "" : "none";
+      }
+      function handleDevUpload(view, input) {
+        const file = input.files[0];
+        if (!file) return;
+        _devFiles[view] = file;
+        const drop = document.getElementById("devDrop-" + view);
+        const existing = drop.querySelector("img");
+        if (existing) existing.remove();
+        const img = document.createElement("img");
+        img.src = URL.createObjectURL(file);
+        img.style.cssText =
+          "width:100%;height:100%;object-fit:contain;display:block";
+        drop.insertBefore(img, drop.firstChild);
+        drop.style.borderColor = "var(--accent)";
+        drop.style.borderStyle = "solid";
+        _updateDevStatus();
+      }
+      function _updateDevStatus() {
+        const count = Object.values(_devFiles).filter(Boolean).length;
+        document.getElementById("devUploadStatus").textContent =
+          count + "/3 images";
+        document.getElementById("devUploadStatus").style.color =
+          count === 3 ? "var(--accent)" : "var(--text-faint)";
+        document.getElementById("devGradeBtn").disabled = count < 3;
+      }
+      async function startDevGrade() {
+        const serialId = _gradeExistingId || nextGradeId;
+        if (!serialId) {
+          showToast("error", "No serial ID");
+          return;
+        }
+        const lw = parseFloat(document.getElementById("gradeWeight").value);
+        if (!lw || lw <= 0) {
+          showToast("error", "Enter a valid live weight");
+          return;
+        }
+        const desc = document.getElementById("gradeDesc").value;
+        if (!desc) {
+          showToast("error", "Select a description");
+          return;
+        }
+        const species = document.getElementById("gradeSpecies").value;
+        const btn = document.getElementById("devGradeBtn");
+        btn.disabled = true;
+        document.getElementById("gradeLog").innerHTML = "";
+        document.getElementById("gradeLog").style.display = "none";
+        const isExisting = !!_gradeExistingId;
+        gradeLog(
+          "DEV: Upload grade for " +
+            species +
+            " #" +
+            serialId +
+            " @ " +
+            lw +
+            " lbs",
+          "warn",
+        );
+        gradeLog("Uploading 3 images directly to Pi → EC2...", "info");
+        try {
+          const formData = new FormData();
+          formData.append("serial_id", String(serialId));
+          formData.append("live_weight", lw);
+          formData.append("side_image", _devFiles.side);
+          formData.append("top_image", _devFiles.top);
+          formData.append("front_image", _devFiles.front);
+          const resp = await HerdAuth.fetch(
+            CONFIG.API_BASE + "/api/prod/grade/test",
+            { method: "POST", body: formData },
+          );
+          const body = await resp.json();
+          if (!resp.ok) {
+            gradeLog(
+              "Upload grade rejected: " +
+                (body.message || body.error_code || resp.status),
+              "err",
+            );
+            if (body.fix) gradeLog("Fix: " + body.fix, "warn");
+            btn.disabled = false;
+            return;
+          }
+          gradeLog("Grade returned — opening review...", "ok");
+          pendingGradeResult = {
+            serial_id: serialId,
+            species,
+            description: desc,
+            grade: body.grade || null,
+            live_weight: lw,
+            all_views_ok:
+              body.all_views_successful ?? body.all_views_ok ?? null,
+            measurements: body.measurements || null,
+            capture_sec: body.timing?.capture_sec || null,
+            ec2_sec: body.timing?.ec2_sec || null,
+            total_sec: body.timing?.total_sec || null,
+            warnings: body.warnings || [],
+            view_errors: body.view_errors || [],
+            _isExisting: isExisting,
+          };
+          openGradeReview(pendingGradeResult, serialId);
+        } catch (err) {
+          gradeLog("Network error: " + err.message, "err");
+        } finally {
+          btn.disabled = false;
         }
       }
 

@@ -2,7 +2,9 @@
 Grading results routes.
 
 Write path: frontend calls POST /grading after operator confirms a grade.
-Read path: frontend calls GET /grading/{serial_id} to show history.
+Read path: frontend calls GET /grading/{serial_id} to show result.
+
+One grade result per animal — re-grading replaces the existing result.
 
 Supports both goats and lambs — the grade_results table references
 animals(serial_id) instead of a species-specific table.
@@ -27,31 +29,26 @@ class GradeResultIn(BaseModel):
     all_views_ok: Optional[bool] = None
     measurements: Optional[dict] = None
 
-    # Raw capture S3 keys
     side_raw_s3_key: Optional[str] = None
     top_raw_s3_key: Optional[str] = None
     front_raw_s3_key: Optional[str] = None
 
-    # Debug overlay S3 keys
     side_debug_s3_key: Optional[str] = None
     top_debug_s3_key: Optional[str] = None
     front_debug_s3_key: Optional[str] = None
 
-    # Timing
     capture_sec: Optional[float] = None
     ec2_sec: Optional[float] = None
     total_sec: Optional[float] = None
 
-    # Warnings
     warnings: Optional[list[str]] = None
 
 
 @router.get("/{serial_id}")
 async def get_grades_for_animal(request: Request, serial_id: int):
-    """Get all grading results for an animal, newest first."""
+    """Get the grading result for an animal."""
     pool = await get_conn(request)
     async with pool.acquire() as conn:
-        # Verify animal exists and is gradeable
         animal = await conn.fetchrow(
             "SELECT serial_id, species FROM animals WHERE serial_id = $1", serial_id
         )
@@ -110,7 +107,6 @@ async def update_grade_result(request: Request, result_id: int):
     pool = await get_conn(request)
     body = await request.json()
 
-    # Only allow updating specific fields
     allowed = {"grade", "live_weight", "all_views_ok"}
     updates = {k: v for k, v in body.items() if k in allowed}
     if not updates:
@@ -132,10 +128,13 @@ async def update_grade_result(request: Request, result_id: int):
 
 @router.post("", status_code=201)
 async def create_grade_result(request: Request, body: GradeResultIn):
-    """Record a new grading result. Called by frontend after operator confirms."""
+    """
+    Record a grading result. One result per animal — if a result already
+    exists for this serial_id, it is replaced (upsert).
+    Called by frontend after operator confirms.
+    """
     pool = await get_conn(request)
     async with pool.acquire() as conn:
-        # Verify animal exists and is gradeable
         animal = await conn.fetchrow(
             "SELECT serial_id, species FROM animals WHERE serial_id = $1", body.serial_id
         )
@@ -146,26 +145,51 @@ async def create_grade_result(request: Request, body: GradeResultIn):
 
         measurements_json = json.dumps(body.measurements) if body.measurements else None
 
-        row = await conn.fetchrow(
-            """INSERT INTO grade_results
-               (serial_id, grade, live_weight, all_views_ok, measurements,
-                side_raw_s3_key, top_raw_s3_key, front_raw_s3_key,
-                side_debug_s3_key, top_debug_s3_key, front_debug_s3_key,
-                capture_sec, ec2_sec, total_sec, warnings)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-               RETURNING *""",
-            body.serial_id, body.grade, body.live_weight, body.all_views_ok,
-            measurements_json,
-            body.side_raw_s3_key, body.top_raw_s3_key, body.front_raw_s3_key,
-            body.side_debug_s3_key, body.top_debug_s3_key, body.front_debug_s3_key,
-            body.capture_sec, body.ec2_sec, body.total_sec,
-            body.warnings,
+        # Check if a grade result already exists for this animal
+        existing = await conn.fetchrow(
+            "SELECT id FROM grade_results WHERE serial_id = $1", body.serial_id
         )
 
-        # Update the animal's grade field on the species table
+        if existing:
+            # Re-grade: replace existing result
+            row = await conn.fetchrow(
+                """UPDATE grade_results SET
+                    grade = $2, live_weight = $3, all_views_ok = $4, measurements = $5,
+                    side_raw_s3_key = $6, top_raw_s3_key = $7, front_raw_s3_key = $8,
+                    side_debug_s3_key = $9, top_debug_s3_key = $10, front_debug_s3_key = $11,
+                    capture_sec = $12, ec2_sec = $13, total_sec = $14, warnings = $15,
+                    graded_at = NOW()
+                   WHERE serial_id = $1
+                   RETURNING *""",
+                body.serial_id, body.grade, body.live_weight, body.all_views_ok,
+                measurements_json,
+                body.side_raw_s3_key, body.top_raw_s3_key, body.front_raw_s3_key,
+                body.side_debug_s3_key, body.top_debug_s3_key, body.front_debug_s3_key,
+                body.capture_sec, body.ec2_sec, body.total_sec,
+                body.warnings,
+            )
+        else:
+            # First grade
+            row = await conn.fetchrow(
+                """INSERT INTO grade_results
+                   (serial_id, grade, live_weight, all_views_ok, measurements,
+                    side_raw_s3_key, top_raw_s3_key, front_raw_s3_key,
+                    side_debug_s3_key, top_debug_s3_key, front_debug_s3_key,
+                    capture_sec, ec2_sec, total_sec, warnings)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                   RETURNING *""",
+                body.serial_id, body.grade, body.live_weight, body.all_views_ok,
+                measurements_json,
+                body.side_raw_s3_key, body.top_raw_s3_key, body.front_raw_s3_key,
+                body.side_debug_s3_key, body.top_debug_s3_key, body.front_debug_s3_key,
+                body.capture_sec, body.ec2_sec, body.total_sec,
+                body.warnings,
+            )
+
+        # Sync grade to species table
         if body.grade:
             species = animal["species"]
-            table = species + "s"  # goat -> goats, lamb -> lambs
+            table = species + "s"
             await conn.execute(
                 f"UPDATE {table} SET grade = $1 WHERE serial_id = $2",
                 body.grade, body.serial_id,

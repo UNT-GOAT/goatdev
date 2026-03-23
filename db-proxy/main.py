@@ -263,6 +263,10 @@ async def _fire_audit_log(
     if not action:
         return
 
+    # Skip audit logging for dev account
+    if user_info.get("username") == "dev":
+        return
+
     resource_type, resource_id = _parse_resource(path)
     if not resource_type:
         return
