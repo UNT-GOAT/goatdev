@@ -304,6 +304,11 @@
         flex-direction: column;
         height: 100%;
       }
+      #page-grading.active {
+        overflow-y: auto;
+        height: auto;
+        min-height: 100%;
+      }
       .stat-row {
         display: flex;
         gap: 12px;
@@ -2065,14 +2070,23 @@
               <div
                 class="panel"
                 style="
-                  flex: 1;
-                  min-height: 0;
+                  min-height: 300px;
                   display: flex;
                   flex-direction: column;
                   overflow: hidden;
                 "
               >
                 <div class="panel-header shrink-0">Grade History</div>
+                <div
+                  class="tbl-head shrink-0"
+                  style="
+                    grid-template-columns: 80px 76px 1fr 72px 94px 1fr 90px 50px;
+                  "
+                >
+                  <span>Serial</span><span>Type</span><span>Description</span
+                  ><span>Weight</span><span>Grade</span><span>Provider</span
+                  ><span>Graded</span><span></span>
+                </div>
                 <div
                   id="gradeHistoryBody"
                   style="overflow-y: auto; flex: 1; min-height: 0"
@@ -3525,6 +3539,8 @@
             .forEach((p) => p.classList.remove("active"));
           document.getElementById("page-" + pg).classList.add("active");
           document.getElementById("pageTitle").textContent = TITLES[pg] || pg;
+          document.querySelector(".content").style.overflow =
+            pg === "grading" ? "auto" : "hidden";
           setCamerasForPage(pg);
           if (pg === "grading") computeNextGradeId();
           if (pg === "logs") loadAuditLogs();
@@ -4908,36 +4924,33 @@
         }
         body.innerHTML = allGrades
           .map((g) => {
-            const viewsOk = g.all_views_ok
-              ? '<span style="color:var(--accent);font-size:10px">OK</span>'
-              : '<span style="color:var(--text-faint);font-size:10px">Partial</span>';
-            const time = g.total_sec
-              ? parseFloat(g.total_sec).toFixed(1) + "s"
-              : "—";
             const speciesCol = g.species
               ? typeBadge(g.species)
               : '<span style="color:var(--text-faint);font-size:10px">—</span>';
             const descCol = g.description
-              ? '<span style="color:var(--text-secondary);font-size:10px">' +
+              ? '<span style="color:var(--text-secondary);font-size:12px">' +
                 esc(g.description) +
                 "</span>"
-              : '<span style="color:var(--text-faint);font-size:10px">—</span>';
+              : '<span style="color:var(--text-faint);font-size:12px">—</span>';
+            const provName = g.serial_id
+              ? (allAnimals.find((a) => a.serial_id == g.serial_id) || {})
+                  .providerName || "—"
+              : "—";
             return (
-              '<div class="tbl-row" style="grid-template-columns:70px 65px 65px 90px 70px 55px 50px 1fr 50px"><span style="color:var(--text-primary);font-weight:600;font-family:\'JetBrains Mono\',monospace;font-size:12px">' +
+              '<div class="tbl-row" style="grid-template-columns:80px 76px 1fr 72px 94px 1fr 90px 50px"><span style="color:var(--text-primary);font-weight:600;font-family:\'JetBrains Mono\',monospace;font-size:12px">' +
               g.serial_id +
               "</span>" +
               speciesCol +
               descCol +
-              gradeBadge(g.grade) +
-              "<span style=\"color:var(--text-secondary);font-family:'JetBrains Mono',monospace;font-size:11px\">" +
+              "<span style=\"color:var(--text-secondary);font-family:'JetBrains Mono',monospace;font-size:12px\">" +
               wt(g.live_weight) +
               "</span>" +
-              viewsOk +
-              "<span style=\"color:var(--text-muted);font-family:'JetBrains Mono',monospace;font-size:9px\">" +
-              time +
+              gradeBadge(g.grade) +
+              '<span style="color:var(--text-muted);font-size:12px">' +
+              esc(provName) +
               "</span>" +
               '<span style="color:var(--text-faint);font-size:10px">' +
-              fmtDate(g.graded_at) +
+              fmtDateShort(g.graded_at) +
               "</span>" +
               '<button class="btn btn-sm" onclick="viewGradeDetail(' +
               g.id +
