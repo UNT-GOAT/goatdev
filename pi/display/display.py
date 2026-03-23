@@ -9,7 +9,7 @@ errors on the display.
 
 Server health checks (prod, proxy, EC2) still use HTTP since those are
 genuine "is this service alive" checks where a network round-trip is the
-point.
+point. These checks are run on a background thread to prevent UI freezing.
 
 Pin wiring:
   VCC  -> Pin 17 (3.3V)
@@ -27,6 +27,8 @@ import os
 import sys
 import json
 import subprocess
+import threading
+import urllib.request
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 
@@ -53,11 +55,7 @@ LOGO_PATH = "/home/pi/goatdev/pi/display/boot_logo.png"
 EC2_GOAT_API = os.environ.get('EC2_GOAT_API')
 
 # Path to the shared state file written by camera_heating.py every 2s.
-# Contains filtered temps, heater on/off, failsafe state, overrides.
 HEATER_STATE_FILE = '/tmp/heater_state.json'
-
-# If the shared state file hasn't been updated in this many seconds,
-# consider it stale (heating service may be dead).
 HEATER_STATE_STALE_SEC = 10
 
 CAMERAS = {
@@ -66,13 +64,17 @@ CAMERAS = {
     'FRONT': '/dev/camera_front',
 }
 
-# Mapping from heating service camera names to display sensor keys.
-# The heating service uses camera1/camera2/camera3; the display shows
-# these as sensor1/sensor2/sensor3 in the temp readout section.
 CAM_TO_SENSOR = {
     'camera1': 'sensor1',
     'camera2': 'sensor2',
     'camera3': 'sensor3',
+}
+
+# === SHARED THREAD STATE ===
+# The background thread updates this; the main UI thread reads it instantly.
+NETWORK_STATE = {
+    'wifi': 0,
+    'servers': {'PROD': False, 'CAM_PROXY': False, 'EC2': False}
 }
 
 # === COLORS ===
@@ -120,22 +122,7 @@ def load_font(size):
 # === SYSTEM CHECKS ===
 
 def read_heater_state():
-    """Read heater state and filtered temps from the shared state file.
-
-    The heating service writes this file atomically every 2 seconds with
-    all camera temps (spike-filtered, bogus-read-rejected), heater on/off
-    states, failsafe states, and overrides.
-
-    Returns a dict with:
-      - 'ok': True if the file was read and is fresh
-      - 'stale': True if the file exists but hasn't been updated recently
-      - 'temps': {sensor_key: temp_f_int or None}
-      - 'any_on', 'any_failsafe', 'any_override': summary booleans
-      - 'details': {camera_name: {on, failsafe, override}} for status text
-
-    If the file doesn't exist or can't be read, returns a default dict
-    with all-unknown state so the display degrades gracefully.
-    """
+    """Read heater state and filtered temps from the shared state file."""
     default = {
         'ok': False,
         'stale': False,
@@ -152,14 +139,11 @@ def read_heater_state():
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return default
 
-    # Check freshness — if the heating service is dead, the file goes stale
     file_age = time.time() - data.get('timestamp', 0)
     is_stale = file_age > HEATER_STATE_STALE_SEC
 
     cameras = data.get('cameras', {})
 
-    # Extract filtered temps, falling back to last_good_temp so the display
-    # doesn't flash errors during transient sensor hiccups
     temps = {}
     for cam_name, sensor_key in CAM_TO_SENSOR.items():
         cam = cameras.get(cam_name, {})
@@ -170,7 +154,6 @@ def read_heater_state():
             fallback = cam.get('last_good_temp')
             temps[sensor_key] = round(fallback) if fallback is not None else None
 
-    # Build detail dict for status text rendering
     details = {}
     for cam_name, cam in cameras.items():
         details[cam_name] = {
@@ -191,9 +174,7 @@ def read_heater_state():
 
 
 def check_cameras():
-    """Return dict of camera name -> status string.
-    Only checks device existence/permissions. The camera proxy
-    owns all camera handles — no more BUSY state needed."""
+    """Return dict of camera name -> status string."""
     result = {}
     for name, dev in CAMERAS.items():
         if not os.path.exists(dev):
@@ -225,25 +206,36 @@ def check_network():
         return 0
 
 
-def _curl_ok(url, timeout=2):
-    """Return True if curl gets a 2xx from url."""
+def _http_ok(url, timeout=2.0):
+    """Return True if we get a 200 HTTP response natively."""
     try:
-        result = subprocess.run(
-            ['curl', '-sf', '-o', '/dev/null', '-m', str(timeout), url],
-            capture_output=True, timeout=timeout + 3
-        )
-        return result.returncode == 0
+        req = urllib.request.Request(url, method='GET')
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            return response.status == 200
     except Exception:
         return False
 
 
-def check_servers():
-    """Return dict of server name -> True/False."""
-    return {
-        'PROD': _curl_ok('http://localhost:5000/health'),
-        'CAM_PROXY': _curl_ok('http://localhost:8080/status'),
-        'EC2': _curl_ok(f'{EC2_GOAT_API}/health', timeout=6),
-    }
+def network_worker_loop():
+    """Runs forever in the background, updating NETWORK_STATE."""
+    global NETWORK_STATE
+    while True:
+        # 1. Check Wi-Fi
+        wifi_strength = check_network()
+        
+        # 2. Check Servers (using tighter timeouts)
+        servers_status = {
+            'PROD': _http_ok('http://localhost:5000/health', timeout=1.0),
+            'CAM_PROXY': _http_ok('http://localhost:8080/status', timeout=1.0),
+            'EC2': _http_ok(f'{EC2_GOAT_API}/health', timeout=2.5),
+        }
+        
+        # 3. Update the global state
+        NETWORK_STATE['wifi'] = wifi_strength
+        NETWORK_STATE['servers'] = servers_status
+        
+        # Wait 5 seconds before checking again
+        time.sleep(5)
 
 
 # === DRAWING HELPERS ===
@@ -278,6 +270,8 @@ def draw_wifi(draw, x, y, strength):
 # === BOOT SCREEN ===
 def show_boot(disp):
     """Show eagle logo fading in, hold until services ready."""
+    boot_start = time.time() # Start 20s timer immediately
+    
     logo = None
     if os.path.exists(LOGO_PATH):
         try:
@@ -289,83 +283,69 @@ def show_boot(disp):
         except Exception as e:
             print(f"Logo load error: {e}")
 
-    if not logo:
-        img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
-        try:
-            disp.image(img)
-        except Exception:
-            pass
-        time.sleep(2)
-        return
-
     loading_font = load_font(14)
+    text = "Systems loading..."
 
-    # Fade in
-    for alpha_pct in range(0, 105, 5):
+    if logo:
+        # Fade in
+        for alpha_pct in range(0, 105, 5):
+            img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
+            draw = ImageDraw.Draw(img)
+
+            logo_faded = logo.copy()
+            r, g, b, a = logo_faded.split()
+            a = a.point(lambda x: int(x * alpha_pct / 100))
+            logo_faded = Image.merge("RGBA", (r, g, b, a))
+
+            lx = (SCREEN_W - logo_faded.width) // 2
+            ly = (SCREEN_H - logo_faded.height) // 2 - 20
+            img.paste(logo_faded, (lx, ly), logo_faded)
+
+            tw = draw.textlength(text, font=loading_font)
+            text_color = tuple(int(255 * alpha_pct / 100) for _ in range(3))
+            draw.text(((SCREEN_W - tw) // 2, ly + logo_faded.height + 12), text, font=loading_font, fill=text_color)
+
+            try:
+                disp.image(img)
+            except Exception:
+                pass
+            time.sleep(0.04)
+
+        # Draw final static logo for the waiting period
         img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
         draw = ImageDraw.Draw(img)
-
-        logo_faded = logo.copy()
-        r, g, b, a = logo_faded.split()
-        a = a.point(lambda x: int(x * alpha_pct / 100))
-        logo_faded = Image.merge("RGBA", (r, g, b, a))
-
-        lx = (SCREEN_W - logo_faded.width) // 2
-        ly = (SCREEN_H - logo_faded.height) // 2 - 20
-        img.paste(logo_faded, (lx, ly), logo_faded)
-
-        text = "Systems loading..."
+        img.paste(logo, (lx, ly), logo)
+        draw.text(((SCREEN_W - tw) // 2, ly + logo.height + 12), text, font=loading_font, fill=WHITE)
+        
+    else:
+        # Fallback if no logo: just center the text
+        img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
+        draw = ImageDraw.Draw(img)
         tw = draw.textlength(text, font=loading_font)
-        text_color = tuple(int(255 * alpha_pct / 100) for _ in range(3))
-        draw.text(((SCREEN_W - tw) // 2, ly + logo_faded.height + 12), text, font=loading_font, fill=text_color)
+        draw.text(((SCREEN_W - tw) // 2, SCREEN_H // 2), text, font=loading_font, fill=WHITE)
 
-        try:
-            disp.image(img)
-        except Exception:
-            pass
-        time.sleep(0.04)
-
-    # Hold logo while checking services (up to 20 seconds)
-    img = Image.new("RGB", (SCREEN_W, SCREEN_H), BLACK)
-    draw = ImageDraw.Draw(img)
-    lx = (SCREEN_W - logo.width) // 2
-    ly = (SCREEN_H - logo.height) // 2 - 20
-    img.paste(logo, (lx, ly), logo)
-    text = "Systems loading..."
-    tw = draw.textlength(text, font=loading_font)
-    draw.text(((SCREEN_W - tw) // 2, ly + logo.height + 12), text, font=loading_font, fill=WHITE)
+    # Push the final waiting screen
     try:
         disp.image(img)
     except Exception:
         pass
 
-    start = time.time()
-    while time.time() - start < 20:
-        servers = check_servers()
+    # Hold on this screen while checking services (up to 20 seconds total)
+    while time.time() - boot_start < 20:
+        servers = NETWORK_STATE['servers']
         if all(servers.values()):
-            break
+            break # All 3 are green, boot immediately!
         time.sleep(2)
 
 
 # === STATUS SCREEN ===
 def draw_status(disp, font_big, font_med, font_sm, font_xs):
-    """Main status loop.
-
-    Uses two check intervals:
-      - Fast (0.25s): camera device checks + heater state file read.
-        The file read is sub-millisecond on tmpfs — no network, no subprocess.
-      - Slow (5s): server health checks (HTTP), wifi signal strength.
-        These spawn curl subprocesses so we don't want them every quarter second.
-    """
-    slow_interval = 5
+    """Main status loop. Network checks are handled in the background thread."""
     fast_interval = 0.25
-    last_slow = 0
     last_fast = 0
     frame_count = 0
 
-    # Cached state
-    wifi = 0
-    server_status = {'PROD': False, 'CAM_PROXY': False, 'EC2': False}
+    # Cached state for fast local checks
     cam_status = {name: 'MISSING' for name in CAMERAS}
     heater_state = {
         'ok': False, 'stale': False,
@@ -383,11 +363,9 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             heater_state = read_heater_state()
             last_fast = now
 
-        # Slow checks every 5 seconds — network calls
-        if now - last_slow >= slow_interval:
-            wifi = check_network()
-            server_status = check_servers()
-            last_slow = now
+        # Read the latest network state instantly from memory (no blocking!)
+        wifi = NETWORK_STATE['wifi']
+        server_status = NETWORK_STATE['servers']
 
         # Pull temps from heater state for convenience
         temps = heater_state['temps']
@@ -458,8 +436,6 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             draw.text((12, y), "CAMERAS", font=font_big, fill=WHITE)
             draw_dot(draw, SCREEN_W - 26, y + 18, camera_color)
 
-            cam_proxy_up = server_status.get('CAM_PROXY', False)
-
             if not cam_proxy_up:
                 down_display = ["CAM_PROXY"]
                 line = "DOWN: " + ", ".join(down_display)
@@ -487,7 +463,6 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
             draw_dot(draw, SCREEN_W - 26, y + 18, temp_color)
 
             if heater_state['stale']:
-                # Heating service hasn't updated the state file recently
                 draw.text((14, y + 34), "HEATER SVC STALE", font=font_xs, fill=RED)
             elif heater_state['any_failsafe']:
                 fs = [k for k, v in heater_state['details'].items() if v.get('failsafe')]
@@ -540,7 +515,8 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
         except Exception as e:
             print(f"Display error: {e}")
 
-        time.sleep(1)
+        # Note: Reduced sleep slightly to give a snappier heartbeat/UI feel
+        time.sleep(0.5)
 
 
 # === MAIN ===
@@ -553,6 +529,10 @@ def main():
             font_med = load_font(18)
             font_sm = load_font(15)
             font_xs = load_font(11)
+
+            # Start the background network worker thread
+            net_thread = threading.Thread(target=network_worker_loop, daemon=True)
+            net_thread.start()
 
             show_boot(disp)
 
