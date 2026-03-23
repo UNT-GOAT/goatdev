@@ -309,6 +309,11 @@
         height: auto;
         min-height: 100%;
       }
+      #page-profile.active {
+        overflow-y: auto;
+        height: auto;
+        min-height: 100%;
+      }
       .stat-row {
         display: flex;
         gap: 12px;
@@ -1135,7 +1140,12 @@
           grid-template-columns: 1fr 1fr;
         }
         .detail-panel {
-          display: none;
+          width: 100%;
+          order: -1;
+          margin-bottom: 14px;
+        }
+        #page-animals .flex.gap-14 {
+          flex-direction: column;
         }
         .field-row {
           flex-direction: column;
@@ -1202,11 +1212,14 @@
         #page-dashboard .panel {
           max-height: 50vh;
         }
-        #page-animals .panel.flex-1 {
+        #page-animals .panel.flex-1,
+        #page-grading .panel,
+        #page-logs .panel {
           overflow-x: auto;
           flex: none;
         }
-        #page-animals .panel.flex-1 > div[style*="overflow-y"] {
+        #page-animals .panel.flex-1 > div[style*="overflow-y"],
+        #page-logs .panel > div[style*="overflow-y"] {
           overflow-y: visible !important;
           flex: none !important;
         }
@@ -2238,25 +2251,6 @@
                   </button>
                 </div>
                 <!-- Admin-only section -->
-                <div class="profile-card">
-                  <h3>Danger Zone</h3>
-                  <div
-                    style="
-                      font-size: 12px;
-                      color: var(--text-muted);
-                      margin-bottom: 12px;
-                      line-height: 1.6;
-                    "
-                  >
-                    Permanently delete your account. This cannot be undone.
-                  </div>
-                  <button
-                    class="btn btn-danger btn-sm"
-                    onclick="deleteOwnAccount()"
-                  >
-                    Delete My Account
-                  </button>
-                </div>
                 <div
                   class="profile-card"
                   id="adminSection"
@@ -2285,6 +2279,15 @@
                     + Create User
                   </button>
                 </div>
+                <div class="profile-card">
+                  <h3>Danger Zone</h3>
+                  <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.6">
+                    Permanently delete your account. This cannot be undone.
+                  </div>
+                  <button class="btn btn-danger btn-sm" onclick="deleteOwnAccount()">Delete My Account</button>
+                </div>
+              </div>
+            </div>
               </div>
             </div>
           </div>
@@ -3549,7 +3552,7 @@
           document.getElementById("page-" + pg).classList.add("active");
           document.getElementById("pageTitle").textContent = TITLES[pg] || pg;
           document.querySelector(".content").style.overflow =
-            pg === "grading" ? "auto" : "hidden";
+             window.innerWidth <= 640 ? "auto" : (pg === "grading" || pg === "profile" ? "auto" : "hidden");
           setCamerasForPage(pg);
           if (pg === "grading") computeNextGradeId();
           if (pg === "logs") loadAuditLogs();
@@ -3560,6 +3563,11 @@
         if (window.innerWidth <= 640) return;
         document.getElementById("sidebar").classList.toggle("collapsed");
       }
+
+      window.addEventListener("resize", () => {
+        document.querySelector(".content").style.overflow =
+          window.innerWidth <= 640 ? "auto" : (currentPage === "grading" || currentPage === "profile" ? "auto" : "hidden");
+      });
 
       // DASHBOARD
       function updateDashboard() {
@@ -3746,6 +3754,7 @@
         selectedAnimalType = type;
         filterAnimals();
         document.getElementById("animalDetail").style.display = "";
+        if (window.innerWidth <= 900) document.getElementById("animalDetail").scrollIntoView({ behavior: 'smooth' });
         document.getElementById("detailSerial").textContent = a.serial_id;
         document.getElementById("detailType").innerHTML = typeBadge(a.type);
         document.getElementById("detailDesc").textContent =
