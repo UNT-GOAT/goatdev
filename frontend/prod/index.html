@@ -3139,13 +3139,6 @@
         }
         return result + safe.slice(last);
       }
-      function fmtDateShort(d) {
-        if (!d) return "—";
-        return new Date(d).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        });
-      }
       function fmtDate(d) {
         if (!d) return "—";
         return new Date(d).toLocaleDateString("en-US", {
@@ -3608,7 +3601,7 @@
                 '</div><div class="flex items-center gap-8">' +
                 gradeBadge(g.grade) +
                 '<span style="color:var(--text-faint);font-size:10px">' +
-                fmtDateShort(g.graded_at) +
+                fmtDate(g.graded_at) +
                 "</span></div></div>",
             )
             .join("");
@@ -3739,7 +3732,7 @@
               highlight(a.providerName, q) +
               "</span>" +
               '<span style="color:var(--text-faint);font-size:10px">' +
-              fmtDateShort(a.created_at) +
+              fmtDate(a.created_at) +
               "</span></div>"
             );
           })
@@ -4968,7 +4961,7 @@
               esc(provName) +
               "</span>" +
               '<span style="color:var(--text-faint);font-size:10px">' +
-              fmtDateShort(g.graded_at) +
+              fmtDate(g.graded_at) +
               "</span>" +
               '<button class="btn btn-sm" onclick="viewGradeDetail(' +
               g.id +
