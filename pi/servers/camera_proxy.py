@@ -95,6 +95,9 @@ STALE_FRAME_THRESHOLD_SEC = 3
 HEARTBEAT_INTERVAL_SEC = 300
 RECONNECT_INTERVAL_SEC = 5
 
+CONSECUTIVE_FAIL_THRESHOLD = 3   # Release camera after this many consecutive read failures
+RECONNECT_COOLDOWN_SEC = 30      # Wait this long between reconnect attempts for a failed camera
+
 # Idle mode settings
 IDLE_CHECK_INTERVAL_SEC = 0.5   # How often to check for wake conditions while idle
 CAPTURE_WAKE_TIMEOUT_SEC = 2.0  # Max time to wait for fresh frame after wake
@@ -145,6 +148,7 @@ class FrameBuffer:
         # Stats
         self.frame_count = 0
         self.error_count = 0
+        self.consecutive_fails = 0
         self.last_error = None
         self.fps_estimate = 0.0
         self._fps_window_start = time.time()
@@ -179,6 +183,7 @@ class FrameBuffer:
             self.raw_timestamp = now
         self.frame_count += 1
         self.last_error = None
+        self.consecutive_fails = 0
 
         # FPS calculation (rolling 10s window)
         self._fps_window_count += 1
@@ -194,6 +199,7 @@ class FrameBuffer:
     def record_error(self, error_msg):
         """Record a read error."""
         self.error_count += 1
+        self.consecutive_fails += 1
         self.last_error = error_msg
 
     def get_raw_frame(self):
@@ -337,10 +343,14 @@ def open_camera(name, device):
 
         if ret:
             log.info(f'camera:{name}', 'Opened and warmed up', device=device)
+            return cap
         else:
-            log.warn(f'camera:{name}', 'Opened but warmup failed', device=device)
-
-        return cap
+            log.warn(f'camera:{name}', 'Warmup failed, releasing', device=device)
+            try:
+                cap.release()
+            except Exception:
+                pass
+            return None
 
     except Exception as e:
         log.error(f'camera:{name}', 'Open exception', device=device, error=str(e))
@@ -417,94 +427,102 @@ def _wait_for_fresh_frame(camera_name, timeout=CAPTURE_WAKE_TIMEOUT_SEC):
 
 def reader_loop():
     """
-    Main reader loop. All 3 cameras stay open at full resolution.
-    Only reads from 2 at a time (rotating pairs) to stay within
-    USB controller bandwidth. Single thread, no contention.
-
-    When no stream clients are connected and no capture is pending,
-    the reader enters idle mode — cameras stay open but no reads
-    occur. This reduces USB controller wear and CPU usage.
-
-    Pi 4's VL805 USB controller gets select() timeouts when 3
-    cameras do concurrent reads, but handles 2 fine. Keeping
-    the 3rd open but idle avoids the 1.2s warmup penalty on swap.
-
-    _reader_idle is now a threading.Event for thread-safe
-    reads from Flask/gevent request threads.
+    Main reader loop with resilient camera handling.
+    
+    Builds pairs dynamically from cameras currently in `caps`.
+    If a camera fails CONSECUTIVE_FAIL_THRESHOLD reads in a row,
+    it's released from `caps` and reconnected on a cooldown timer.
     """
-    pair_index = 0
-    throttle_interval = 1.0 / TARGET_FPS
-
+    _last_reconnect = {}  # camera_name -> timestamp of last reconnect attempt
+    
     while True:
-        # Skip if no cameras open
-        if not caps:
-            time.sleep(RECONNECT_INTERVAL_SEC)
+        # Build dynamic pairs from cameras currently in caps
+        available = [name for name in CAMERAS if name in caps]
+        
+        if len(available) == 0:
+            # No cameras — try reconnecting all on cooldown
+            now = time.time()
             for name in CAMERAS:
-                if name not in caps:
+                last = _last_reconnect.get(name, 0)
+                if now - last > RECONNECT_COOLDOWN_SEC:
+                    _last_reconnect[name] = now
+                    log.info(f'reader:{name}', 'Attempting reconnect (no cameras available)')
                     reconnect_camera(name)
+            time.sleep(RECONNECT_INTERVAL_SEC)
             continue
-
+        
+        if len(available) == 1:
+            pairs = [(available[0], None)]
+        elif len(available) == 2:
+            pairs = [(available[0], available[1])]
+        else:
+            # 3+ cameras: generate rotating pairs
+            pairs = []
+            for i in range(len(available)):
+                for j in range(i + 1, len(available)):
+                    pairs.append((available[i], available[j]))
+        
         # === IDLE CHECK ===
         if not _has_active_demand():
             if not _reader_idle.is_set():
                 log.info('reader', 'Entering idle mode (no clients, no captures)')
                 _reader_idle.set()
-
-            # Sleep until something needs us
             _capture_requested.wait(timeout=IDLE_CHECK_INTERVAL_SEC)
             continue
-
-        # === WAKING FROM IDLE ===
+        
         if _reader_idle.is_set():
             log.info('reader', 'Waking from idle')
             _reader_idle.clear()
-
-        # Clear capture request flag (reader is now active)
         _capture_requested.clear()
-
-        a_name, b_name = CAMERA_PAIRS[pair_index % len(CAMERA_PAIRS)]
-
-        # Read FRAMES_PER_PAIR from this pair
-        for _ in range(FRAMES_PER_PAIR):
-            read_start = time.time()
-
-            if a_name in caps:
-                try:
-                    ret, frame = caps[a_name].read()
-                    if ret and frame is not None:
-                        buffers[a_name].store_raw(frame.tobytes())
-                    else:
-                        buffers[a_name].record_error('Read returned empty frame')
-                except Exception as e:
-                    buffers[a_name].record_error(f'Read exception: {e}')
-                    log.error(f'reader:{a_name}', 'Read exception', error=str(e))
-
-            if b_name in caps:
-                try:
-                    ret, frame = caps[b_name].read()
-                    if ret and frame is not None:
-                        buffers[b_name].store_raw(frame.tobytes())
-                    else:
-                        buffers[b_name].record_error('Read returned empty frame')
-                except Exception as e:
-                    buffers[b_name].record_error(f'Read exception: {e}')
-                    log.error(f'reader:{b_name}', 'Read exception', error=str(e))
-
-            # Throttle to target FPS
-            read_elapsed = time.time() - read_start
-            sleep_time = throttle_interval - read_elapsed
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-
-        pair_index += 1
-
-        # Periodic reconnection check for missing cameras
+        
+        # Read from each pair
+        for pair in pairs:
+            a_name, b_name = pair
+            
+            for _ in range(FRAMES_PER_PAIR):
+                read_start = time.time()
+                
+                for cam_name in [a_name, b_name]:
+                    if cam_name is None or cam_name not in caps:
+                        continue
+                    try:
+                        ret, frame = caps[cam_name].read()
+                        if ret and frame is not None:
+                            buffers[cam_name].store_raw(frame.tobytes())
+                        else:
+                            buffers[cam_name].record_error('Read returned empty frame')
+                    except Exception as e:
+                        buffers[cam_name].record_error(f'Read exception: {e}')
+                        log.error(f'reader:{cam_name}', 'Read exception', error=str(e))
+                    
+                    # Check if camera should be released
+                    if buffers[cam_name].consecutive_fails >= CONSECUTIVE_FAIL_THRESHOLD:
+                        log.warn(f'reader:{cam_name}',
+                                 f'Releasing after {CONSECUTIVE_FAIL_THRESHOLD} consecutive failures',
+                                 total_errors=buffers[cam_name].error_count)
+                        try:
+                            caps[cam_name].release()
+                        except Exception:
+                            pass
+                        del caps[cam_name]
+                        _last_reconnect[cam_name] = time.time()
+                        break  # Break inner frame loop for this pair
+                
+                # Throttle to target FPS
+                read_elapsed = time.time() - read_start
+                sleep_time = (1.0 / TARGET_FPS) - read_elapsed
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+        
+        # Periodic reconnection for cameras not in caps
+        now = time.time()
         for name in CAMERAS:
-            buf = buffers[name]
-            if name not in caps and buf.error_count > 0:
-                if buf.error_count % 10 == 0:
-                    log.info(f'reader:{name}', 'Attempting reconnect',
-                            errors=buf.error_count)
+            if name not in caps:
+                last = _last_reconnect.get(name, 0)
+                if now - last > RECONNECT_COOLDOWN_SEC:
+                    _last_reconnect[name] = now
+                    log.info(f'reader:{name}', 'Attempting periodic reconnect',
+                             total_errors=buffers[name].error_count)
                     reconnect_camera(name)
 
 
@@ -660,7 +678,10 @@ def ws_stream(ws, camera):
     """
     buf = buffers.get(camera)
     if not buf:
-        ws.close(reason=f'Unknown camera: {camera}')
+        try:
+            ws.close(reason=f'Unknown camera: {camera}')
+        except Exception:
+            pass
         return
 
     # Wake reader if idle
@@ -669,7 +690,10 @@ def ws_stream(ws, camera):
 
     if buf.raw_frame is None:
         if not _wait_for_fresh_frame(camera, timeout=3.0):
-            ws.close(reason=f'Camera {camera} not available')
+            try:
+                ws.close(reason=f'Camera {camera} not available')
+            except Exception:
+                pass
             return
 
     buf._increment_clients()
@@ -702,6 +726,10 @@ def ws_stream(ws, camera):
             except Exception:
                 break  # Client disconnected
 
+    except (BrokenPipeError, ConnectionResetError, OSError):
+        pass  # Client gone, clean up silently
+    except Exception as e:
+        log.warn(f'ws:{camera}', 'WS error', error=str(e))
     finally:
         buf._decrement_clients()
         log.info(f'ws:{camera}', 'Client disconnected',

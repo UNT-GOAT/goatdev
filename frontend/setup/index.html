@@ -1,237 +1,677 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, user-scalable=no"
+      content="width=device-width,initial-scale=1.0,user-scalable=no"
     />
-    <title>Capture | HerdSync</title>
+    <title>Setup | HerdSync</title>
+    <link rel="icon" href="https://herd-sync.com/logos/favicon.ico?v=2" />
     <script src="/js/config.js"></script>
     <script src="/js/auth.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
     <style>
-      * {
+      *,
+      *::before,
+      *::after {
         box-sizing: border-box;
         margin: 0;
         padding: 0;
       }
+      :root,
+      :root[data-theme="dark"] {
+        --bg-deep: #08080f;
+        --bg-base: #0c0c14;
+        --bg-surface: #111119;
+        --bg-raised: #16161f;
+        --bg-input: #0a0a12;
+        --border: #1c1c28;
+        --border-subtle: #141420;
+        --text-primary: #e0e0e8;
+        --text-secondary: #999;
+        --text-muted: #5a5a6e;
+        --text-faint: #3a3a48;
+        --accent: #23783b;
+        --accent-dim: rgba(35, 120, 59, 0.1);
+        --accent-hover: rgba(35, 120, 59, 0.18);
+        --blue: #42a5f5;
+        --orange: #ff9800;
+        --red: #e53935;
+        --purple: #9c27b0;
+        --teal: #26a69a;
+        --shadow: rgba(0, 0, 0, 0.4);
+      }
+      :root[data-theme="light"] {
+        --bg-deep: #f0f1f4;
+        --bg-base: #fff;
+        --bg-surface: #f7f8fa;
+        --bg-raised: #ecedf0;
+        --bg-input: #f2f3f6;
+        --border: #d8dae0;
+        --border-subtle: #e8e9ed;
+        --text-primary: #1a1b2e;
+        --text-secondary: #555;
+        --text-muted: #888;
+        --text-faint: #aaa;
+        --accent: #23783b;
+        --accent-dim: rgba(35, 120, 59, 0.08);
+        --accent-hover: rgba(35, 120, 59, 0.14);
+        --blue: #1e88e5;
+        --orange: #ef6c00;
+        --red: #c62828;
+        --purple: #7b1fa2;
+        --teal: #00897b;
+        --shadow: rgba(0, 0, 0, 0.06);
+      }
+      html,
       body {
+        height: 100%;
         font-family:
-          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-        background: #1a1a2e;
-        color: white;
-        min-height: 100vh;
+          "DM Sans",
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+        background: var(--bg-deep);
+        color: var(--text-primary);
+        -webkit-font-smoothing: antialiased;
+        overflow: hidden;
+      }
+      #app {
+        display: none;
+        height: 100%;
+      }
+      button {
+        font-family: inherit;
+        cursor: pointer;
+      }
+      input,
+      select {
+        font-family: inherit;
+      }
+      .shell {
         display: flex;
-        justify-content: center;
+        height: 100%;
+      }
+      .sidebar {
+        width: 210px;
+        background: var(--bg-base);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+        overflow: hidden;
+        z-index: 20;
+      }
+      .sidebar-brand {
+        padding: 12px 16px;
+        display: flex;
         align-items: center;
+        gap: 10px;
+        min-height: 54px;
+        border-bottom: 1px solid var(--border);
       }
-      .nav {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
+      .sidebar-brand img {
+        height: 40px;
+        width: auto;
+      }
+      .sidebar-brand span {
+        font-size: 11px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        font-weight: 600;
+      }
+      :root[data-theme="dark"] .logo-light {
+        display: none !important;
+      }
+      :root[data-theme="light"] .logo-dark {
+        display: none !important;
+      }
+      .sidebar-nav {
+        flex: 1;
+        padding: 8px;
         display: flex;
-        justify-content: space-between;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .nav-btn {
+        display: flex;
         align-items: center;
-        padding: 12px 20px;
-        background: #0d0d1a;
-        z-index: 100;
-        border-bottom: 1px solid #222;
-      }
-      .nav-left {
-        display: flex;
-        align-items: center;
-        gap: 20px;
-      }
-      .nav-brand {
-        font-size: 15px;
-        font-weight: 700;
-        color: #4caf50;
-        letter-spacing: 0.5px;
-      }
-      .nav-links {
-        display: flex;
-        gap: 4px;
-      }
-      .nav-links a {
-        color: #666;
-        text-decoration: none;
+        gap: 10px;
+        width: 100%;
+        padding: 9px 12px;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text-muted);
         font-size: 13px;
-        padding: 6px 12px;
+        font-weight: 400;
+        text-align: left;
+        transition: all 0.15s;
+        white-space: nowrap;
+      }
+      .nav-btn:hover {
+        color: var(--text-secondary);
+        background: var(--bg-surface);
+      }
+      .nav-btn.active {
+        color: var(--accent);
+        background: var(--accent-dim);
+        font-weight: 600;
+      }
+      .nav-btn svg {
+        flex-shrink: 0;
+        width: 20px;
+        height: 20px;
+      }
+      .sidebar-footer {
+        padding: 8px 10px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .sidebar-footer .footer-user {
+        font-size: 10px;
+        color: var(--text-faint);
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .icon-btn {
+        border: 1px solid var(--border);
+        background: none;
+        color: var(--text-faint);
+        width: 28px;
+        height: 28px;
         border-radius: 6px;
-        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        font-size: 12px;
+        transition: all 0.15s;
       }
-      .nav-links a:hover {
-        color: #ccc;
-        background: #1a1a2e;
+      .icon-btn:hover {
+        border-color: var(--accent);
+        color: var(--accent);
       }
-      .nav-links a.active {
-        color: #4caf50;
-        background: #1a1a2e;
+      .icon-btn.danger:hover {
+        border-color: var(--red);
+        color: var(--red);
       }
-      .nav-right {
+      .main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        min-width: 0;
+      }
+      .topbar {
+        height: 50px;
+        padding: 0 20px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: var(--bg-base);
+        flex-shrink: 0;
+      }
+      .topbar h1 {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--text-secondary);
+      }
+      .topbar-right {
         display: flex;
         align-items: center;
         gap: 12px;
       }
-      .nav-user {
-        font-size: 11px;
-        color: #555;
-      }
-      .logout-btn {
-        background: none;
-        border: 1px solid #333;
-        color: #666;
-        padding: 6px 14px;
-        border-radius: 5px;
-        cursor: pointer;
-        font-size: 13px;
-      }
-      .logout-btn:hover {
-        border-color: #666;
-        color: #888;
-      }
-      #app {
-        display: none;
-        padding: 20px;
-        padding-top: 70px;
-        width: 100%;
-        max-width: 800px;
-      }
-      .app-layout {
+      .pi-status {
         display: flex;
-        gap: 30px;
-        align-items: flex-start;
+        align-items: center;
+        gap: 5px;
+        font-size: 10px;
+        color: var(--text-muted);
       }
-      .control-panel {
-        flex: 0 0 auto;
-        text-align: center;
+      .topbar-user {
+        font-size: 10px;
+        color: var(--text-faint);
       }
-      .right-panel {
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .dot.green {
+        background: var(--accent);
+      }
+      .dot.orange {
+        background: var(--orange);
+      }
+      .dot.red {
+        background: var(--red);
+      }
+      .content {
         flex: 1;
-        min-width: 0;
+        overflow-y: auto;
+        padding: 20px;
         display: flex;
         flex-direction: column;
-        gap: 20px;
       }
-      .form-panel {
-        background: #0d0d1a;
-        border-radius: 10px;
-        padding: 15px;
+      .page {
+        display: none;
       }
-      .form-title {
-        font-size: 12px;
-        color: #666;
-        margin-bottom: 15px;
-        text-transform: uppercase;
-      }
-      .form-row {
+      .page.active {
         display: flex;
-        gap: 15px;
+        flex-direction: column;
+        gap: 16px;
+        min-height: 100%;
+      }
+      .panel {
+        background: var(--bg-surface);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .panel-header {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+        font-size: 10px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+      }
+      .section-label {
+        font-size: 10px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        margin-bottom: 5px;
+      }
+      .inset {
+        background: var(--bg-input);
+        border-radius: 8px;
+        padding: 10px;
+      }
+      .grid-3 {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 12px;
+      }
+      .cam-slot {
+        aspect-ratio: 4/3;
+        background: var(--bg-input);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--border-subtle);
+        color: var(--text-faint);
+        font-size: 11px;
+        overflow: hidden;
+        position: relative;
+      }
+      .cam-slot img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+      .cam-slot .cam-label {
+        position: absolute;
+        top: 4px;
+        left: 5px;
+        font-size: 8px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: rgba(255, 255, 255, 0.5);
+        background: rgba(0, 0, 0, 0.5);
+        padding: 2px 5px;
+        border-radius: 3px;
+        z-index: 1;
+      }
+      .btn {
+        padding: 8px 16px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text-secondary);
+        font-size: 12px;
+        transition: all 0.15s;
+      }
+      .btn:hover {
+        border-color: var(--text-muted);
+        color: var(--text-primary);
+      }
+      .btn-accent {
+        border-color: var(--accent);
+        background: var(--accent-dim);
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .btn-accent:hover {
+        background: var(--accent-hover);
+      }
+      .btn-solid {
+        border: none;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 600;
+        padding: 10px 22px;
+        font-size: 13px;
+        border-radius: 8px;
+      }
+      .btn-solid:hover {
+        background: #1e6633;
+      }
+      .btn-solid:disabled {
+        background: var(--border);
+        color: var(--text-faint);
+        cursor: not-allowed;
+      }
+      .btn-sm {
+        padding: 5px 10px;
+        font-size: 11px;
+      }
+      .btn-danger {
+        border-color: var(--red);
+        color: var(--red);
+      }
+      .btn-danger:hover {
+        background: rgba(229, 57, 53, 0.08);
+      }
+      .field-label {
+        display: block;
+        font-size: 10px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 4px;
+        font-weight: 500;
+      }
+      .field-input,
+      .field-select {
+        width: 100%;
+        padding: 9px 11px;
+        font-size: 13px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg-input);
+        color: var(--text-primary);
+        transition: border-color 0.15s;
+        outline: none;
+      }
+      .field-input:focus,
+      .field-select:focus {
+        border-color: var(--accent);
+      }
+      .field-select {
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%235a5a6e' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 10px center;
+        padding-right: 28px;
+      }
+      .toast {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        z-index: 2000;
+        background: var(--bg-raised);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 18px;
+        min-width: 240px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: var(--text-primary);
+        box-shadow: 0 8px 32px var(--shadow);
+        transform: translateY(100px);
+        opacity: 0;
+        transition: all 0.3s ease;
+      }
+      .toast.show {
+        transform: translateY(0);
+        opacity: 1;
+      }
+      .toast .toast-icon {
+        font-size: 16px;
+      }
+      .toast.success .toast-icon {
+        color: var(--accent);
+      }
+      .toast.error .toast-icon {
+        color: var(--red);
+      }
+      .flex {
+        display: flex;
+      }
+      .gap-8 {
+        gap: 8px;
+      }
+      .gap-10 {
+        gap: 10px;
+      }
+      .gap-12 {
+        gap: 12px;
+      }
+      .gap-14 {
+        gap: 14px;
+      }
+      .items-center {
+        align-items: center;
+      }
+      .items-end {
+        align-items: flex-end;
+      }
+      .justify-between {
+        justify-content: space-between;
+      }
+      .flex-wrap {
         flex-wrap: wrap;
       }
-      .form-group {
+      .flex-1 {
         flex: 1;
-        min-width: 120px;
+        min-width: 0;
       }
-      .form-group label {
-        display: block;
-        font-size: 11px;
-        color: #888;
-        margin-bottom: 5px;
+      .shrink-0 {
+        flex-shrink: 0;
+      }
+      .mb-10 {
+        margin-bottom: 10px;
+      }
+      .mb-14 {
+        margin-bottom: 14px;
+      }
+      .mt-10 {
+        margin-top: 10px;
+      }
+      .p-14 {
+        padding: 14px;
+      }
+      .text-mono {
+        font-family: "JetBrains Mono", monospace;
+      }
+
+      /* Heater specific */
+      .heater-card {
+        background: var(--bg-surface);
+        border-radius: 10px;
+        padding: 16px;
+        border: 1px solid var(--border-subtle);
+        transition: border-color 0.3s;
+      }
+      .heater-card.heating {
+        border-color: var(--orange);
+      }
+      .heater-card.failsafe {
+        border-color: var(--red);
+      }
+      .heater-card.override {
+        border-color: var(--blue);
+      }
+      .temp-display {
+        font-size: 42px;
+        font-weight: 700;
+        font-family: "JetBrains Mono", monospace;
+        letter-spacing: -2px;
+        margin: 8px 0;
+      }
+      .temp-display.cold {
+        color: var(--blue);
+      }
+      .temp-display.warm {
+        color: var(--accent);
+      }
+      .temp-display.hot {
+        color: var(--orange);
+      }
+      .temp-display.err {
+        color: var(--red);
+      }
+      .heater-status {
+        font-size: 10px;
         text-transform: uppercase;
+        letter-spacing: 1px;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-weight: 600;
       }
-      .form-group input,
-      .form-group select {
-        width: 100%;
-        padding: 10px;
-        font-size: 14px;
-        border: 1px solid #333;
+      .heater-status.off {
+        color: var(--text-faint);
+        background: var(--bg-raised);
+      }
+      .heater-status.on {
+        color: var(--orange);
+        background: rgba(255, 152, 0, 0.1);
+      }
+      .heater-status.failsafe {
+        color: var(--red);
+        background: rgba(229, 57, 53, 0.1);
+      }
+      .heater-status.override-on {
+        color: var(--blue);
+        background: rgba(66, 165, 245, 0.1);
+      }
+      .heater-status.override-off {
+        color: var(--purple);
+        background: rgba(156, 39, 176, 0.1);
+      }
+      .override-btn {
+        flex: 1;
+        padding: 7px 0;
+        border: 1px solid var(--border);
         border-radius: 6px;
-        background: #1a1a2e;
-        color: white;
+        background: none;
+        color: var(--text-muted);
+        font-size: 11px;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
       }
-      .form-group input:focus,
-      .form-group select:focus {
+      .override-btn:hover {
+        border-color: var(--text-muted);
+        color: var(--text-secondary);
+      }
+      .override-btn.active-on {
+        background: rgba(255, 152, 0, 0.12);
+        border-color: var(--orange);
+        color: var(--orange);
+      }
+      .override-btn.active-off {
+        background: rgba(156, 39, 176, 0.12);
+        border-color: var(--purple);
+        color: var(--purple);
+      }
+      .override-btn.active-auto {
+        background: var(--accent-dim);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      /* Focus slider */
+      input[type="range"] {
+        flex: 1;
+        height: 4px;
+        -webkit-appearance: none;
+        appearance: none;
+        background: var(--border);
+        border-radius: 2px;
         outline: none;
-        border-color: #4caf50;
       }
-      .form-group select {
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--accent);
         cursor: pointer;
       }
-      .counter {
-        font-size: 100px;
-        font-weight: bold;
-        color: #4caf50;
-        margin: 10px 0;
-      }
-      .counter.loading {
-        color: #666;
-        font-size: 50px;
-      }
-      .label {
-        font-size: 16px;
-        color: #888;
-        margin-bottom: 20px;
-      }
-      .buttons {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 20px;
-      }
-      .record-btn {
-        width: 200px;
-        height: 200px;
+
+      /* Capture */
+      .capture-btn {
+        width: 160px;
+        height: 160px;
         border-radius: 50%;
         border: none;
-        background: #e53935;
-        color: white;
-        font-size: 24px;
-        font-weight: bold;
+        background: var(--red);
+        color: #fff;
+        font-size: 20px;
+        font-weight: 700;
         cursor: pointer;
-        box-shadow: 0 8px 30px rgba(229, 57, 53, 0.4);
+        box-shadow: 0 8px 30px rgba(229, 57, 53, 0.3);
         transition: all 0.2s;
       }
-      .record-btn:hover {
+      .capture-btn:hover {
         transform: scale(1.05);
-        box-shadow: 0 12px 40px rgba(229, 57, 53, 0.5);
+        box-shadow: 0 12px 40px rgba(229, 57, 53, 0.4);
       }
-      .record-btn:disabled {
-        background: #666;
+      .capture-btn:disabled {
+        background: var(--border);
         cursor: not-allowed;
         box-shadow: none;
         transform: none;
       }
-      .record-btn.recording {
-        background: #ff9800;
+      .capture-btn.recording {
+        background: var(--orange);
         animation: pulse 1s infinite;
       }
-      .mock-btn {
-        width: 120px;
-        height: 120px;
+      .test-btn {
+        width: 100px;
+        height: 100px;
         border-radius: 50%;
-        border: 3px dashed #4caf50;
+        border: 2px dashed var(--accent);
         background: transparent;
-        color: #4caf50;
-        font-size: 14px;
-        font-weight: bold;
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 700;
         cursor: pointer;
         transition: all 0.2s;
       }
-      .mock-btn:hover {
-        background: rgba(76, 175, 80, 0.1);
+      .test-btn:hover {
+        background: var(--accent-dim);
         transform: scale(1.05);
       }
-      .mock-btn:disabled {
-        border-color: #666;
-        color: #666;
+      .test-btn:disabled {
+        border-color: var(--border);
+        color: var(--text-faint);
         cursor: not-allowed;
         transform: none;
       }
-      .mock-btn.recording {
-        border-color: #ff9800;
-        color: #ff9800;
+      .test-btn.recording {
+        border-color: var(--orange);
+        color: var(--orange);
         animation: pulse 1s infinite;
       }
       @keyframes pulse {
@@ -243,364 +683,1111 @@
           transform: scale(1.05);
         }
       }
-      .warning {
-        background: #ff9800;
-        color: #000;
-        padding: 10px 15px;
-        border-radius: 8px;
-        font-size: 14px;
-        margin-bottom: 20px;
-      }
-      .status {
-        margin-top: 30px;
-        font-size: 16px;
-        color: #888;
-        min-height: 24px;
-      }
-      .status.error {
-        color: #e53935;
-      }
-      .status.success {
-        color: #4caf50;
-      }
-      .log-container {
-        background: #0d0d1a;
-        border-radius: 10px;
-        padding: 15px;
-        height: 350px;
-        display: flex;
-        flex-direction: column;
-      }
-      .log-title {
-        font-size: 12px;
-        color: #666;
-        margin-bottom: 10px;
-        text-transform: uppercase;
-        flex-shrink: 0;
-      }
-      .log {
-        font-family: monospace;
-        font-size: 12px;
-        line-height: 1.6;
-        flex: 1;
+
+      .grade-log {
+        background: #000;
+        border-radius: 6px;
+        padding: 8px 10px;
+        max-height: 300px;
         overflow-y: auto;
-        display: flex;
-        flex-direction: column;
+        font-size: 10px;
+        line-height: 1.8;
+        font-family: "JetBrains Mono", monospace;
       }
-      .log-entry {
-        margin-bottom: 4px;
+      .grade-log .ok {
+        color: var(--accent);
+      }
+      .grade-log .err {
+        color: var(--red);
+      }
+      .grade-log .warn {
+        color: var(--orange);
+      }
+      .grade-log .info {
+        color: var(--text-muted);
+      }
+
+      .history-entry {
+        padding: 6px 0;
+        border-bottom: 1px solid var(--border-subtle);
+        display: flex;
+        gap: 10px;
+        font-size: 11px;
+        font-family: "JetBrains Mono", monospace;
+      }
+      .history-entry:last-child {
+        border-bottom: none;
+      }
+      .history-time {
+        color: var(--text-faint);
         flex-shrink: 0;
       }
-      .log-entry.info {
-        color: #888;
+      .history-cam {
+        color: var(--accent);
+        flex-shrink: 0;
+        width: 60px;
       }
-      .log-entry.success {
-        color: #4caf50;
+      .history-event {
+        color: var(--text-muted);
       }
-      .log-entry.error {
-        color: #e53935;
+      .history-event.on {
+        color: var(--orange);
       }
-      .log-entry.warn {
-        color: #ff9800;
+      .history-event.off {
+        color: var(--accent);
       }
-      .log-time {
-        color: #555;
-        margin-right: 8px;
+      .history-event.failsafe {
+        color: var(--red);
       }
-      @media (max-width: 600px) {
-        .app-layout {
-          flex-direction: column;
+      .history-event.override {
+        color: var(--blue);
+      }
+
+      @media (max-width: 900px) {
+        .grid-3 {
+          grid-template-columns: 1fr 1fr;
         }
-        .control-panel {
-          width: 100%;
+      }
+      @media (max-width: 640px) {
+        .sidebar {
+          position: fixed;
+          left: 0;
+          top: 0;
+          bottom: 0;
+          z-index: 30;
+          width: 64px !important;
         }
-        .log-container {
-          height: 200px;
+        .sidebar .sidebar-brand span,
+        .sidebar .nav-btn span.nav-label,
+        .sidebar .footer-user {
+          display: none !important;
+        }
+        .sidebar .nav-btn {
+          justify-content: center;
+          padding: 9px;
+        }
+        .main {
+          margin-left: 64px;
+        }
+        .content {
+          padding: 14px;
+        }
+        .grid-3 {
+          grid-template-columns: 1fr;
+        }
+        .topbar {
+          padding: 0 12px;
+          height: 46px;
+        }
+        .topbar h1 {
+          font-size: 13px;
+        }
+        .topbar-user {
+          display: none;
         }
       }
     </style>
   </head>
   <body>
     <div id="app">
-      <nav class="nav">
-        <div class="nav-left">
-          <span class="nav-brand">HerdSync</span>
-          <div class="nav-links">
-            <a href="index.html" class="active">Capture</a>
-            <a href="heater.html">Heaters</a>
-            <a href="view-focus.html">View Focus</a>
+      <div class="shell">
+        <aside class="sidebar">
+          <div class="sidebar-brand">
+            <img
+              src="/logos/dark_trans_v1.png"
+              alt="HS"
+              class="logo-dark"
+              style="height: 35px"
+            />
+            <img
+              src="/logos/light_trans_v1.png"
+              alt="HS"
+              class="logo-light"
+              style="height: 35px"
+            />
+            <span>Setup</span>
           </div>
-        </div>
-        <div class="nav-right">
-          <span class="nav-user" id="navUser"></span>
-          <button class="logout-btn" onclick="HerdAuth.logout()">Logout</button>
-        </div>
-      </nav>
-      <div class="app-layout">
-        <div class="control-panel">
-          <div class="label">GOAT NUMBER</div>
-          <div class="counter" id="counter">...</div>
-          <div class="buttons">
-            <div class="warning">Warning: Only use CAPTURE for real data</div>
+          <nav class="sidebar-nav">
+            <button class="nav-btn active" data-page="viewfocus">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12z" /></svg
+              ><span class="nav-label">View Focus</span>
+            </button>
+            <button class="nav-btn" data-page="heaters">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              >
+                <path
+                  d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83"
+                /></svg
+              ><span class="nav-label">Heaters</span>
+            </button>
+            <button class="nav-btn" data-page="capture">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              >
+                <path
+                  d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"
+                />
+                <circle cx="12" cy="13" r="4" /></svg
+              ><span class="nav-label">Capture</span>
+            </button>
+          </nav>
+          <div class="sidebar-footer">
+            <span class="footer-user" id="footerUser">—</span>
             <button
-              class="record-btn"
-              id="recordBtn"
-              onclick="startCapture(false)"
+              class="icon-btn"
+              onclick="toggleTheme()"
+              title="Toggle theme"
+              id="themeBtn"
             >
-              CAPTURE
+              ☀
             </button>
-            <button class="mock-btn" id="mockBtn" onclick="startCapture(true)">
-              TEST<br />(no save)
+            <button
+              class="icon-btn danger"
+              onclick="HerdAuth.logout()"
+              title="Logout"
+            >
+              ⏻
             </button>
           </div>
-          <div class="status" id="status"></div>
-        </div>
-        <div class="right-panel">
-          <div class="form-panel">
-            <div class="form-title">Goat Data</div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Description</label>
-                <select id="description">
-                  <option value="">-- Select --</option>
-                  <option value="dairy">Dairy</option>
-                  <option value="meat">Meat</option>
-                  <option value="cross">Cross</option>
-                </select>
+        </aside>
+        <div class="main">
+          <header class="topbar">
+            <h1 id="pageTitle">View Focus</h1>
+            <div class="topbar-right">
+              <div class="pi-status" id="piStatus">
+                <span class="dot red"></span><span>Connecting...</span>
               </div>
-              <div class="form-group">
-                <label>Live Weight</label>
-                <input type="text" id="liveWeight" placeholder="e.g. 85 lbs" />
-              </div>
-              <div class="form-group">
-                <label>Grade</label>
-                <select id="grade">
-                  <option value="">-- Select --</option>
-                  <option value="reserve">Reserve</option>
-                  <option value="cab prime">CAB Prime</option>
-                  <option value="prime">Prime</option>
-                  <option value="cab choice">CAB Choice</option>
-                  <option value="choice">Choice</option>
-                  <option value="select">Select</option>
-                  <option value="no roll">No Roll</option>
-                </select>
+              <div class="topbar-user" id="topbarUser"></div>
+            </div>
+          </header>
+          <div class="content">
+            <!-- ========== VIEW FOCUS ========== -->
+            <div class="page active" id="page-viewfocus">
+              <div class="grid-3" id="focusCams"></div>
+              <div class="panel p-14">
+                <div class="flex gap-8 flex-wrap">
+                  <button class="btn btn-accent btn-sm" onclick="allAFOff()">
+                    All AF Off
+                  </button>
+                  <button class="btn btn-sm" onclick="saveFocusSettings()">
+                    Save Settings
+                  </button>
+                  <button class="btn btn-sm" onclick="loadFocusSettings()">
+                    Load Saved
+                  </button>
+                  <button
+                    class="btn btn-sm"
+                    style="border-color: var(--purple); color: var(--purple)"
+                    onclick="captureTestShots()"
+                  >
+                    Test Capture
+                  </button>
+                  <span
+                    id="focusActionStatus"
+                    style="
+                      font-size: 11px;
+                      color: var(--accent);
+                      margin-left: auto;
+                      align-self: center;
+                    "
+                  ></span>
+                </div>
               </div>
             </div>
-          </div>
-          <div class="log-panel">
-            <div class="log-container">
-              <div class="log-title">Activity Log</div>
-              <div class="log" id="log"></div>
+
+            <!-- ========== HEATERS ========== -->
+            <div class="page" id="page-heaters">
+              <div class="panel p-14 flex justify-between items-center">
+                <span class="section-label" style="margin: 0">Thresholds</span>
+                <div class="flex gap-14">
+                  <span
+                    class="text-mono"
+                    style="color: var(--orange)"
+                    id="threshOn"
+                    >ON &lt; --°F</span
+                  >
+                  <span
+                    class="text-mono"
+                    style="color: var(--accent)"
+                    id="threshOff"
+                    >OFF &gt; --°F</span
+                  >
+                </div>
+              </div>
+              <div class="grid-3" id="heaterGrid"></div>
+              <div
+                class="panel p-14"
+                style="
+                  flex: 1;
+                  min-height: 200px;
+                  display: flex;
+                  flex-direction: column;
+                "
+              >
+                <div class="section-label shrink-0 mb-10">Recent Events</div>
+                <div
+                  id="heaterHistory"
+                  style="
+                    overflow-y: auto;
+                    flex: 1;
+                    min-height: 0;
+                    font-size: 11px;
+                  "
+                >
+                  <div style="color: var(--text-faint); padding: 10px 0">
+                    Loading...
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ========== CAPTURE ========== -->
+            <div class="page" id="page-capture">
+              <div class="flex gap-14" style="flex: 1; min-height: 0">
+                <div
+                  class="panel p-14"
+                  style="
+                    flex: 0 0 260px;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 16px;
+                  "
+                >
+                  <div class="section-label">Goat Number</div>
+                  <div
+                    class="text-mono"
+                    id="captureCounter"
+                    style="
+                      font-size: 64px;
+                      font-weight: 700;
+                      color: var(--accent);
+                      line-height: 1;
+                    "
+                  >
+                    ...
+                  </div>
+                  <div
+                    class="inset"
+                    style="
+                      text-align: center;
+                      color: var(--orange);
+                      font-size: 11px;
+                      line-height: 1.5;
+                      padding: 8px 12px;
+                    "
+                  >
+                    Only use CAPTURE for real data
+                  </div>
+                  <button
+                    class="capture-btn"
+                    id="captureBtn"
+                    onclick="startCapture(false)"
+                  >
+                    CAPTURE
+                  </button>
+                  <button
+                    class="test-btn"
+                    id="captureMockBtn"
+                    onclick="startCapture(true)"
+                  >
+                    TEST<br />(no save)
+                  </button>
+                  <div
+                    id="captureStatus"
+                    style="
+                      font-size: 12px;
+                      color: var(--text-muted);
+                      text-align: center;
+                      min-height: 20px;
+                    "
+                  ></div>
+                </div>
+                <div
+                  style="
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 14px;
+                    min-width: 0;
+                  "
+                >
+                  <div class="panel p-14">
+                    <div class="section-label mb-10">Goat Data</div>
+                    <div class="flex gap-12 flex-wrap">
+                      <div style="flex: 1; min-width: 100px">
+                        <label class="field-label">Description</label
+                        ><select class="field-select" id="captureDesc">
+                          <option value="">-- Select --</option>
+                          <option value="dairy">Dairy</option>
+                          <option value="meat">Meat</option>
+                          <option value="cross">Cross</option>
+                        </select>
+                      </div>
+                      <div style="flex: 1; min-width: 100px">
+                        <label class="field-label">Live Weight</label
+                        ><input
+                          class="field-input"
+                          id="captureLW"
+                          type="text"
+                          placeholder="e.g. 85 lbs"
+                        />
+                      </div>
+                      <div style="flex: 1; min-width: 100px">
+                        <label class="field-label">Grade</label
+                        ><select class="field-select" id="captureGrade">
+                          <option value="">-- Select --</option>
+                          <option value="cab prime">CAB Prime</option>
+                          <option value="prime">Prime</option>
+                          <option value="choice">Choice</option>
+                          <option value="select">Select</option>
+                          <option value="no roll">No Roll</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                  <div
+                    class="panel p-14"
+                    style="
+                      flex: 1;
+                      display: flex;
+                      flex-direction: column;
+                      min-height: 250px;
+                    "
+                  >
+                    <div class="section-label shrink-0 mb-10">Activity Log</div>
+                    <div
+                      class="grade-log"
+                      id="captureLog"
+                      style="flex: 1; max-height: none"
+                    ></div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
+
+    <div class="toast" id="toast">
+      <span class="toast-icon"></span><span class="toast-msg"></span>
+    </div>
+
     <script>
-      let goatId = 1;
-      let isCapturing = false;
+      // ============================================================
+      // GLOBALS
+      // ============================================================
+      let _currentUser = null,
+        currentPage = "viewfocus",
+        piConnected = false;
+      const CAMERAS = ["side", "top", "front"];
+      const TITLES = {
+        viewfocus: "View Focus",
+        heaters: "Heaters",
+        capture: "Capture",
+      };
 
-      function getFormData() {
-        return {
-          description: document.getElementById("description").value || null,
-          live_weight: document.getElementById("liveWeight").value || null,
-          grade: document.getElementById("grade").value || null,
-        };
+      // THEME
+      function initTheme() {
+        const s = localStorage.getItem("herdsync-theme") || "dark";
+        document.documentElement.dataset.theme = s;
+        updateThemeIcon(s);
       }
-      function clearForm() {
-        document.getElementById("description").value = "";
-        document.getElementById("liveWeight").value = "";
-        document.getElementById("grade").value = "";
+      function toggleTheme() {
+        const n =
+          document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+        document.documentElement.dataset.theme = n;
+        localStorage.setItem("herdsync-theme", n);
+        updateThemeIcon(n);
       }
-      function log(message, type = "info") {
-        const logEl = document.getElementById("log");
-        const time = new Date().toLocaleTimeString();
-        const entry = document.createElement("div");
-        entry.className = "log-entry " + type;
-        entry.innerHTML =
-          '<span class="log-time">' + time + "</span>" + message;
-        logEl.appendChild(entry);
-        logEl.scrollTop = logEl.scrollHeight;
+      function updateThemeIcon(t) {
+        document.getElementById("themeBtn").textContent =
+          t === "dark" ? "☀" : "☾";
       }
-      function clearLog() {
-        document.getElementById("log").innerHTML = "";
+      initTheme();
+
+      // TOAST
+      let toastTimer;
+      function showToast(type, msg) {
+        const t = document.getElementById("toast");
+        t.className = "toast " + type;
+        t.querySelector(".toast-icon").textContent =
+          type === "success" ? "✓" : "✕";
+        t.querySelector(".toast-msg").textContent = msg;
+        clearTimeout(toastTimer);
+        requestAnimationFrame(() => t.classList.add("show"));
+        toastTimer = setTimeout(() => t.classList.remove("show"), 3500);
       }
 
-      async function showApp(user) {
+      // ============================================================
+      // NAV
+      // ============================================================
+      document.querySelectorAll(".nav-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const pg = btn.dataset.page;
+          currentPage = pg;
+          document
+            .querySelectorAll(".nav-btn")
+            .forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          document
+            .querySelectorAll(".page")
+            .forEach((p) => p.classList.remove("active"));
+          document.getElementById("page-" + pg).classList.add("active");
+          document.getElementById("pageTitle").textContent = TITLES[pg] || pg;
+          if (pg === "heaters") {
+            fetchHeaterStatus();
+            fetchHeaterHistory();
+          }
+          if (pg === "viewfocus") startFocusStreams();
+        });
+      });
+
+      // ============================================================
+      // PI CONNECTION
+      // ============================================================
+      async function checkPi() {
+        const el = document.getElementById("piStatus");
+        try {
+          const c = new AbortController();
+          const t = setTimeout(() => c.abort(), 5000);
+          await HerdAuth.fetch(CONFIG.API_BASE + "/api/prod/status", {
+            signal: c.signal,
+          });
+          clearTimeout(t);
+          piConnected = true;
+          el.innerHTML =
+            '<span class="dot green"></span><span>Pi connected</span>';
+        } catch (e) {
+          piConnected = false;
+          el.innerHTML = '<span class="dot red"></span><span>Pi offline</span>';
+        }
+      }
+      setInterval(checkPi, 10000);
+
+      // ============================================================
+      // AUTH + INIT
+      // ============================================================
+      function showApp(user) {
+        _currentUser = user;
         document.getElementById("app").style.display = "block";
-        document.getElementById("navUser").textContent =
+        document.getElementById("topbarUser").textContent =
           user.username + " (" + user.role + ")";
-        log("Initializing...", "info");
-        await fetchCurrentCount();
+        document.getElementById("footerUser").textContent = user.username;
+        checkPi();
+        buildFocusGrid();
+        loadFocusSettings();
+        fetchCaptureCount();
       }
-      async function fetchCurrentCount() {
-        const counter = document.getElementById("counter");
+
+      // ============================================================
+      // VIEW FOCUS
+      // ============================================================
+      let focusStreams = {};
+
+      function buildFocusGrid() {
+        const grid = document.getElementById("focusCams");
+        grid.innerHTML = "";
+        CAMERAS.forEach((cam) => {
+          const card = document.createElement("div");
+          card.className = "panel p-14";
+          card.id = "focus-card-" + cam;
+          card.innerHTML =
+            '<div class="flex justify-between items-center mb-10">' +
+            '<span style="font-size:14px;font-weight:600;color:var(--text-primary)">' +
+            cam.toUpperCase() +
+            "</span>" +
+            '<span class="heater-status off" id="focus-status-' +
+            cam +
+            '">Connecting</span>' +
+            "</div>" +
+            '<div class="cam-slot mb-10" id="focus-cam-' +
+            cam +
+            '"><span class="cam-label">' +
+            cam +
+            '</span><span style="font-size:10px;color:var(--text-faint)">No stream</span></div>' +
+            '<div class="flex gap-8 mb-10">' +
+            '<button class="btn btn-sm" id="af-on-' +
+            cam +
+            '" onclick="setAF(\'' +
+            cam +
+            '\',true)" style="flex:1">AF On</button>' +
+            '<button class="btn btn-accent btn-sm" id="af-off-' +
+            cam +
+            '" onclick="setAF(\'' +
+            cam +
+            '\',false)" style="flex:1">AF Off</button>' +
+            "</div>" +
+            '<div class="flex gap-8 items-center">' +
+            '<span class="field-label" style="margin:0;flex-shrink:0">Focus</span>' +
+            '<input type="range" id="fslider-' +
+            cam +
+            '" min="1" max="1023" value="200" oninput="setFocus(\'' +
+            cam +
+            "',this.value)\"/>" +
+            '<span class="text-mono" style="font-size:13px;color:var(--accent);width:36px;text-align:right" id="fval-' +
+            cam +
+            '">200</span>' +
+            "</div>" +
+            '<div id="fmsg-' +
+            cam +
+            '" style="font-size:10px;color:var(--text-faint);margin-top:4px;min-height:14px"></div>';
+          grid.appendChild(card);
+        });
+        startFocusStreams();
+      }
+
+      function startFocusStreams() {
+        CAMERAS.forEach((cam) => {
+          const slot = document.getElementById("focus-cam-" + cam);
+          if (!slot) return;
+          let img = slot.querySelector("img");
+          // Clean up existing WS
+          if (img && img._ws) {
+            try {
+              img._ws.close();
+            } catch (e) {}
+            img._ws = null;
+          }
+          if (img && img._blobUrl) {
+            URL.revokeObjectURL(img._blobUrl);
+            img._blobUrl = null;
+          }
+          if (!img) {
+            img = document.createElement("img");
+            img.alt = cam;
+            img.onload = function () {
+              const st = document.getElementById("focus-status-" + cam);
+              if (st) {
+                st.className = "heater-status on";
+                st.textContent = "Streaming";
+              }
+            };
+            img.onerror = function () {
+              this.style.display = "none";
+            };
+            slot.insertBefore(img, slot.firstChild);
+          }
+          img.style.display = "";
+          _connectFocusWS(img, cam);
+        });
+      }
+
+      function _connectFocusWS(img, cam) {
+        const wsBase = CONFIG.API_BASE.replace("https://", "wss://").replace(
+          "http://",
+          "ws://",
+        );
+        const wsUrl =
+          wsBase +
+          "/api/viewfocus/ws/stream/" +
+          cam +
+          "?token=" +
+          HerdAuth.getAccessToken();
+        try {
+          const ws = new WebSocket(wsUrl);
+          ws.binaryType = "arraybuffer";
+          img._ws = ws;
+          ws.onmessage = function (evt) {
+            if (img._blobUrl) URL.revokeObjectURL(img._blobUrl);
+            const blob = new Blob([evt.data], { type: "image/jpeg" });
+            img._blobUrl = URL.createObjectURL(blob);
+            img.src = img._blobUrl;
+          };
+          ws.onerror = function () {
+            _fallbackFocusMJPEG(img, cam);
+          };
+          ws.onclose = function () {
+            if (currentPage === "viewfocus" && piConnected) {
+              clearTimeout(img._wsRetry);
+              img._wsRetry = setTimeout(() => {
+                if (currentPage === "viewfocus") _connectFocusWS(img, cam);
+              }, 3000);
+            }
+          };
+          img._wsTimeout = setTimeout(() => {
+            if (ws.readyState !== WebSocket.OPEN) {
+              ws.close();
+              _fallbackFocusMJPEG(img, cam);
+            }
+          }, 5000);
+        } catch (e) {
+          _fallbackFocusMJPEG(img, cam);
+        }
+      }
+
+      function _fallbackFocusMJPEG(img, cam) {
+        if (img._ws) {
+          try {
+            img._ws.close();
+          } catch (e) {}
+          img._ws = null;
+        }
+        clearTimeout(img._wsTimeout);
+        img.src =
+          CONFIG.API_BASE +
+          "/api/viewfocus/stream/" +
+          cam +
+          "?token=" +
+          HerdAuth.getAccessToken();
+      }
+
+      async function setFocus(cam, val) {
+        document.getElementById("fval-" + cam).textContent = val;
+        try {
+          const r = await HerdAuth.fetch(
+            CONFIG.API_BASE + "/api/viewfocus/focus/" + cam + "/" + val,
+          );
+          document.getElementById("fmsg-" + cam).textContent = await r.text();
+        } catch (e) {
+          document.getElementById("fmsg-" + cam).textContent = "Error";
+        }
+      }
+
+      async function setAF(cam, on) {
+        try {
+          const r = await HerdAuth.fetch(
+            CONFIG.API_BASE +
+              "/api/viewfocus/autofocus/" +
+              cam +
+              "/" +
+              (on ? 1 : 0),
+          );
+          document.getElementById("fmsg-" + cam).textContent = await r.text();
+          document.getElementById("af-on-" + cam).className =
+            "btn btn-sm" + (on ? " btn-accent" : "");
+          document.getElementById("af-off-" + cam).className =
+            "btn btn-sm" + (!on ? " btn-accent" : "");
+        } catch (e) {
+          document.getElementById("fmsg-" + cam).textContent = "Error";
+        }
+      }
+
+      function allAFOff() {
+        CAMERAS.forEach((cam) => setAF(cam, false));
+      }
+
+      async function saveFocusSettings() {
+        const settings = {};
+        CAMERAS.forEach((cam) => {
+          settings[cam] = parseInt(
+            document.getElementById("fslider-" + cam).value,
+          );
+        });
+        try {
+          await HerdAuth.fetch(CONFIG.API_BASE + "/api/viewfocus/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(settings),
+          });
+          showFocusAction("Settings saved");
+        } catch (e) {
+          showFocusAction("Failed to save");
+        }
+      }
+
+      async function loadFocusSettings() {
+        try {
+          const r = await HerdAuth.fetch(
+            CONFIG.API_BASE + "/api/viewfocus/settings",
+          );
+          const settings = await r.json();
+          CAMERAS.forEach((cam) => {
+            if (settings[cam] !== undefined) {
+              document.getElementById("fslider-" + cam).value = settings[cam];
+              document.getElementById("fval-" + cam).textContent =
+                settings[cam];
+            }
+          });
+          showFocusAction("Settings loaded");
+        } catch (e) {
+          showFocusAction("Could not load");
+        }
+      }
+
+      async function captureTestShots() {
+        showFocusAction("Capturing...");
+        try {
+          const r = await HerdAuth.fetch(
+            CONFIG.API_BASE + "/api/viewfocus/capture",
+          );
+          showFocusAction(await r.text());
+        } catch (e) {
+          showFocusAction("Failed");
+        }
+      }
+
+      function showFocusAction(msg) {
+        const el = document.getElementById("focusActionStatus");
+        el.textContent = msg;
+        setTimeout(() => {
+          el.textContent = "";
+        }, 5000);
+      }
+
+      // ============================================================
+      // HEATERS
+      // ============================================================
+      let _heaterInterval = null;
+
+      function startHeaterPolling() {
+        if (_heaterInterval) return;
+        fetchHeaterStatus();
+        fetchHeaterHistory();
+        _heaterInterval = setInterval(fetchHeaterStatus, 2000);
+        setInterval(fetchHeaterHistory, 10000);
+      }
+
+      async function fetchHeaterStatus() {
+        try {
+          const r = await HerdAuth.fetch(
+            CONFIG.API_BASE + "/api/heater/status",
+          );
+          const data = await r.json();
+          if (data.thresholds) {
+            document.getElementById("threshOn").textContent =
+              "ON < " + data.thresholds.on_below + "°F";
+            document.getElementById("threshOff").textContent =
+              "OFF > " + data.thresholds.off_above + "°F";
+          }
+          renderHeaters(data.cameras || {});
+        } catch (e) {}
+      }
+
+      function renderHeaters(cameras) {
+        const grid = document.getElementById("heaterGrid");
+        const names = Object.keys(cameras).sort();
+        if (grid.children.length !== names.length) {
+          grid.innerHTML = "";
+          names.forEach((name) => {
+            const card = document.createElement("div");
+            card.className = "heater-card";
+            card.id = "hcard-" + name;
+            card.innerHTML =
+              '<div class="flex justify-between items-center mb-10">' +
+              '<span style="font-size:14px;font-weight:600">' +
+              name.replace("camera", "Cam ") +
+              "</span>" +
+              '<span class="heater-status off" id="hstatus-' +
+              name +
+              '">OFF</span>' +
+              "</div>" +
+              '<div class="temp-display warm" id="htemp-' +
+              name +
+              '">--°F</div>' +
+              '<div id="hmeta-' +
+              name +
+              '" style="font-size:10px;color:var(--text-faint);margin-bottom:12px;line-height:1.8"></div>' +
+              '<div class="flex gap-8">' +
+              '<button class="override-btn" onclick="setHeaterOverride(\'' +
+              name +
+              "','on')\">Force ON</button>" +
+              '<button class="override-btn active-auto" onclick="setHeaterOverride(\'' +
+              name +
+              "','auto')\">Auto</button>" +
+              '<button class="override-btn" onclick="setHeaterOverride(\'' +
+              name +
+              "','off')\">Force OFF</button>" +
+              "</div>";
+            grid.appendChild(card);
+          });
+        }
+        names.forEach((name) => {
+          const cam = cameras[name];
+          const card = document.getElementById("hcard-" + name);
+          const st = document.getElementById("hstatus-" + name);
+          const temp = document.getElementById("htemp-" + name);
+          const meta = document.getElementById("hmeta-" + name);
+          card.className = "heater-card";
+          if (cam.failsafe) card.classList.add("failsafe");
+          else if (cam.override !== "auto") card.classList.add("override");
+          else if (cam.heater_on) card.classList.add("heating");
+          if (cam.failsafe) {
+            st.className = "heater-status failsafe";
+            st.textContent = "FAILSAFE";
+          } else if (cam.override === "on") {
+            st.className = "heater-status override-on";
+            st.textContent = "FORCED ON";
+          } else if (cam.override === "off") {
+            st.className = "heater-status override-off";
+            st.textContent = "FORCED OFF";
+          } else if (cam.heater_on) {
+            st.className = "heater-status on";
+            st.textContent = "HEATING";
+          } else {
+            st.className = "heater-status off";
+            st.textContent = "OFF";
+          }
+          if (cam.temp_f !== null) {
+            temp.textContent = cam.temp_f + "°F";
+            temp.className =
+              "temp-display" +
+              (cam.temp_f < 40 ? " cold" : cam.temp_f < 70 ? " warm" : " hot");
+          } else {
+            temp.textContent = "--°F";
+            temp.className = "temp-display err";
+          }
+          let m = "";
+          if (cam.last_good_temp !== null)
+            m += "<div>Last good: " + cam.last_good_temp + "°F</div>";
+          if (cam.fail_count > 0)
+            m +=
+              '<div>Failed reads: <span style="color:var(--red)">' +
+              cam.fail_count +
+              "</span></div>";
+          if (cam.last_change)
+            m +=
+              "<div>Last change: " +
+              new Date(cam.last_change).toLocaleTimeString() +
+              "</div>";
+          meta.innerHTML = m;
+          const btns = card.querySelectorAll(".override-btn");
+          btns[0].className =
+            "override-btn" + (cam.override === "on" ? " active-on" : "");
+          btns[1].className =
+            "override-btn" + (cam.override === "auto" ? " active-auto" : "");
+          btns[2].className =
+            "override-btn" + (cam.override === "off" ? " active-off" : "");
+        });
+      }
+
+      async function setHeaterOverride(camera, state) {
+        try {
+          await HerdAuth.fetch(CONFIG.API_BASE + "/api/heater/override", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ camera, state }),
+          });
+          fetchHeaterStatus();
+        } catch (e) {
+          showToast("error", "Failed to set override");
+        }
+      }
+
+      async function fetchHeaterHistory() {
+        try {
+          const r = await HerdAuth.fetch(
+            CONFIG.API_BASE + "/api/heater/history",
+          );
+          const data = await r.json();
+          const list = document.getElementById("heaterHistory");
+          const history = data.history || [];
+          if (!history.length) {
+            list.innerHTML =
+              '<div style="color:var(--text-faint);padding:10px 0">No events yet</div>';
+            return;
+          }
+          list.innerHTML = history
+            .slice()
+            .reverse()
+            .map((e) => {
+              const time = new Date(e.time).toLocaleTimeString();
+              let cls = "";
+              const evt = e.event || "";
+              if (evt.includes("heater_on") || evt.includes("override_on"))
+                cls = "on";
+              else if (
+                evt.includes("heater_off") ||
+                evt.includes("override_off")
+              )
+                cls = "off";
+              else if (evt.includes("failsafe")) cls = "failsafe";
+              else if (evt.includes("override")) cls = "override";
+              const extra = e.temp !== undefined ? " (" + e.temp + "°F)" : "";
+              return (
+                '<div class="history-entry"><span class="history-time">' +
+                time +
+                '</span><span class="history-cam">' +
+                (e.camera || "") +
+                '</span><span class="history-event ' +
+                cls +
+                '">' +
+                evt +
+                extra +
+                "</span></div>"
+              );
+            })
+            .join("");
+        } catch (e) {}
+      }
+
+      // ============================================================
+      // CAPTURE (Training Data)
+      // ============================================================
+      let captureGoatId = 1,
+        isCapturing = false;
+
+      function captureLog(msg, type) {
+        const el = document.getElementById("captureLog");
+        const div = document.createElement("div");
+        div.className = type || "info";
+        div.textContent = new Date().toLocaleTimeString() + "  " + msg;
+        el.appendChild(div);
+        el.scrollTop = el.scrollHeight;
+      }
+
+      async function fetchCaptureCount() {
+        const counter = document.getElementById("captureCounter");
         counter.textContent = "...";
-        counter.classList.add("loading");
-        log("Fetching goat count from S3...", "info");
+        counter.style.color = "var(--text-faint)";
         try {
           const response = await fetch(
-            `https://${CONFIG.S3_BUCKET}.s3.${CONFIG.S3_REGION}.amazonaws.com/?list-type=2&delimiter=/`,
+            "https://" +
+              CONFIG.S3_BUCKET +
+              ".s3." +
+              CONFIG.S3_REGION +
+              ".amazonaws.com/?list-type=2&delimiter=/",
           );
-          if (!response.ok) throw new Error("S3 returned " + response.status);
+          if (!response.ok) throw new Error(response.status);
           const text = await response.text();
           const parser = new DOMParser();
           const xml = parser.parseFromString(text, "text/xml");
           const prefixes = xml.querySelectorAll("CommonPrefixes > Prefix");
           let maxId = 0;
-          prefixes.forEach((prefix) => {
-            const folder = prefix.textContent.replace("/", "");
-            const num = parseInt(folder);
-            if (!isNaN(num) && num > maxId) maxId = num;
+          prefixes.forEach((p) => {
+            const n = parseInt(p.textContent.replace("/", ""));
+            if (!isNaN(n) && n > maxId) maxId = n;
           });
-          goatId = maxId + 1;
-          log(
-            "Found " + maxId + " existing captures. Next goat: #" + goatId,
-            "success",
+          captureGoatId = maxId + 1;
+        } catch (e) {
+          captureGoatId = parseInt(
+            localStorage.getItem("captureGoatId") || "1",
           );
-        } catch (err) {
-          console.error("Failed to fetch count from S3:", err);
-          log("Could not sync with cloud. Using local counter.", "warn");
-          goatId = parseInt(localStorage.getItem("goatId") || "1");
-          log("Starting at goat #" + goatId, "info");
         }
-        updateCounter();
-        counter.classList.remove("loading");
+        counter.textContent = captureGoatId;
+        counter.style.color = "var(--accent)";
+        localStorage.setItem("captureGoatId", captureGoatId.toString());
       }
-      function updateCounter() {
-        document.getElementById("counter").textContent = goatId;
-        localStorage.setItem("goatId", goatId.toString());
-      }
+
       async function startCapture(isMock) {
         if (isCapturing) return;
         const btn = isMock
-          ? document.getElementById("mockBtn")
-          : document.getElementById("recordBtn");
-        const otherBtn = isMock
-          ? document.getElementById("recordBtn")
-          : document.getElementById("mockBtn");
-        const status = document.getElementById("status");
+          ? document.getElementById("captureMockBtn")
+          : document.getElementById("captureBtn");
+        const other = isMock
+          ? document.getElementById("captureBtn")
+          : document.getElementById("captureMockBtn");
+        const status = document.getElementById("captureStatus");
         isCapturing = true;
         btn.disabled = true;
-        otherBtn.disabled = true;
+        other.disabled = true;
         btn.classList.add("recording");
-        clearLog();
+        document.getElementById("captureLog").innerHTML = "";
         if (isMock) {
           btn.innerHTML = "TESTING...";
-          status.textContent = "Test capture (not saving)...";
-          log("Starting TEST capture (will not save)", "warn");
+          status.textContent = "Test capture...";
+          captureLog("Starting TEST capture (will not save)", "warn");
         } else {
           btn.textContent = "CAPTURING...";
-          status.textContent = "Capturing goat #" + goatId + "...";
-          log("Starting capture for goat #" + goatId, "info");
+          status.textContent = "Capturing goat #" + captureGoatId + "...";
+          captureLog("Starting capture for goat #" + captureGoatId, "info");
         }
-        status.className = "status";
         try {
-          log("Connecting to Pi server...", "info");
-          const formData = isMock ? {} : getFormData();
-          const captureId = isMock ? "test_" + Date.now() : goatId;
-          let response;
-          try {
-            response = await HerdAuth.fetch(
-              CONFIG.API_BASE + "/api/capture/record",
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  goat_id: captureId,
-                  goat_data: formData,
-                  is_test: isMock,
-                  require_all_cameras: !isMock,
-                }),
-              },
-            );
-          } catch (networkErr) {
-            throw new Error(
-              "Cannot reach Pi server. Check that it is powered on and connected.",
-            );
-          }
+          captureLog("Connecting to Pi...", "info");
+          const formData = isMock
+            ? {}
+            : {
+                description:
+                  document.getElementById("captureDesc").value || null,
+                live_weight: document.getElementById("captureLW").value || null,
+                grade: document.getElementById("captureGrade").value || null,
+              };
+          const captureId = isMock ? "test_" + Date.now() : captureGoatId;
+          const response = await HerdAuth.fetch(
+            CONFIG.API_BASE + "/api/capture/record",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                goat_id: captureId,
+                goat_data: formData,
+                is_test: isMock,
+                require_all_cameras: !isMock,
+              }),
+            },
+          );
           if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            const errorMessages = {
-              NO_CAMERAS:
-                "No cameras connected. Please plug in the cameras and try again.",
-              CAPTURE_IN_PROGRESS:
-                "Capture already in progress on another connection. Please wait.",
-              CAMERA_PERMISSION_DENIED:
-                "Camera permission denied. Check creds and connections.",
-              LOW_DISK_SPACE: "Pi is low on disk space.",
-              MISSING_CAMERAS:
-                "Not all cameras are connected. Plug in all cameras to capture data.",
-            };
-            throw new Error(
-              errorMessages[errorData.error_code] ||
-                errorData.message ||
-                "Failed to start capture",
-            );
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.message || err.error_code || "Failed");
           }
           const startData = await response.json();
-          log("Capture started on Pi", "success");
+          captureLog("Capture started", "ok");
           if (startData.cameras_available?.length > 0)
-            log(
-              "Cameras ready: " + startData.cameras_available.join(", "),
-              "success",
+            captureLog(
+              "Cameras: " + startData.cameras_available.join(", "),
+              "ok",
             );
-          if (startData.warning) log(startData.warning, "warn");
-          log("Capturing 20 images (~20 seconds)...", "info");
-          await pollStatus();
+          if (startData.warning) captureLog(startData.warning, "warn");
+          captureLog("Capturing images (~20s)...", "info");
+          await pollCaptureStatus();
           if (isMock) {
-            log("Test capture complete.", "success");
+            captureLog("Test complete", "ok");
             status.textContent = "Test complete";
-            status.className = "status success";
+            status.style.color = "var(--accent)";
           } else {
-            log("Images saved to S3.", "success");
-            log(
-              "Goat #" + goatId + " complete. Next: #" + (goatId + 1),
-              "success",
-            );
-            status.textContent = "Goat #" + goatId + " captured.";
-            status.className = "status success";
-            goatId++;
-            updateCounter();
-            clearForm();
+            captureLog("Goat #" + captureGoatId + " saved to S3", "ok");
+            status.textContent = "Goat #" + captureGoatId + " captured";
+            status.style.color = "var(--accent)";
+            captureGoatId++;
+            document.getElementById("captureCounter").textContent =
+              captureGoatId;
+            localStorage.setItem("captureGoatId", captureGoatId.toString());
+            document.getElementById("captureDesc").value = "";
+            document.getElementById("captureLW").value = "";
+            document.getElementById("captureGrade").value = "";
           }
         } catch (err) {
-          log("ERROR: " + err.message, "error");
-          status.textContent = isMock ? "Test failed" : "Failed";
-          status.className = "status error";
+          captureLog("ERROR: " + err.message, "err");
+          status.textContent = "Failed";
+          status.style.color = "var(--red)";
         } finally {
           isCapturing = false;
           btn.disabled = false;
-          otherBtn.disabled = false;
+          other.disabled = false;
           btn.classList.remove("recording");
           if (isMock) btn.innerHTML = "TEST<br>(no save)";
           else btn.textContent = "CAPTURE";
         }
       }
-      async function pollStatus() {
-        const maxAttempts = 240;
-        let lastProgress = null;
-        for (let i = 0; i < maxAttempts; i++) {
-          await sleep(500);
-          let response;
+
+      async function pollCaptureStatus() {
+        for (let i = 0; i < 240; i++) {
+          await new Promise((r) => setTimeout(r, 500));
+          let data;
           try {
-            response = await HerdAuth.fetch(
+            const r = await HerdAuth.fetch(
               CONFIG.API_BASE + "/api/capture/status",
             );
-          } catch (networkErr) {
-            log("Lost connection to Pi...", "warn");
+            data = await r.json();
+          } catch (e) {
+            captureLog("Retrying...", "warn");
             continue;
           }
-          const data = await response.json();
-          if (data.progress && data.progress !== lastProgress) {
-            lastProgress = data.progress;
+          if (data.progress) {
             const msgs = {
               starting: "Initializing cameras...",
               capturing: "Capturing images...",
-              checking_s3: "Checking S3 access...",
-              uploading: "Uploading images to cloud...",
+              checking_s3: "Checking S3...",
+              uploading: "Uploading to cloud...",
             };
-            log(msgs[data.progress] || data.progress, "info");
+            captureLog(msgs[data.progress] || data.progress, "info");
           }
           if (!data.active) {
             if (data.last_error) throw new Error(data.last_error);
@@ -610,49 +1797,37 @@
                   data.last_result.camera_status,
                 )) {
                   if (s.startsWith("captured"))
-                    log(`✓ ${cam}: ${s}`, "success");
+                    captureLog("✓ " + cam + ": " + s, "ok");
                   else if (s === "failed")
-                    log(`✗ ${cam}: capture failed`, "error");
-                  else if (s === "missing")
-                    log(`— ${cam}: not connected`, "warn");
+                    captureLog("✗ " + cam + ": failed", "err");
+                  else captureLog("— " + cam + ": " + s, "warn");
                 }
               }
               if (data.last_result.total_images)
-                log(
-                  `Total images captured: ${data.last_result.total_images}`,
+                captureLog(
+                  "Total images: " + data.last_result.total_images,
                   "info",
                 );
-              if (data.last_result.s3_check) {
-                if (data.last_result.s3_check.ok)
-                  log("S3 upload check OK", "success");
-                else
-                  log(
-                    "S3 upload check FAILED: " +
-                      (data.last_result.s3_check.error || "unknown"),
-                    "error",
-                  );
-              }
-              if (data.last_result.errors?.length > 0) {
-                data.last_result.errors.forEach((e) => {
-                  if (typeof e === "object")
-                    log(`${e.camera}: ${e.error}`, "warn");
-                  else log("Warning: " + e, "warn");
-                });
-              }
-              if (!data.last_result.success)
-                throw new Error("Capture failed. Check camera connections.");
+              if (!data.last_result.success) throw new Error("Capture failed");
             }
             return;
           }
         }
-        throw new Error("Capture timed out. The Pi may be unresponsive.");
-      }
-      function sleep(ms) {
-        return new Promise((r) => setTimeout(r, ms));
+        throw new Error("Timed out");
       }
 
-      // Auth gate — show app when authenticated
-      HerdAuth.requireAuth().then((user) => showApp(user)); //
+      // ============================================================
+      // KEYBOARD
+      // ============================================================
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+        }
+      });
+
+      // ============================================================
+      // BOOT
+      // ============================================================
+      HerdAuth.requireAuth().then((user) => showApp(user));
     </script>
   </body>
 </html>

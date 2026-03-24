@@ -15,82 +15,24 @@
     }
 
     handle_path /api/capture/* {
+        @captureOptions method OPTIONS
+        handle @captureOptions {
+            header Access-Control-Max-Age "86400"
+            respond 204
+        }
         forward_auth 127.0.0.1:5003 {
             uri /verify
             copy_headers Authorization
         }
         reverse_proxy 127.0.0.1:5001
     }
+
     handle_path /api/heater/* {
-        forward_auth 127.0.0.1:5003 {
-            uri /verify
-            copy_headers Authorization
+        @heaterOptions method OPTIONS
+        handle @heaterOptions {
+            header Access-Control-Max-Age "86400"
+            respond 204
         }
-        reverse_proxy 127.0.0.1:5002
-    }
-
-    @websockets {
-            path /api/viewfocus/ws/*
-            header Connection *Upgrade*
-            header Upgrade websocket
-        }
-        handle @websockets {
-            uri strip_prefix /api/viewfocus
-            reverse_proxy 127.0.0.1:8080
-        }
-
-    @streams path /api/viewfocus/stream/*
-    handle @streams {
-        forward_auth 127.0.0.1:5003 {
-            uri /verify
-            copy_headers Authorization
-        }
-        uri strip_prefix /api/viewfocus
-        reverse_proxy 127.0.0.1:8080
-    }
-    handle_path /api/viewfocus/* {
-        forward_auth 127.0.0.1:5003 {
-            uri /verify
-            copy_headers Authorization
-        }
-        reverse_proxy 127.0.0.1:8080
-    }
-    handle_path /api/prod/* {
-        forward_auth 127.0.0.1:5003 {
-            uri /verify
-            copy_headers Authorization
-        }
-        reverse_proxy 127.0.0.1:5000
-    }
-    handle {
-        forward_auth 127.0.0.1:5003 {
-            uri /verify
-            copy_headers Authorization
-        }
-        reverse_proxy 127.0.0.1:5001
-    }
-}
-
-:8444 {
-    # CORS headers on ALL responses
-    header Access-Control-Allow-Origin "https://herd-sync.com"
-    header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-    header Access-Control-Allow-Headers "Authorization, Content-Type"
-
-    @options method OPTIONS
-    handle @options {
-        header Access-Control-Max-Age "86400"
-        respond 204
-    }
-
-    handle_path /api/capture/* {
-        forward_auth 127.0.0.1:5003 {
-            uri /verify
-            copy_headers Authorization
-        }
-        reverse_proxy 127.0.0.1:5001
-    }
-    handle_path /api/heater/* {
         forward_auth 127.0.0.1:5003 {
             uri /verify
             copy_headers Authorization
@@ -117,20 +59,126 @@
         uri strip_prefix /api/viewfocus
         reverse_proxy 127.0.0.1:8080
     }
+
     handle_path /api/viewfocus/* {
+        @vfOptions method OPTIONS
+        handle @vfOptions {
+            header Access-Control-Max-Age "86400"
+            respond 204
+        }
         forward_auth 127.0.0.1:5003 {
             uri /verify
             copy_headers Authorization
         }
         reverse_proxy 127.0.0.1:8080
     }
+
     handle_path /api/prod/* {
+        @prodOptions method OPTIONS
+        handle @prodOptions {
+            header Access-Control-Max-Age "86400"
+            respond 204
+        }
         forward_auth 127.0.0.1:5003 {
             uri /verify
             copy_headers Authorization
         }
         reverse_proxy 127.0.0.1:5000
     }
+
+    handle {
+        forward_auth 127.0.0.1:5003 {
+            uri /verify
+            copy_headers Authorization
+        }
+        reverse_proxy 127.0.0.1:5001
+    }
+}
+
+:8444 {
+    # CORS headers on ALL responses
+    header Access-Control-Allow-Origin "https://herd-sync.com"
+    header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    header Access-Control-Allow-Headers "Authorization, Content-Type"
+
+    @options method OPTIONS
+    handle @options {
+        header Access-Control-Max-Age "86400"
+        respond 204
+    }
+
+    handle_path /api/capture/* {
+        @captureOptions2 method OPTIONS
+        handle @captureOptions2 {
+            header Access-Control-Max-Age "86400"
+            respond 204
+        }
+        forward_auth 127.0.0.1:5003 {
+            uri /verify
+            copy_headers Authorization
+        }
+        reverse_proxy 127.0.0.1:5001
+    }
+
+    handle_path /api/heater/* {
+        @heaterOptions2 method OPTIONS
+        handle @heaterOptions2 {
+            header Access-Control-Max-Age "86400"
+            respond 204
+        }
+        forward_auth 127.0.0.1:5003 {
+            uri /verify
+            copy_headers Authorization
+        }
+        reverse_proxy 127.0.0.1:5002
+    }
+
+    @websockets {
+        path /api/viewfocus/ws/*
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    handle @websockets {
+        uri strip_prefix /api/viewfocus
+        reverse_proxy 127.0.0.1:8080
+    }
+
+    @streams path /api/viewfocus/stream/*
+    handle @streams {
+        forward_auth 127.0.0.1:5003 {
+            uri /verify
+            copy_headers Authorization
+        }
+        uri strip_prefix /api/viewfocus
+        reverse_proxy 127.0.0.1:8080
+    }
+
+    handle_path /api/viewfocus/* {
+        @vfOptions2 method OPTIONS
+        handle @vfOptions2 {
+            header Access-Control-Max-Age "86400"
+            respond 204
+        }
+        forward_auth 127.0.0.1:5003 {
+            uri /verify
+            copy_headers Authorization
+        }
+        reverse_proxy 127.0.0.1:8080
+    }
+
+    handle_path /api/prod/* {
+        @prodOptions2 method OPTIONS
+        handle @prodOptions2 {
+            header Access-Control-Max-Age "86400"
+            respond 204
+        }
+        forward_auth 127.0.0.1:5003 {
+            uri /verify
+            copy_headers Authorization
+        }
+        reverse_proxy 127.0.0.1:5000
+    }
+
     handle {
         forward_auth 127.0.0.1:5003 {
             uri /verify
