@@ -1209,9 +1209,9 @@ def start_background_threads():
     # would block the entire event loop. threadpool.apply_async runs
     # in a native thread so blocking C calls don't stall HTTP/WS.
     from gevent import get_hub
+
     get_hub().threadpool.spawn(reader_loop)
 
-    from gevent import get_hub
     get_hub().threadpool.spawn(preview_loop)
 
     heartbeat_thread = threading.Thread(
@@ -1233,6 +1233,12 @@ def ensure_initialized():
 
     run_startup_checks()
     init_buffers()
+    # Open cameras in background so Flask can serve /status immediately
+    from gevent import get_hub
+    get_hub().threadpool.spawn(_deferred_startup)
+
+def _deferred_startup():
+    """Runs in a real OS thread — blocking camera opens won't stall Flask."""
     open_all_cameras()
     start_background_threads()
 

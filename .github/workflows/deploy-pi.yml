@@ -54,14 +54,14 @@ jobs:
             sudo systemctl restart camera-proxy
 
             echo "Waiting for camera-proxy health..."
-            for i in $(seq 1 15); do
-              if curl -sf http://127.0.0.1:8080/status > /dev/null 2>&1; then
+            for i in $(seq 1 45); do
+              if curl -sf --max-time 3 http://127.0.0.1:8080/status > /dev/null 2>&1; then
                 echo "camera-proxy healthy after ~${i}s"
                 break
               fi
-              sleep 1
+              sleep 2
             done
-            curl -sf http://127.0.0.1:8080/status || echo "WARNING: camera-proxy not healthy after 15s"
+            curl -sf --max-time 3 http://127.0.0.1:8080/status || echo "WARNING: camera-proxy not healthy after 90s"
 
             echo "Starting consumer services..."
             sudo systemctl start goat-prod
