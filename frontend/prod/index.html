@@ -3413,6 +3413,16 @@
         const container = document.getElementById("gradeCams");
         if (!want) {
           container.querySelectorAll("img[data-cam]").forEach((img) => {
+            if (img._ws) {
+              try { img._ws.close(); } catch(e) {}
+              img._ws = null;
+            }
+            if (img._blobUrl) {
+              URL.revokeObjectURL(img._blobUrl);
+              img._blobUrl = null;
+            }
+            clearTimeout(img._wsRetryTimer);
+            clearTimeout(img._wsTimeout);
             img.src = "";
             img.remove();
           });
@@ -3431,12 +3441,27 @@
         const cams = ["side", "top", "front"];
         const slots = container.querySelectorAll(".cam-slot");
         slots.forEach((slot, i) => {
+          const cam = cams[i];
           const offline = slot.querySelector(".cam-offline");
+
+          // Clean up existing connections
           let img = slot.querySelector("img[data-cam]");
+          if (img && img._ws) {
+            try { img._ws.close(); } catch(e) {}
+            img._ws = null;
+          }
+          if (img && img._blobUrl) {
+            URL.revokeObjectURL(img._blobUrl);
+            img._blobUrl = null;
+          }
+
           if (!img) {
             img = document.createElement("img");
-            img.dataset.cam = cams[i];
-            img.alt = cams[i];
+            img.dataset.cam = cam;
+            img.alt = cam;
+            img.onload = function () {
+              if (offline) offline.style.display = "none";
+            };
             img.onerror = function () {
               this.style.display = "none";
               if (offline) {
@@ -3445,39 +3470,114 @@
                   : "Waiting for grader...";
                 offline.style.display = "";
               }
-              clearTimeout(this._retryTimer);
-              this._retryTimer = setTimeout(() => {
-                if (currentPage === "grading" && piConnected) {
-                  this.style.display = "";
-                  this.src =
-                    CONFIG.API_BASE +
-                    "/api/viewfocus/stream/" +
-                    this.dataset.cam +
-                    "?token=" +
-                    HerdAuth.getAccessToken() +
-                    "&t=" +
-                    Date.now();
-                }
-              }, 10000);
-            };
-            img.onload = function () {
-              if (offline) offline.style.display = "none";
             };
             slot.insertBefore(img, slot.firstChild);
           }
           img.style.display = "";
-          img.src =
-            CONFIG.API_BASE +
-            "/api/viewfocus/stream/" +
-            cams[i] +
-            "?token=" +
-            token;
+
+          // Try WebSocket first, fall back to MJPEG
+          _connectCameraWS(img, cam, token, offline);
         });
+      }
+
+      function _connectCameraWS(img, cam, token, offlineEl) {
+        // Build WS URL from API_BASE
+        const wsBase = CONFIG.API_BASE
+          .replace("https://", "wss://")
+          .replace("http://", "ws://");
+        const wsUrl = wsBase + "/api/viewfocus/ws/stream/" + cam + "?token=" + token;
+
+        try {
+          const ws = new WebSocket(wsUrl);
+          ws.binaryType = "arraybuffer";
+          img._ws = ws;
+
+          ws.onopen = function () {
+            if (offlineEl) offlineEl.style.display = "none";
+            img.style.display = "";
+          };
+
+          ws.onmessage = function (evt) {
+            // Revoke previous blob URL to prevent memory leak
+            if (img._blobUrl) {
+              URL.revokeObjectURL(img._blobUrl);
+            }
+            const blob = new Blob([evt.data], { type: "image/jpeg" });
+            img._blobUrl = URL.createObjectURL(blob);
+            img.src = img._blobUrl;
+          };
+
+          ws.onerror = function () {
+            // Fall back to MJPEG
+            _fallbackToMJPEG(img, cam, token, offlineEl);
+          };
+
+          ws.onclose = function () {
+            // Reconnect if still on grading page and Pi is connected
+            if (currentPage === "grading" && piConnected) {
+              clearTimeout(img._wsRetryTimer);
+              img._wsRetryTimer = setTimeout(() => {
+                if (currentPage === "grading" && piConnected) {
+                  _connectCameraWS(img, cam, HerdAuth.getAccessToken(), offlineEl);
+                }
+              }, 3000);
+            }
+          };
+
+          // Timeout: if no message in 5s, WS probably failed silently
+          img._wsTimeout = setTimeout(() => {
+            if (ws.readyState !== WebSocket.OPEN) {
+              ws.close();
+              _fallbackToMJPEG(img, cam, token, offlineEl);
+            }
+          }, 5000);
+
+        } catch (e) {
+          // WebSocket not supported or URL issue — fall back
+          _fallbackToMJPEG(img, cam, token, offlineEl);
+        }
+      }
+
+      function _fallbackToMJPEG(img, cam, token, offlineEl) {
+        // Clean up WS state
+        if (img._ws) {
+          try { img._ws.close(); } catch(e) {}
+          img._ws = null;
+        }
+        clearTimeout(img._wsTimeout);
+        clearTimeout(img._wsRetryTimer);
+
+        // Standard MJPEG stream
+        img.src = CONFIG.API_BASE + "/api/viewfocus/stream/" + cam
+          + "?token=" + token;
+
+        img.onerror = function () {
+          this.style.display = "none";
+          if (offlineEl) {
+            offlineEl.textContent = piConnected
+              ? "Stream interrupted — retrying..."
+              : "Waiting for grader...";
+            offlineEl.style.display = "";
+          }
+          clearTimeout(this._retryTimer);
+          this._retryTimer = setTimeout(() => {
+            if (currentPage === "grading" && piConnected) {
+              _connectCameraWS(this, cam, HerdAuth.getAccessToken(), offlineEl);
+            }
+          }, 10000);
+        };
       }
       function refreshCameraTokens() {
         if (!camerasActive || currentPage !== "grading") return;
         const t = HerdAuth.getAccessToken();
         document.querySelectorAll("img[data-cam]").forEach((img) => {
+          // If using WebSocket, reconnect with new token
+          if (img._ws && img._ws.readyState === WebSocket.OPEN) {
+            img._ws.close();
+            // onclose handler will reconnect with fresh token
+            return;
+          }
+          // MJPEG fallback: update src
           if (img.src && img.src.includes("token=")) {
             const base = img.src.split("?")[0];
             img.src = base + "?token=" + t + "&t=" + Date.now();

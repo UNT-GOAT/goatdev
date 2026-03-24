@@ -28,6 +28,17 @@
         }
         reverse_proxy 127.0.0.1:5002
     }
+
+    @websockets {
+            path /api/viewfocus/ws/*
+            header Connection *Upgrade*
+            header Upgrade websocket
+        }
+        handle @websockets {
+            uri strip_prefix /api/viewfocus
+            reverse_proxy 127.0.0.1:8080
+        }
+
     @streams path /api/viewfocus/stream/*
     handle @streams {
         forward_auth 127.0.0.1:5003 {
@@ -86,6 +97,17 @@
         }
         reverse_proxy 127.0.0.1:5002
     }
+
+    @websockets {
+        path /api/viewfocus/ws/*
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    handle @websockets {
+        uri strip_prefix /api/viewfocus
+        reverse_proxy 127.0.0.1:8080
+    }
+
     @streams path /api/viewfocus/stream/*
     handle @streams {
         forward_auth 127.0.0.1:5003 {
