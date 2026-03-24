@@ -1211,10 +1211,8 @@ def start_background_threads():
     from gevent import get_hub
     get_hub().threadpool.spawn(reader_loop)
 
-    preview_thread = threading.Thread(
-        target=preview_loop, daemon=True, name='preview'
-    )
-    preview_thread.start()
+    from gevent import get_hub
+    get_hub().threadpool.spawn(preview_loop)
 
     heartbeat_thread = threading.Thread(
         target=heartbeat_loop, daemon=True, name='heartbeat'
