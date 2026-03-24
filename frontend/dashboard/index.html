@@ -3481,61 +3481,8 @@
       }
 
       function _connectCameraWS(img, cam, token, offlineEl) {
-        // Build WS URL from API_BASE
-        const wsBase = CONFIG.API_BASE
-          .replace("https://", "wss://")
-          .replace("http://", "ws://");
-        const wsUrl = wsBase + "/api/viewfocus/ws/stream/" + cam + "?token=" + token;
-
-        try {
-          const ws = new WebSocket(wsUrl);
-          ws.binaryType = "arraybuffer";
-          img._ws = ws;
-
-          ws.onopen = function () {
-            if (offlineEl) offlineEl.style.display = "none";
-            img.style.display = "";
-          };
-
-          ws.onmessage = function (evt) {
-            // Revoke previous blob URL to prevent memory leak
-            if (img._blobUrl) {
-              URL.revokeObjectURL(img._blobUrl);
-            }
-            const blob = new Blob([evt.data], { type: "image/jpeg" });
-            img._blobUrl = URL.createObjectURL(blob);
-            img.src = img._blobUrl;
-          };
-
-          ws.onerror = function () {
-            // Fall back to MJPEG
-            _fallbackToMJPEG(img, cam, token, offlineEl);
-          };
-
-          ws.onclose = function () {
-            // Reconnect if still on grading page and Pi is connected
-            if (currentPage === "grading" && piConnected) {
-              clearTimeout(img._wsRetryTimer);
-              img._wsRetryTimer = setTimeout(() => {
-                if (currentPage === "grading" && piConnected) {
-                  _connectCameraWS(img, cam, HerdAuth.getAccessToken(), offlineEl);
-                }
-              }, 3000);
-            }
-          };
-
-          // Timeout: if no message in 5s, WS probably failed silently
-          img._wsTimeout = setTimeout(() => {
-            if (ws.readyState !== WebSocket.OPEN) {
-              ws.close();
-              _fallbackToMJPEG(img, cam, token, offlineEl);
-            }
-          }, 5000);
-
-        } catch (e) {
-          // WebSocket not supported or URL issue — fall back
-          _fallbackToMJPEG(img, cam, token, offlineEl);
-        }
+        // WS disabled — go straight to MJPEG
+        _fallbackToMJPEG(img, cam, token, offlineEl);
       }
 
       function _fallbackToMJPEG(img, cam, token, offlineEl) {

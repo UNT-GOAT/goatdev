@@ -55,6 +55,7 @@ import numpy as np
 import tarfile
 import io
 from flask_sock import Sock
+from gevent import get_hub
 
 _tjpeg = TurboJPEG()
 
@@ -335,7 +336,6 @@ def open_camera(name, device):
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FULL_RES_HEIGHT)
         cap.set(cv2.CAP_PROP_CONVERT_RGB, 0)  # Raw MJPEG, no decode
 
-        # Warmup read — first frame takes ~1.2s due to sensor init
         ret, _ = cap.read()
         if not ret:
             log.warn(f'camera:{name}', 'Warmup read failed, retrying')
@@ -1204,10 +1204,12 @@ def run_startup_checks():
 
 def start_background_threads():
     """Start reader, preview, and heartbeat threads."""
-    reader_thread = threading.Thread(
-        target=reader_loop, daemon=True, name='pair-reader'
-    )
-    reader_thread.start()
+    # Run reader in a REAL OS thread via gevent threadpool.
+    # Under gevent, threading.Thread becomes a greenlet — cap.read()
+    # would block the entire event loop. threadpool.apply_async runs
+    # in a native thread so blocking C calls don't stall HTTP/WS.
+    from gevent import get_hub
+    get_hub().threadpool.spawn(reader_loop)
 
     preview_thread = threading.Thread(
         target=preview_loop, daemon=True, name='preview'
