@@ -15,7 +15,7 @@ from multiprocessing import shared_memory
 from flask import Flask, Response, request, jsonify
 from turbojpeg import TurboJPEG, TJSAMP_420, TJFLAG_FASTDCT, TJFLAG_FASTUPSAMPLE
 
-# HerdSync internal logger
+# HerdSync Internal Logger
 sys.path.insert(0, '/home/pi/goatdev/pi')
 from logger.pi_cloudwatch import Logger
 
@@ -28,30 +28,50 @@ CAMERAS = {'side': '/dev/camera_side', 'top': '/dev/camera_top', 'front': '/dev/
 FULL_RES = (4656, 3496)
 TARGET_FPS = 10
 FRAMES_PER_PAIR = 10
-SHM_SIZE = 2 * 1024 * 1024  # 2MB for JPEGs
-STATS_SHM_SIZE = 4096       # 4KB for stats JSON
-EVENT_SHM_NAME = "herdsync_capture_flag"
-STATS_SHM_NAME = "herdsync_stats_json"
+SHM_SIZE = 2 * 1024 * 1024  # 2MB per camera
+STATS_SHM_SIZE = 8192       # 8KB for stats/settings JSON
 SHM_NAMES = {name: f"herdsync_{name}_raw" for name in CAMERAS}
+STATS_SHM_NAME = "herdsync_system_stats"
+EVENT_SHM_NAME = "herdsync_capture_flag"
 
 # === HARDWARE WORKER (ISOLATED PROCESS) ===
 
 def hardware_worker():
-    """Hardware Process: Create memory blocks BEFORE anything else."""
+    """Independent Hardware Process."""
     import cv2
-    
-    # Create SHM blocks immediately so the 'files' exist for Flask
+    import os
+    import subprocess
+    import json
+    import time
+    from multiprocessing import shared_memory
+
+    # 1. Setup Memory Blocks
     shm_frames = {}
     for name, shm_name in SHM_NAMES.items():
         try:
             shm_frames[name] = shared_memory.SharedMemory(name=shm_name, create=True, size=SHM_SIZE)
-            # Initialize with zero size to prevent Flask from reading junk
             shm_frames[name].buf[:4] = b'\x00\x00\x00\x00'
         except FileExistsError:
             shm_frames[name] = shared_memory.SharedMemory(name=shm_name)
 
+    try:
+        shm_stats = shared_memory.SharedMemory(name=STATS_SHM_NAME, create=True, size=STATS_SHM_SIZE)
+    except FileExistsError:
+        shm_stats = shared_memory.SharedMemory(name=STATS_SHM_NAME)
+    
+    try:
+        shm_event = shared_memory.SharedMemory(name=EVENT_SHM_NAME, create=True, size=1)
+        shm_event.buf[0] = 0
+    except FileExistsError:
+        shm_event = shared_memory.SharedMemory(name=EVENT_SHM_NAME)
+
     caps = {}
-    local_stats = {n: {'fps': 0.0, 'frame_count': 0, 'last_ts': 0, 'clients': 0, 'connected': False} for n in CAMERAS}
+
+    # 2. Camera Logic
+    local_state = {
+        'cameras': {n: {'fps': 0.0, 'frame_count': 0, 'last_ts': 0, 'clients': 0, 'connected': False} for n in CAMERAS},
+        'settings': {n: 200 for n in CAMERAS}
+    }
 
     def open_cam(name, dev):
         cap = cv2.VideoCapture(dev, cv2.CAP_V4L2)
@@ -63,82 +83,112 @@ def hardware_worker():
             return cap
         return None
 
-    # Initial Open
+    # Initial Hardware Open
     for n, d in CAMERAS.items():
         caps[n] = open_cam(n, d)
-        local_stats[n]['connected'] = caps[n] is not None
+        local_state['cameras'][n]['connected'] = caps[n] is not None
+        if caps[n]:
+            # Disable autofocus to prevent USB control jitter
+            subprocess.run(['v4l2-ctl', '-d', d, '--set-ctrl', 'focus_automatic_continuous=0'], capture_output=True)
+            # Apply default focus
+            subprocess.run(['v4l2-ctl', '-d', d, '--set-ctrl', f'focus_absolute={local_state["settings"][n]}'], capture_output=True)
+
+    # CRITICAL: Write initial state IMMEDIATELY so /status stops showing "starting"
+    state_bytes = json.dumps(local_state).encode('utf-8')
+    shm_stats.buf[:len(state_bytes)] = state_bytes
+    shm_stats.buf[len(state_bytes):len(state_bytes)+1] = b'\0'
 
     pairs = [('side', 'top'), ('side', 'front'), ('top', 'front')]
     
     try:
         while True:
-            # Sync clients/demand from Flask (Read stats block)
+            # Sync client demand/settings from Flask Process
             try:
-                raw_stats = bytes(shm_stats.buf).split(b'\0')[0].decode('utf-8')
-                flask_updates = json.loads(raw_stats)
-                for n in CAMERAS: local_stats[n]['clients'] = flask_updates[n].get('clients', 0)
-            except: pass
+                raw_in = bytes(shm_stats.buf).split(b'\0')[0].decode('utf-8')
+                flask_updates = json.loads(raw_in)
+                for n in CAMERAS:
+                    local_state['cameras'][n]['clients'] = flask_updates['cameras'][n].get('clients', 0)
+            except:
+                pass
 
-            has_demand = any(local_stats[n]['clients'] > 0 for n in CAMERAS) or shm_event.buf[0] == 1
+            # Wake if clients are watching or a capture is requested
+            has_demand = any(local_state['cameras'][n]['clients'] > 0 for n in CAMERAS) or shm_event.buf[0] == 1
             
             if not has_demand:
-                time.sleep(0.5); continue
+                time.sleep(0.5)
+                continue
 
             for pair in pairs:
                 for _ in range(FRAMES_PER_PAIR):
-                    start = time.time()
+                    loop_start = time.time()
                     for name in pair:
                         if caps.get(name):
                             ret, frame = caps[name].read()
-                            if ret:
-                                data = frame.tobytes(); size = len(data)
+                            if ret and frame is not None:
+                                data = frame.tobytes()
+                                size = len(data)
+                                # Write to Shared Memory: [4 bytes size][JPEG bytes]
                                 shm_frames[name].buf[:4] = size.to_bytes(4, 'little')
                                 shm_frames[name].buf[4:4+size] = data
-                                local_stats[name]['frame_count'] += 1
-                                local_stats[name]['last_ts'] = time.time()
+                                
+                                # Update Stats
+                                local_state['cameras'][name]['frame_count'] += 1
+                                local_state['cameras'][name]['last_ts'] = time.time()
                     
-                    # Update Stats SHM
-                    stat_bytes = json.dumps(local_stats).encode('utf-8')
-                    shm_stats.buf[:len(stat_bytes)] = stat_bytes
-                    shm_stats.buf[len(stat_bytes):len(stat_bytes)+1] = b'\0'
+                    # Update the Stats Shared Memory block
+                    state_bytes = json.dumps(local_state).encode('utf-8')
+                    shm_stats.buf[:len(state_bytes)] = state_bytes
+                    shm_stats.buf[len(state_bytes):len(state_bytes)+1] = b'\0'
                     
-                    sleep_time = (1.0 / TARGET_FPS) - (time.time() - start)
-                    if sleep_time > 0: time.sleep(sleep_time)
+                    # Target Timing
+                    sleep_time = (1.0 / TARGET_FPS) - (time.time() - loop_start)
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
     finally:
-        for c in caps.values(): (c.release() if c else None)
-        for s in list(shm_frames.values()) + [shm_stats, shm_event]: s.close()
+        # Cleanup handles and memory
+        for c in caps.values():
+            if c: c.release()
+        for s in list(shm_frames.values()) + [shm_stats, shm_event]:
+            s.close()
 
-# === FLASK PROCESS ===
+# === FLASK CONSUMER LOGIC ===
 
 class CameraProxy:
     def __init__(self, name):
         self.name = name
-        self.shm = None
+        self.shm_frame = None
+        self.shm_stats = None
+        self.shm_event = None
         self.last_ts = 0
 
-    def get_raw(self):
-        # Attempt to connect only when needed
-        if self.shm is None:
-            try:
-                self.shm = shared_memory.SharedMemory(name=SHM_NAMES[self.name])
-            except FileNotFoundError:
-                return None # Hardware isn't ready yet, return empty
-        
-        size = int.from_bytes(self.shm.buf[:4], 'little')
-        return bytes(self.shm.buf[4:4+size]) if size > 0 else None
+    def _ensure_shm(self):
+        """Lazy connection to memory blocks to avoid race conditions."""
+        try:
+            if not self.shm_frame: self.shm_frame = shared_memory.SharedMemory(name=SHM_NAMES[self.name])
+            if not self.shm_stats: self.shm_stats = shared_memory.SharedMemory(name=STATS_SHM_NAME)
+            if not self.shm_event: self.shm_event = shared_memory.SharedMemory(name=EVENT_SHM_NAME)
+            return True
+        except FileNotFoundError:
+            return False
 
-    def update_flask_stats(self, delta):
+    def get_raw(self):
+        if not self._ensure_shm(): return None
+        size = int.from_bytes(self.shm_frame.buf[:4], 'little')
+        return bytes(self.shm_frame.buf[4:4+size]) if size > 0 else None
+
+    def update_clients(self, delta):
+        if not self._ensure_shm(): return
         try:
             raw = bytes(self.shm_stats.buf).split(b'\0')[0].decode('utf-8')
             data = json.loads(raw)
-            data[self.name]['clients'] = max(0, data[self.name].get('clients', 0) + delta)
+            data['cameras'][self.name]['clients'] = max(0, data['cameras'][self.name].get('clients', 0) + delta)
             b = json.dumps(data).encode('utf-8')
             self.shm_stats.buf[:len(b)] = b
             self.shm_stats.buf[len(b):len(b)+1] = b'\0'
         except: pass
 
     def stream_generator(self):
-        self.update_flask_stats(1)
+        self.update_clients(1)
         try:
             while True:
                 raw = self.get_raw()
@@ -147,7 +197,7 @@ class CameraProxy:
                     yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + _tjpeg.encode(decoded, quality=70) + b'\r\n')
                 time.sleep(0.1)
         finally:
-            self.update_flask_stats(-1)
+            self.update_clients(-1)
 
 PROXIES = {n: None for n in CAMERAS}
 def get_proxy(name):
@@ -156,6 +206,7 @@ def get_proxy(name):
 
 @app.route('/stream/<camera>')
 def stream(camera):
+    if camera not in CAMERAS: return "Invalid camera", 404
     return Response(get_proxy(camera).stream_generator(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/status')
@@ -164,10 +215,53 @@ def status():
         shm = shared_memory.SharedMemory(name=STATS_SHM_NAME)
         raw = bytes(shm.buf).split(b'\0')[0].decode('utf-8')
         return jsonify(json.loads(raw))
-    except: return jsonify({"error": "Stats unavailable"})
+    except: return jsonify({"status": "starting", "message": "Hardware initializing..."})
 
-if __name__ == '__main__':
-    mp.set_start_method('spawn', force=True) # Ensure clean memory space for Pi 4
-    p = mp.Process(target=hardware_worker, daemon=True)
+@app.route('/capture/all', methods=['POST', 'GET'])
+def capture_all():
+    p = get_proxy('side') # Use any proxy to get the event handle
+    if p._ensure_shm(): p.shm_event.buf[0] = 1
+    time.sleep(1.0) # Wake time
+    results = {}
+    for name in CAMERAS:
+        raw = get_proxy(name).get_raw()
+        if raw:
+            path = f"/tmp/capture_{name}.jpg"
+            with open(path, 'wb') as f: f.write(raw)
+            results[name] = {"success": True, "path": path}
+    if p.shm_event: p.shm_event.buf[0] = 0
+    return jsonify(results)
+
+@app.route('/focus/<camera>/<int:val>')
+def set_focus(camera, val):
+    subprocess.run(['v4l2-ctl', '-d', CAMERAS[camera], '--set-ctrl', f'focus_absolute={val}'])
+    return f"Focus command sent for {camera}"
+
+# === MODULE-LEVEL BOOTSTRAP ===
+
+_initialized = False 
+
+def ensure_initialized():
+    """Triggers the Hardware Process spawn safely for Gunicorn + Spawn."""
+    global _initialized
+    if _initialized:
+        return
+    _initialized = True
+
+    # When using 'spawn', the child process re-imports this file.
+    # This check prevents the child from trying to spawn its own child.
+    if mp.current_process().name != 'MainProcess':
+        return
+
+    try:
+        # Use 'spawn' to ensure the Hardware process is clean of gevent
+        mp.set_start_method('spawn', force=True)
+    except (RuntimeError, AttributeError):
+        pass 
+
+    p = mp.Process(target=hardware_worker, daemon=True, name="HardwareWorker")
     p.start()
-    app.run(host='0.0.0.0', port=8080)
+    log.info('startup', f'Hardware Isolation Process Started | PID: {p.pid}')
+
+# Trigger the boot
+ensure_initialized()
