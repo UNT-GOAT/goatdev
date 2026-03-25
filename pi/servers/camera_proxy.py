@@ -41,12 +41,16 @@ Endpoints:
   GET  /settings                   - Load saved focus settings
 """
 
+import gevent.monkey
+import threading
+# Grab the original BEFORE anything else happens
+RealThread = gevent.monkey.get_original('threading', 'Thread')
+
 from flask import Flask, Response, request, jsonify
 from turbojpeg import TurboJPEG, TJSAMP_420, TJFLAG_FASTUPSAMPLE, TJFLAG_FASTDCT
 
 import cv2
 import subprocess
-import threading
 import time
 import json
 import os
@@ -83,9 +87,14 @@ PREVIEW_JPEG_QUALITY = 70
 
 SETTINGS_FILE = '/home/pi/camera_focus_settings.json'
 
-# Reader settings
-FRAMES_PER_PAIR = 5         # Frames to read per pair before rotating
-TARGET_FPS = 30              # Target FPS per camera (sleep to throttle)
+# This means the proxy stays on one camera pair for ~1 second before rotating.
+# Less frequent rotation = more stable USB bus timing.
+FRAMES_PER_PAIR = 10
+
+# Hardware max for 4656x3496 is 10 FPS. 
+# Setting this to 10 ensures the reader loop asks for exactly what the sensor can give.
+TARGET_FPS = 10
+
 CAMERA_PAIRS = [
     ('side', 'top'),
     ('side', 'front'),
@@ -397,9 +406,11 @@ def reconnect_camera(name):
 # === IDLE MODE HELPERS ===
 
 def _has_active_demand():
-    """Check if any stream clients are connected or a capture is pending."""
-    return True
-
+    """Wakes if a capture is pending or a browser is watching."""
+    if _capture_requested.is_set():
+        return True
+    
+    # Check if any camera has an active stream client
     return any(buf._get_client_count() > 0 for buf in buffers.values())
 
 
@@ -596,6 +607,14 @@ def heartbeat_loop():
     """Log periodic health status."""
     while True:
         time.sleep(HEARTBEAT_INTERVAL_SEC)
+
+        for name, buf in buffers.items():
+            # If we have 'clients' but no preview frame has been taken in 60s, 
+            # the client is likely a ghost.
+            if buf._get_client_count() > 0 and (time.time() - buf.preview_timestamp > 60):
+                log.warn(f'heartbeat:{name}', 'Resetting ghost client count')
+                with buf._clients_lock:
+                    buf.stream_clients = 0
 
         healths = {}
         for name, buf in buffers.items():
@@ -1203,17 +1222,15 @@ def run_startup_checks():
 
 
 def start_background_threads():
-    """Start reader, preview, and heartbeat threads."""
-    # Run reader in a REAL OS thread via gevent threadpool.
-    # Under gevent, threading.Thread becomes a greenlet — cap.read()
-    # would block the entire event loop. threadpool.apply_async runs
-    # in a native thread so blocking C calls don't stall HTTP/WS.
-    from gevent import get_hub
+    """Start reader and preview threads using REAL OS threads."""
+    # We use RealThread to bypass gevent's event loop entirely
+    reader_thread = RealThread(target=reader_loop, daemon=True, name='pair-reader')
+    reader_thread.start()
 
-    get_hub().threadpool.spawn(reader_loop)
+    preview_thread = RealThread(target=preview_loop, daemon=True, name='preview')
+    preview_thread.start()
 
-    get_hub().threadpool.spawn(preview_loop)
-
+    # Heartbeat can stay a standard thread (it's not high-throughput)
     heartbeat_thread = threading.Thread(
         target=heartbeat_loop, daemon=True, name='heartbeat'
     )
@@ -1224,8 +1241,8 @@ def start_background_threads():
 
 _initialized = False
 
+# Update ensure_initialized to use the RealThread
 def ensure_initialized():
-    """Initialize once, whether run directly or imported by gunicorn."""
     global _initialized
     if _initialized:
         return
@@ -1233,12 +1250,12 @@ def ensure_initialized():
 
     run_startup_checks()
     init_buffers()
-    # Open cameras in background so Flask can serve /status immediately
-    from gevent import get_hub
-    get_hub().threadpool.spawn(_deferred_startup)
+    # Use a REAL thread for the blocking camera opens
+    init_thread = RealThread(target=_deferred_startup)
+    init_thread.start()
 
 def _deferred_startup():
-    """Runs in a real OS thread — blocking camera opens won't stall Flask."""
+    """Runs in a real OS thread to avoid stalling the Gunicorn heartbeat."""
     open_all_cameras()
     start_background_threads()
 
