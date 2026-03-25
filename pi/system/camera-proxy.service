@@ -3,6 +3,7 @@ Description=Camera Proxy Service
 After=network.target
 
 [Service]
+Environment=AWS_SHARED_CREDENTIALS_FILE=/home/pi/.aws/credentials
 ExecStart=/home/pi/venv/bin/gunicorn -w 1 -k geventwebsocket.gunicorn.workers.GeventWebSocketWorker --bind 0.0.0.0:8080 --timeout 300 servers.camera_proxy:app
 WorkingDirectory=/home/pi/goatdev/pi
 User=root

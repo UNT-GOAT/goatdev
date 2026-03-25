@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
-import gevent.monkey
-gevent.monkey.patch_all()
+import multiprocessing as mp
+import os
+import sys
+
+# ONLY patch gevent if we are the main web process.
+# This keeps the HardwareWorker clean and preemptive.
+if mp.current_process().name == 'MainProcess':
+    import gevent.monkey
+    gevent.monkey.patch_all()
 
 import os
 import sys
@@ -37,7 +44,7 @@ EVENT_SHM_NAME = "herdsync_capture_flag"
 # === HARDWARE WORKER (ISOLATED PROCESS) ===
 
 def hardware_worker():
-    """Independent Hardware Process."""
+    """Hardware Process: Clean, Preemptive, and Isolated."""
     import cv2
     import os
     import subprocess
@@ -54,10 +61,8 @@ def hardware_worker():
         except FileExistsError:
             shm_frames[name] = shared_memory.SharedMemory(name=shm_name)
 
-    try:
-        shm_stats = shared_memory.SharedMemory(name=STATS_SHM_NAME, create=True, size=STATS_SHM_SIZE)
-    except FileExistsError:
-        shm_stats = shared_memory.SharedMemory(name=STATS_SHM_NAME)
+    try: shm_stats = shared_memory.SharedMemory(name=STATS_SHM_NAME, create=True, size=STATS_SHM_SIZE)
+    except FileExistsError: shm_stats = shared_memory.SharedMemory(name=STATS_SHM_NAME)
     
     try:
         shm_event = shared_memory.SharedMemory(name=EVENT_SHM_NAME, create=True, size=1)
@@ -65,13 +70,23 @@ def hardware_worker():
     except FileExistsError:
         shm_event = shared_memory.SharedMemory(name=EVENT_SHM_NAME)
 
-    caps = {}
-
-    # 2. Camera Logic
+    # 2. Camera Logic & Local State
+    caps = {}  # CRITICAL: Fix for the NameError
     local_state = {
-        'cameras': {n: {'fps': 0.0, 'frame_count': 0, 'last_ts': 0, 'clients': 0, 'connected': False} for n in CAMERAS},
+        'cameras': {n: {'fps': 0.0, 'frame_count': 0, 'last_ts': 0.0, 'clients': 0, 'connected': False} for n in CAMERAS},
         'settings': {n: 200 for n in CAMERAS}
     }
+
+    # Helper to write stats to SHM
+    def sync_stats():
+        try:
+            state_bytes = json.dumps(local_state).encode('utf-8')
+            shm_stats.buf[:len(state_bytes)] = state_bytes
+            shm_stats.buf[len(state_bytes):len(state_bytes)+1] = b'\0'
+        except: pass
+
+    # 3. Initial Status Write (Tells Flask we are alive but warming up)
+    sync_stats()
 
     def open_cam(name, dev):
         cap = cv2.VideoCapture(dev, cv2.CAP_V4L2)
@@ -87,36 +102,25 @@ def hardware_worker():
     for n, d in CAMERAS.items():
         caps[n] = open_cam(n, d)
         local_state['cameras'][n]['connected'] = caps[n] is not None
+        sync_stats() # Update status as each camera connects
         if caps[n]:
-            # Disable autofocus to prevent USB control jitter
             subprocess.run(['v4l2-ctl', '-d', d, '--set-ctrl', 'focus_automatic_continuous=0'], capture_output=True)
-            # Apply default focus
-            subprocess.run(['v4l2-ctl', '-d', d, '--set-ctrl', f'focus_absolute={local_state["settings"][n]}'], capture_output=True)
-
-    # CRITICAL: Write initial state IMMEDIATELY so /status stops showing "starting"
-    state_bytes = json.dumps(local_state).encode('utf-8')
-    shm_stats.buf[:len(state_bytes)] = state_bytes
-    shm_stats.buf[len(state_bytes):len(state_bytes)+1] = b'\0'
+            subprocess.run(['v4l2-ctl', '-d', d, '--set-ctrl', f'focus_absolute=200'], capture_output=True)
 
     pairs = [('side', 'top'), ('side', 'front'), ('top', 'front')]
     
     try:
         while True:
-            # Sync client demand/settings from Flask Process
+            # Sync client demand from Flask
             try:
                 raw_in = bytes(shm_stats.buf).split(b'\0')[0].decode('utf-8')
                 flask_updates = json.loads(raw_in)
-                for n in CAMERAS:
-                    local_state['cameras'][n]['clients'] = flask_updates['cameras'][n].get('clients', 0)
-            except:
-                pass
+                for n in CAMERAS: local_state['cameras'][n]['clients'] = flask_updates['cameras'][n].get('clients', 0)
+            except: pass
 
-            # Wake if clients are watching or a capture is requested
             has_demand = any(local_state['cameras'][n]['clients'] > 0 for n in CAMERAS) or shm_event.buf[0] == 1
-            
             if not has_demand:
-                time.sleep(0.5)
-                continue
+                time.sleep(0.5); continue
 
             for pair in pairs:
                 for _ in range(FRAMES_PER_PAIR):
@@ -124,32 +128,26 @@ def hardware_worker():
                     for name in pair:
                         if caps.get(name):
                             ret, frame = caps[name].read()
-                            if ret and frame is not None:
-                                data = frame.tobytes()
-                                size = len(data)
-                                # Write to Shared Memory: [4 bytes size][JPEG bytes]
+                            if ret:
+                                now = time.time()
+                                # FPS Calculation (Smoothed)
+                                prev_ts = local_state['cameras'][name]['last_ts']
+                                if prev_ts > 0:
+                                    instant_fps = 1.0 / (now - prev_ts)
+                                    local_state['cameras'][name]['fps'] = round((0.8 * local_state['cameras'][name]['fps']) + (0.2 * instant_fps), 1)
+
+                                data = frame.tobytes(); size = len(data)
                                 shm_frames[name].buf[:4] = size.to_bytes(4, 'little')
                                 shm_frames[name].buf[4:4+size] = data
-                                
-                                # Update Stats
                                 local_state['cameras'][name]['frame_count'] += 1
-                                local_state['cameras'][name]['last_ts'] = time.time()
+                                local_state['cameras'][name]['last_ts'] = now
                     
-                    # Update the Stats Shared Memory block
-                    state_bytes = json.dumps(local_state).encode('utf-8')
-                    shm_stats.buf[:len(state_bytes)] = state_bytes
-                    shm_stats.buf[len(state_bytes):len(state_bytes)+1] = b'\0'
-                    
-                    # Target Timing
+                    sync_stats()
                     sleep_time = (1.0 / TARGET_FPS) - (time.time() - loop_start)
-                    if sleep_time > 0:
-                        time.sleep(sleep_time)
+                    if sleep_time > 0: time.sleep(sleep_time)
     finally:
-        # Cleanup handles and memory
-        for c in caps.values():
-            if c: c.release()
-        for s in list(shm_frames.values()) + [shm_stats, shm_event]:
-            s.close()
+        for c in caps.values(): (c.release() if c else None)
+        for s in list(shm_frames.values()) + [shm_stats, shm_event]: s.close()
 
 # === FLASK CONSUMER LOGIC ===
 
