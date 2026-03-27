@@ -127,18 +127,21 @@ def check_camera(name: str, path: str) -> dict:
             result['error'] = 'Camera not found in proxy'
             return result
 
-        result['exists'] = cam_health.get('device_exists', False)
+        result['exists'] = cam_health.get('device_exists', cam_health.get('connected', False))
         result['readable'] = cam_health.get('connected', False)
 
-        if not result['exists']:
-            result['error'] = 'Camera not connected'
+        if not result['readable']:
+            result['error'] = cam_health.get('last_error', 'Camera not connected')
             result['fix'] = f'Check USB connection for {name} camera'
-        elif not result['readable']:
-            result['error'] = cam_health.get('last_error', 'Camera not ready')
-            result['fix'] = 'Check camera proxy logs'
         elif cam_health.get('stale', False):
             result['error'] = f"Frame stale ({cam_health.get('frame_age_sec')}s old)"
             result['fix'] = 'Camera may be frozen. Check USB connection.'
+        else:
+            # Check freshness from last_ts if available
+            last_ts = cam_health.get('last_ts', 0)
+            if last_ts > 0 and (time.time() - last_ts) > 10:
+                result['error'] = f"Frame stale ({time.time() - last_ts:.1f}s old)"
+                result['fix'] = 'Camera may be frozen. Check USB connection.'
 
     except requests.exceptions.ConnectionError:
         result['error'] = 'Camera proxy not running'

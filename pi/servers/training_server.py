@@ -12,7 +12,6 @@ Current approach: 3 HTTP requests (one burst per camera), all concurrent.
 """
 
 from flask import Flask, jsonify, request
-from flask_cors import CORS
 import threading
 import requests as http_requests
 import os
@@ -23,7 +22,6 @@ import time
 from datetime import datetime
 
 app = Flask(__name__)
-CORS(app)
 
 from dotenv import load_dotenv
 load_dotenv("/home/pi/goatdev/pi/.env")

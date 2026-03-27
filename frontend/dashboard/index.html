@@ -4740,6 +4740,7 @@
           ? parseFloat(result.total_sec).toFixed(1) + "s"
           : "—";
         const token = HerdAuth.getAccessToken();
+        const localImages = result._localImages || null;
         ["side", "top", "front"].forEach((view) => {
           const slot = document.getElementById(
             "review" + view.charAt(0).toUpperCase() + view.slice(1),
@@ -4747,14 +4748,18 @@
           const existing = slot.querySelector("img");
           if (existing) existing.remove();
           const img = document.createElement("img");
-          img.src =
-            CONFIG.API_BASE +
-            "/api/prod/debug/" +
-            serialId +
-            "/" +
-            view +
-            "?token=" +
-            token;
+          if (localImages && localImages[view]) {
+            img.src = localImages[view];
+          } else {
+            img.src =
+              CONFIG.API_BASE +
+              "/api/prod/debug/" +
+              serialId +
+              "/" +
+              view +
+              "?token=" +
+              token;
+          }
           img.alt = view + " debug";
           img.onerror = function () {
             this.style.opacity = ".2";
@@ -5417,6 +5422,11 @@
             warnings: body.warnings || [],
             view_errors: body.view_errors || [],
             _isExisting: isExisting,
+            _localImages: {
+              side: _devFiles.side ? URL.createObjectURL(_devFiles.side) : null,
+              top: _devFiles.top ? URL.createObjectURL(_devFiles.top) : null,
+              front: _devFiles.front ? URL.createObjectURL(_devFiles.front) : null,
+            },
           };
           openGradeReview(pendingGradeResult, serialId);
         } catch (err) {

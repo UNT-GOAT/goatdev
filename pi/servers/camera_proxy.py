@@ -248,6 +248,35 @@ def stream(camera):
     if camera not in CAMERAS: return "Invalid camera", 404
     return Response(PROXIES[camera].stream_generator(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
+@app.route('/capture/<camera>')
+def capture(camera):
+    """Return latest full-res raw JPEG for a single camera."""
+    if camera not in CAMERAS:
+        return jsonify({'error': f'Unknown camera: {camera}'}), 404
+    proxy = PROXIES[camera]
+    # Wake hardware worker
+    try:
+        shm_ev = shared_memory.SharedMemory(name=EVENT_SHM_NAME)
+        shm_ev.buf[0] = 1
+    except: pass
+    # Wait for a frame (up to 3s)
+    raw = None
+    for _ in range(60):
+        raw = proxy.get_raw_frame()
+        if raw and len(raw) > 50000:
+            break
+        time.sleep(0.05)
+    # Clear wake flag
+    try:
+        shm_ev = shared_memory.SharedMemory(name=EVENT_SHM_NAME)
+        shm_ev.buf[0] = 0
+    except: pass
+    if not raw:
+        return jsonify({'error': f'No frame available for {camera}'}), 503
+    return Response(raw, mimetype='image/jpeg', headers={
+        'X-Frame-Size-Bytes': str(len(raw)),
+    })
+
 @app.route('/capture/burst/<camera>', methods=['POST'])
 def capture_burst(camera):
     """BURST: Samples SHM and returns tar.gz."""

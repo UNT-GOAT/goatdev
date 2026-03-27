@@ -49,7 +49,6 @@ import tempfile
 import threading
 from datetime import datetime, timedelta
 from collections import deque
-from flask_cors import CORS
 
 sys.path.insert(0, '/home/pi/goatdev/pi')
 from logger.pi_cloudwatch import Logger
@@ -431,7 +430,6 @@ def start_api():
     """
     from flask import Flask, jsonify, request
     app = Flask(__name__)
-    CORS(app)
 
     @app.route('/status')
     def api_status():
