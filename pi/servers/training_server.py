@@ -123,23 +123,19 @@ def s3_upload_check(bucket: str, would_upload_keys: list[str]) -> dict:
         "error": None,
         "would_upload": would_upload_keys[:10],
     }
-
     try:
         s3 = get_s3()
         s3.head_bucket(Bucket=bucket)
-
+        result["ok"] = True
+        # STS identity check is informational only - don't block on it
         try:
             import boto3
-            sts = boto3.client("sts")
-            ident = sts.get_caller_identity()
+            ident = boto3.client("sts").get_caller_identity()
             result["aws_account"] = ident.get("Account")
             result["aws_arn"] = ident.get("Arn")
         except Exception as e:
-            result["sts_warning"] = str(e)
-
-        result["ok"] = True
+            result["sts_warning"] = str(e)  # non-fatal, already marked ok
         return result
-
     except Exception as e:
         result["error"] = str(e)
         return result
@@ -425,7 +421,15 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
             if goat_data:
                 would_upload.append(f'{goat_id}/goat_data.json')
 
-            s3_check = s3_upload_check(S3_TRAINING_BUCKET, would_upload)
+            # Run S3 check in a thread so Flask stays responsive to /status pings
+            s3_result = [None]
+            def _s3_check():
+                s3_result[0] = s3_upload_check(S3_TRAINING_BUCKET, would_upload)
+            t = threading.Thread(target=_s3_check)
+            t.start()
+            t.join(timeout=10)  # generous but bounded
+
+            s3_check = s3_result[0] or {"ok": False, "error": "S3 check timed out"}
 
             # Clean up local tar files
             for r in successful:

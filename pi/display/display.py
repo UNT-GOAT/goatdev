@@ -31,6 +31,7 @@ import threading
 import urllib.request
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
+import concurrent.futures
 
 import digitalio # type: ignore
 import board # type: ignore
@@ -214,27 +215,36 @@ def _http_ok(url, timeout=2.0):
             return response.status == 200
     except Exception:
         return False
+    
+    
+def _check_server(url, timeout):
+    return _http_ok(url, timeout=timeout)
 
 
 def network_worker_loop():
-    """Runs forever in the background, updating NETWORK_STATE."""
     global NETWORK_STATE
     while True:
-        # 1. Check Wi-Fi
-        wifi_strength = check_network()
-        
-        # 2. Check Servers (using tighter timeouts)
-        servers_status = {
-            'PROD': _http_ok('http://localhost:5000/health', timeout=1.0),
-            'CAM_PROXY': _http_ok('http://localhost:8080/status', timeout=1.0),
-            'EC2': _http_ok(f'{EC2_GOAT_API}/health', timeout=2.5),
+        checks = {
+            'PROD':      ('http://localhost:5000/health',    1.0),
+            'CAM_PROXY': ('http://localhost:8080/status',    1.0),
+            'EC2':       (f'{EC2_GOAT_API}/health',          2.5),
         }
-        
-        # 3. Update the global state
+
+        wifi_strength = check_network()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
+            futures = {
+                name: ex.submit(_check_server, url, timeout)
+                for name, (url, timeout) in checks.items()
+            }
+            servers_status = {
+                name: fut.result()
+                for name, fut in futures.items()
+            }
+
         NETWORK_STATE['wifi'] = wifi_strength
         NETWORK_STATE['servers'] = servers_status
-        
-        # Wait 5 seconds before checking again
+
         time.sleep(5)
 
 

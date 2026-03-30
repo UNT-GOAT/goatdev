@@ -279,7 +279,6 @@ def capture(camera):
 
 @app.route('/capture/burst/<camera>', methods=['POST'])
 def capture_burst(camera):
-    """BURST: Samples SHM and returns tar.gz."""
     data = request.get_json(silent=True) or {}
     count = min(int(data.get('count', 20)), 100)
     interval = max(int(data.get('interval_ms', 1000)), 100) / 1000.0
@@ -287,20 +286,38 @@ def capture_burst(camera):
     frames = []
     try:
         shm_ev = shared_memory.SharedMemory(name=EVENT_SHM_NAME)
-        shm_ev.buf[0] = 1 # Wake
+        shm_ev.buf[0] = 1  # Wake hardware worker
+
+        # Wait for the hardware worker to actually produce a frame before
+        # starting the burst loop. Without this, the worker is still in its
+        # has_demand sleep and SHM is empty for the entire burst duration.
+        # Poll up to 3s for the first valid frame.
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            raw = proxy.get_raw_frame()
+            if raw and len(raw) > 50000:
+                break
+            time.sleep(0.05)
+
         for _ in range(count):
             raw = proxy.get_raw_frame()
-            if raw: frames.append((raw, time.time()))
+            if raw:
+                frames.append((raw, time.time()))
             time.sleep(interval)
         shm_ev.buf[0] = 0
-    except: pass
+    except:
+        pass
     tar_buf = io.BytesIO()
     with tarfile.open(fileobj=tar_buf, mode='w:gz') as tar:
         for i, (f_bytes, ts) in enumerate(frames):
             info = tarfile.TarInfo(name=f"burst_{camera}_{i:03d}.jpg")
             info.size = len(f_bytes); info.mtime = ts
             tar.addfile(info, io.BytesIO(f_bytes))
-    return Response(tar_buf.getvalue(), mimetype='application/gzip')
+    return Response(
+        tar_buf.getvalue(), 
+        mimetype='application/gzip', 
+        headers={'X-Frame-Count': str(len(frames))}
+        )
 
 @app.route('/focus/<camera>/<int:val>', methods=['GET', 'POST'])
 def set_focus(camera, val):
