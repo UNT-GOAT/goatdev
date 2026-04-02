@@ -42,6 +42,8 @@ CAMERAS = {
 # Camera proxy
 PROXY_URL = "http://127.0.0.1:8080"
 PROXY_TIMEOUT_SEC = 10
+CAPTURE_ALL_TIMEOUT_SEC = 15   # Full-res capture of all 3 cameras (settle frames + sequential grabs)
+CAPTURE_FRAME_TIMEOUT_SEC = 5  # Pulling a single frame from SHM after capture
 
 # Capture settings
 IMAGE_WIDTH = 4656
@@ -138,8 +140,12 @@ def check_camera(name: str, path: str) -> dict:
             result['fix'] = 'Camera may be frozen. Check USB connection.'
         else:
             # Check freshness from last_ts if available
+            # Use a longer staleness window since streaming is now sequential
+            # across 3 cameras and capture pauses the stream
             last_ts = cam_health.get('last_ts', 0)
-            if last_ts > 0 and (time.time() - last_ts) > 10:
+            mode = data.get('mode', 'streaming')
+            stale_threshold = 30 if mode == 'capturing' else 10
+            if last_ts > 0 and (time.time() - last_ts) > stale_threshold:
                 result['error'] = f"Frame stale ({time.time() - last_ts:.1f}s old)"
                 result['fix'] = 'Camera may be frozen. Check USB connection.'
 
@@ -153,82 +159,164 @@ def check_camera(name: str, path: str) -> dict:
     return result
 
 
-def capture_single_image(name: str, path: str, serial_id: str) -> dict:
-    """Capture a single full-res image from camera proxy."""
-    result = {
-        'name': name,
-        'success': False,
-        'filepath': None,
-        'file_size_bytes': 0,
-        'error': None,
-        'fix': None,
-        'capture_time_sec': None
-    }
+def capture_all_cameras(serial_id: str) -> dict:
+    """
+    Capture full-res images from all 3 cameras via proxy.
 
-    filepath = f'/tmp/{serial_id}_{name}.jpg'
+    Calls /capture/all/individual to trigger the hardware worker's sequential
+    full-res capture (one camera at a time, no USB contention), then pulls
+    each frame individually and saves to /tmp.
+
+    Returns:
+        {
+            'success': bool,
+            'results': {
+                'side': {'success': bool, 'filepath': str, 'file_size_bytes': int, ...},
+                'top': {...},
+                'front': {...}
+            },
+            'capture_time_sec': float,
+            'error': str or None
+        }
+    """
     capture_start = time.time()
+    results = {}
 
-    log.info(f'camera:{name}', 'Requesting frame from proxy')
+    # Step 1: Signal the hardware worker to capture all cameras at full res
+    log.info('capture', 'Requesting full-res capture from proxy',
+             serial_id=serial_id)
 
     try:
         resp = requests.get(
-            f'{PROXY_URL}/capture/{name}',
-            timeout=PROXY_TIMEOUT_SEC
+            f'{PROXY_URL}/capture/all/individual',
+            timeout=CAPTURE_ALL_TIMEOUT_SEC
         )
-
-        capture_time = round(time.time() - capture_start, 2)
-        result['capture_time_sec'] = capture_time
-
-        if resp.status_code == 503:
-            error_data = {}
-            try:
-                if resp.headers.get('content-type', '').startswith('application/json'):
-                    error_data = resp.json()
-            except Exception:
-                pass
-            result['error'] = error_data.get('error', 'Camera not available')
-            result['fix'] = 'Check camera proxy: curl http://127.0.0.1:8080/status'
-            log.error(f'camera:{name}', 'Proxy 503', error=result['error'])
-            return result
-
-        if resp.status_code != 200:
-            result['error'] = f'Proxy returned {resp.status_code}'
-            log.error(f'camera:{name}', 'Proxy error', status=resp.status_code)
-            return result
-
-        if len(resp.content) < MIN_IMAGE_BYTES:
-            result['error'] = f'Image too small ({len(resp.content)} bytes, min {MIN_IMAGE_BYTES})'
-            result['fix'] = 'Camera may be producing blank frames'
-            log.error(f'camera:{name}', 'Image too small',
-                     size=len(resp.content), min=MIN_IMAGE_BYTES)
-            return result
-
-        with open(filepath, 'wb') as f:
-            f.write(resp.content)
-
-        result['success'] = True
-        result['filepath'] = filepath
-        result['file_size_bytes'] = len(resp.content)
-
-        log.info(f'camera:{name}', 'Capture complete',
-                size_bytes=len(resp.content), capture_time_sec=capture_time)
-
     except requests.exceptions.ConnectionError:
-        result['error'] = 'Camera proxy not running'
-        result['fix'] = 'Run: sudo systemctl restart camera-proxy'
-        log.error(f'camera:{name}', 'Proxy connection refused')
-
+        return {
+            'success': False,
+            'results': {},
+            'capture_time_sec': round(time.time() - capture_start, 2),
+            'error': 'Camera proxy not running',
+            'fix': 'Run: sudo systemctl restart camera-proxy'
+        }
     except requests.exceptions.Timeout:
-        result['error'] = f'Proxy timeout after {PROXY_TIMEOUT_SEC}s'
-        result['fix'] = 'Camera proxy may be overloaded'
-        result['capture_time_sec'] = PROXY_TIMEOUT_SEC
-        log.error(f'camera:{name}', 'Proxy timeout')
+        return {
+            'success': False,
+            'results': {},
+            'capture_time_sec': round(time.time() - capture_start, 2),
+            'error': f'Full-res capture timed out after {CAPTURE_ALL_TIMEOUT_SEC}s',
+            'fix': 'Camera proxy may be overloaded or USB bus issue'
+        }
 
-    except Exception as e:
-        result['error'] = f'Unexpected error: {e}'
-        log.exception(f'camera:{name}', 'Capture exception', error=str(e))
+    if resp.status_code != 200:
+        try:
+            error_data = resp.json()
+        except Exception:
+            error_data = {'error': f'Proxy returned {resp.status_code}'}
+        return {
+            'success': False,
+            'results': {},
+            'capture_time_sec': round(time.time() - capture_start, 2),
+            'error': error_data.get('error', f'Proxy returned {resp.status_code}'),
+            'fix': 'Check camera proxy: curl http://127.0.0.1:8080/status'
+        }
 
-    return result
+    capture_meta = resp.json()
+    log.info('capture', 'Full-res capture complete, pulling frames',
+             serial_id=serial_id, cameras=capture_meta.get('cameras'))
+
+    # Step 2: Pull each frame individually from SHM
+    all_ok = True
+    for name in CAMERAS:
+        result = {
+            'name': name,
+            'success': False,
+            'filepath': None,
+            'file_size_bytes': 0,
+            'error': None,
+            'fix': None,
+            'capture_time_sec': None
+        }
+
+        filepath = f'/tmp/{serial_id}_{name}.jpg'
+        frame_start = time.time()
+
+        try:
+            frame_resp = requests.get(
+                f'{PROXY_URL}/capture/frame/{name}',
+                timeout=CAPTURE_FRAME_TIMEOUT_SEC
+            )
+
+            result['capture_time_sec'] = round(time.time() - frame_start, 2)
+
+            if frame_resp.status_code != 200:
+                try:
+                    err = frame_resp.json().get('error', f'Status {frame_resp.status_code}')
+                except Exception:
+                    err = f'Proxy returned {frame_resp.status_code}'
+                result['error'] = err
+                result['fix'] = 'Check camera proxy status'
+                log.error(f'camera:{name}', 'Frame pull failed',
+                         serial_id=serial_id, error=err)
+                all_ok = False
+                results[name] = result
+                continue
+
+            if len(frame_resp.content) < MIN_IMAGE_BYTES:
+                result['error'] = (
+                    f'Image too small ({len(frame_resp.content)} bytes, '
+                    f'min {MIN_IMAGE_BYTES})'
+                )
+                result['fix'] = 'Camera may be producing blank frames'
+                log.error(f'camera:{name}', 'Image too small',
+                         serial_id=serial_id,
+                         size=len(frame_resp.content), min=MIN_IMAGE_BYTES)
+                all_ok = False
+                results[name] = result
+                continue
+
+            with open(filepath, 'wb') as f:
+                f.write(frame_resp.content)
+
+            result['success'] = True
+            result['filepath'] = filepath
+            result['file_size_bytes'] = len(frame_resp.content)
+
+            log.info(f'camera:{name}', 'Frame saved',
+                     serial_id=serial_id,
+                     size_bytes=len(frame_resp.content))
+
+        except requests.exceptions.Timeout:
+            result['error'] = 'Frame pull timed out'
+            result['fix'] = 'SHM read issue'
+            result['capture_time_sec'] = CAPTURE_FRAME_TIMEOUT_SEC
+            log.error(f'camera:{name}', 'Frame pull timeout', serial_id=serial_id)
+            all_ok = False
+
+        except Exception as e:
+            result['error'] = f'Unexpected error: {e}'
+            log.exception(f'camera:{name}', 'Frame pull exception',
+                         serial_id=serial_id, error=str(e))
+            all_ok = False
+
+        results[name] = result
+
+    capture_time = round(time.time() - capture_start, 2)
+
+    if all_ok:
+        total_size = sum(r.get('file_size_bytes', 0) for r in results.values())
+        log.info('capture', 'All cameras captured',
+                 serial_id=serial_id,
+                 total_size_bytes=total_size,
+                 capture_time_sec=capture_time,
+                 per_camera={n: r.get('capture_time_sec') for n, r in results.items()})
+
+    return {
+        'success': all_ok,
+        'results': results,
+        'capture_time_sec': capture_time,
+        'error': None if all_ok else 'One or more cameras failed'
+    }
 
 
 # ============================================================
@@ -238,94 +326,33 @@ def capture_single_image(name: str, path: str, serial_id: str) -> dict:
 def do_grade(serial_id: str, live_weight: float):
     """
     Full capture → grade workflow. Runs in background thread.
-    Captures 1 image per camera via proxy, sends all 3 to EC2 API.
+    Captures all 3 cameras via proxy (sequential full-res), sends to EC2 API.
     EC2 handles S3 archival on success — Pi just captures and relays.
     """
     start_time = time.time()
-    results = {}
-    results_lock = threading.Lock()
 
     try:
-        # Phase 1: Capture
+        # Phase 1: Capture all cameras
         set_state(progress='capturing')
 
-        # Pre-check all cameras via proxy
-        available_cameras = {}
-        for name, path in CAMERAS.items():
-            check = check_camera(name, path)
-            if check['error']:
-                with results_lock:
-                    results[name] = {
-                        'name': name,
-                        'success': False,
-                        'filepath': None,
-                        'error': check['error'],
-                        'fix': check['fix']
-                    }
-                log.error(f'camera:{name}', 'Pre-check failed',
-                         error=check['error'], fix=check['fix'])
-            else:
-                available_cameras[name] = path
+        capture = capture_all_cameras(serial_id)
 
-        # All 3 cameras required for grading
-        if len(available_cameras) < 3:
-            missing = [n for n in CAMERAS if n not in available_cameras]
-            error_msg = f'Missing cameras: {", ".join(missing)}'
-            set_state(
-                last_error=error_msg,
-                last_result={
-                    'serial_id': serial_id,
-                    'success': False,
-                    'error': error_msg,
-                    'camera_results': results,
-                    'duration_sec': round(time.time() - start_time, 2)
-                }
-            )
-            log.error('grade', 'Not all cameras available',
-                     serial_id=serial_id, missing=','.join(missing))
-            return
+        if not capture['success']:
+            # Build error details from per-camera results
+            failed = [
+                n for n, r in capture.get('results', {}).items()
+                if not r.get('success')
+            ]
+            error_msg = capture.get('error', 'Capture failed')
+            if failed:
+                error_details = '; '.join(
+                    f"{n}: {capture['results'][n].get('error', 'unknown')}"
+                    for n in failed
+                )
+                error_msg = f"{error_msg} — {error_details}"
 
-        # Capture in batches of 2 to avoid overloading proxy
-        MAX_PARALLEL = 2
-        camera_list = list(available_cameras.items())
-        batches = [camera_list[i:i + MAX_PARALLEL] for i in range(0, len(camera_list), MAX_PARALLEL)]
-
-        for batch_num, batch in enumerate(batches, 1):
-            batch_names = [n for n, _ in batch]
-            log.info('capture', f'Batch {batch_num}/{len(batches)}',
-                    serial_id=serial_id, cameras=','.join(batch_names))
-
-            threads = {}
-            for name, path in batch:
-                def _capture_and_store(n=name, p=path):
-                    result = capture_single_image(n, p, serial_id)
-                    with results_lock:
-                        results[n] = result
-
-                t = threading.Thread(target=_capture_and_store)
-                threads[name] = t
-                t.start()
-
-            for name, t in threads.items():
-                t.join(timeout=PROXY_TIMEOUT_SEC + 10)
-                if t.is_alive():
-                    log.error(f'camera:{name}', 'Capture thread hung',
-                             serial_id=serial_id)
-                    with results_lock:
-                        results[name] = {
-                            'name': name,
-                            'success': False,
-                            'filepath': None,
-                            'error': 'Capture thread hung',
-                            'fix': 'Restart service: sudo systemctl restart goat-prod'
-                        }
-
-        # Check all captures succeeded
-        failed = [n for n, r in results.items() if not r.get('success')]
-        if failed:
-            error_msg = '; '.join(f"{n}: {results[n].get('error', 'unknown')}" for n in failed)
-            # Clean up any captured files
-            for r in results.values():
+            # Clean up any files that were written
+            for r in capture.get('results', {}).values():
                 fp = r.get('filepath')
                 if fp and os.path.exists(fp):
                     os.remove(fp)
@@ -336,35 +363,45 @@ def do_grade(serial_id: str, live_weight: float):
                     'serial_id': serial_id,
                     'success': False,
                     'error': error_msg,
-                    'camera_results': {n: {k: v for k, v in r.items() if k != 'filepath'}
-                                       for n, r in results.items()},
+                    'camera_results': {
+                        n: {k: v for k, v in r.items() if k != 'filepath'}
+                        for n, r in capture.get('results', {}).items()
+                    },
                     'duration_sec': round(time.time() - start_time, 2)
                 }
             )
             log.error('grade', 'Capture failed',
-                     serial_id=serial_id, failed=','.join(failed), error=error_msg)
+                      serial_id=serial_id, error=error_msg)
             return
 
-        capture_time = round(time.time() - start_time, 2)
+        results = capture['results']
+        capture_time = capture['capture_time_sec']
         total_size = sum(r.get('file_size_bytes', 0) for r in results.values())
-        log.info('capture', 'All cameras captured',
-                serial_id=serial_id,
-                total_size_bytes=total_size,
-                capture_time_sec=capture_time,
-                per_camera={n: r.get('capture_time_sec') for n, r in results.items()})
 
         # Phase 2: Send to EC2
         # EC2 handles grading, S3 archival of raw images, debug images, and result.json.
         set_state(progress='grading')
         log.info('grade', 'Sending to EC2',
-                serial_id=serial_id, ec2_api=EC2_API,
-                total_size_bytes=total_size)
+                 serial_id=serial_id, ec2_api=EC2_API,
+                 total_size_bytes=total_size)
 
         try:
             files = {
-                'side_image': (f'{serial_id}_side.jpg', open(results['side']['filepath'], 'rb'), 'image/jpeg'),
-                'top_image': (f'{serial_id}_top.jpg', open(results['top']['filepath'], 'rb'), 'image/jpeg'),
-                'front_image': (f'{serial_id}_front.jpg', open(results['front']['filepath'], 'rb'), 'image/jpeg'),
+                'side_image': (
+                    f'{serial_id}_side.jpg',
+                    open(results['side']['filepath'], 'rb'),
+                    'image/jpeg'
+                ),
+                'top_image': (
+                    f'{serial_id}_top.jpg',
+                    open(results['top']['filepath'], 'rb'),
+                    'image/jpeg'
+                ),
+                'front_image': (
+                    f'{serial_id}_front.jpg',
+                    open(results['front']['filepath'], 'rb'),
+                    'image/jpeg'
+                ),
             }
             data = {
                 'serial_id': serial_id,
@@ -408,12 +445,12 @@ def do_grade(serial_id: str, live_weight: float):
                     }
                 )
                 log.info('grade', 'Grading complete',
-                        serial_id=serial_id,
-                        grade=grade_result.get('grade'),
-                        all_views_ok=grade_result.get('all_views_successful'),
-                        capture_sec=capture_time,
-                        ec2_sec=ec2_time,
-                        total_sec=total_time)
+                         serial_id=serial_id,
+                         grade=grade_result.get('grade'),
+                         all_views_ok=grade_result.get('all_views_successful'),
+                         capture_sec=capture_time,
+                         ec2_sec=ec2_time,
+                         total_sec=total_time)
             else:
                 error_body = response.text[:500]
                 set_state(
@@ -427,9 +464,9 @@ def do_grade(serial_id: str, live_weight: float):
                     }
                 )
                 log.error('grade', 'EC2 API error',
-                         serial_id=serial_id,
-                         status_code=response.status_code,
-                         response=error_body)
+                          serial_id=serial_id,
+                          status_code=response.status_code,
+                          response=error_body)
 
         except requests.exceptions.ConnectTimeout:
             set_state(
@@ -443,7 +480,7 @@ def do_grade(serial_id: str, live_weight: float):
                 }
             )
             log.error('grade', 'EC2 connection timeout',
-                     serial_id=serial_id, ec2_api=EC2_API)
+                      serial_id=serial_id, ec2_api=EC2_API)
 
         except requests.exceptions.ConnectionError:
             set_state(
@@ -457,7 +494,7 @@ def do_grade(serial_id: str, live_weight: float):
                 }
             )
             log.error('grade', 'EC2 connection refused',
-                     serial_id=serial_id, ec2_api=EC2_API)
+                      serial_id=serial_id, ec2_api=EC2_API)
 
         except Exception as e:
             set_state(
@@ -470,7 +507,7 @@ def do_grade(serial_id: str, live_weight: float):
                 }
             )
             log.exception('grade', 'EC2 request failed',
-                         serial_id=serial_id, error=str(e))
+                          serial_id=serial_id, error=str(e))
 
         finally:
             # Clean up captured images from /tmp
@@ -481,7 +518,7 @@ def do_grade(serial_id: str, live_weight: float):
 
     except Exception as e:
         log.exception('grade', 'Unexpected error in grade workflow',
-                     serial_id=serial_id, error=str(e))
+                      serial_id=serial_id, error=str(e))
         set_state(
             last_error=str(e),
             last_result={
@@ -545,7 +582,7 @@ def get_system_info() -> dict:
     try:
         with open('/sys/class/thermal/thermal_zone0/temp', 'r') as f:
             info['cpu_temp_c'] = round(int(f.read().strip()) / 1000, 1)
-    except:
+    except Exception:
         info['cpu_temp_c'] = None
 
     try:
@@ -555,19 +592,19 @@ def get_system_info() -> dict:
                     info['mem_total_mb'] = int(line.split()[1]) // 1024
                 if 'MemAvailable' in line:
                     info['mem_available_mb'] = int(line.split()[1]) // 1024
-    except:
+    except Exception:
         info['mem_available_mb'] = None
 
     try:
         info['load_avg'] = round(os.getloadavg()[0], 2)
-    except:
+    except Exception:
         info['load_avg'] = None
 
     try:
         with open('/proc/uptime', 'r') as f:
             uptime_sec = float(f.read().split()[0])
             info['uptime_hours'] = round(uptime_sec / 3600, 1)
-    except:
+    except Exception:
         info['uptime_hours'] = None
 
     # Disk space
@@ -575,7 +612,7 @@ def get_system_info() -> dict:
         import shutil
         _, _, free = shutil.disk_usage('/tmp')
         info['disk_free_mb'] = free // (1024 * 1024)
-    except:
+    except Exception:
         info['disk_free_mb'] = None
 
     return info
@@ -659,12 +696,12 @@ def diagnostics():
 
     cameras_ok = sum(1 for c in diag['cameras'].values() if not c.get('error'))
     log.info('diag', 'Complete',
-            cameras_ok=cameras_ok,
-            cameras_total=len(CAMERAS),
-            ec2_ok=ec2_health.get('status') == 'ok',
-            proxy_ok=diag['proxy'].get('ok', False),
-            mem_mb=diag['system'].get('mem_available_mb'),
-            cpu_temp=diag['system'].get('cpu_temp_c'))
+             cameras_ok=cameras_ok,
+             cameras_total=len(CAMERAS),
+             ec2_ok=ec2_health.get('status') == 'ok',
+             proxy_ok=diag['proxy'].get('ok', False),
+             mem_mb=diag['system'].get('mem_available_mb'),
+             cpu_temp=diag['system'].get('cpu_temp_c'))
 
     return jsonify(diag)
 
@@ -686,7 +723,7 @@ def grade():
     state = get_state()
     if state['active']:
         log.warn('grade', 'Grade already in progress',
-                current_serial=state['serial_id'])
+                 current_serial=state['serial_id'])
         return jsonify({
             'status': 'error',
             'error_code': 'GRADE_IN_PROGRESS',
@@ -701,7 +738,7 @@ def grade():
     # Parse input
     try:
         data = request.get_json(force=True, silent=True) or {}
-    except:
+    except Exception:
         data = {}
 
     serial_id = data.get('serial_id', '').strip()
@@ -746,9 +783,9 @@ def grade():
     ec2_check = check_ec2_api()
     if ec2_check['status'] != 'ok':
         log.error('grade', 'EC2 not reachable, aborting before capture',
-                 serial_id=sanitized,
-                 ec2_api=EC2_API,
-                 error=ec2_check.get('error'))
+                  serial_id=sanitized,
+                  ec2_api=EC2_API,
+                  error=ec2_check.get('error'))
         return jsonify({
             'status': 'error',
             'error_code': 'EC2_UNREACHABLE',
@@ -768,7 +805,7 @@ def grade():
         errors = [f"{n}: {c['error']}" for n, c in failed.items()]
         fixes = [f"{n}: {c['fix']}" for n, c in failed.items() if c.get('fix')]
         log.error('grade', 'Cameras not ready',
-                 serial_id=sanitized, missing=','.join(failed.keys()))
+                  serial_id=sanitized, missing=','.join(failed.keys()))
         return jsonify({
             'status': 'error',
             'error_code': 'CAMERAS_NOT_READY',
@@ -791,7 +828,7 @@ def grade():
     thread.start()
 
     log.info('grade', 'Grade started',
-            serial_id=sanitized, live_weight=live_weight)
+             serial_id=sanitized, live_weight=live_weight)
 
     return jsonify({
         'status': 'grade_started',
@@ -827,12 +864,12 @@ def grade_test():
     # Validate
     if not serial_id:
         return jsonify({'status': 'error', 'error_code': 'MISSING_SERIAL_ID',
-                       'message': 'serial_id is required'}), 400
+                        'message': 'serial_id is required'}), 400
 
     sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', serial_id)
     if not sanitized:
         return jsonify({'status': 'error', 'error_code': 'INVALID_SERIAL_ID',
-                       'message': 'serial_id must be alphanumeric'}), 400
+                        'message': 'serial_id must be alphanumeric'}), 400
 
     try:
         live_weight = float(live_weight)
@@ -840,23 +877,23 @@ def grade_test():
             raise ValueError()
     except (TypeError, ValueError):
         return jsonify({'status': 'error', 'error_code': 'INVALID_WEIGHT',
-                       'message': 'live_weight must be a number between 0 and 500'}), 400
+                        'message': 'live_weight must be a number between 0 and 500'}), 400
 
     # Check all 3 images provided
     for view in ['side_image', 'top_image', 'front_image']:
         if view not in request.files:
             return jsonify({'status': 'error', 'error_code': 'MISSING_IMAGE',
-                           'message': f'{view} is required'}), 400
+                            'message': f'{view} is required'}), 400
         f = request.files[view]
         if not f.filename:
             return jsonify({'status': 'error', 'error_code': 'EMPTY_IMAGE',
-                           'message': f'{view} has no filename'}), 400
+                            'message': f'{view} has no filename'}), 400
 
     log.info('grade:test', 'Test grade request',
-            serial_id=sanitized, live_weight=live_weight,
-            side_size=request.files['side_image'].content_length,
-            top_size=request.files['top_image'].content_length,
-            front_size=request.files['front_image'].content_length)
+             serial_id=sanitized, live_weight=live_weight,
+             side_size=request.files['side_image'].content_length,
+             top_size=request.files['top_image'].content_length,
+             front_size=request.files['front_image'].content_length)
 
     # Forward to EC2 (EC2 handles grading + S3 archival)
     start_time = time.time()
@@ -897,9 +934,9 @@ def grade_test():
         if response.status_code == 200:
             grade_result = response.json()
             log.info('grade:test', 'Test grade complete',
-                    serial_id=sanitized,
-                    grade=grade_result.get('grade'),
-                    ec2_sec=ec2_time, total_sec=total_time)
+                     serial_id=sanitized,
+                     grade=grade_result.get('grade'),
+                     ec2_sec=ec2_time, total_sec=total_time)
             return jsonify({
                 'status': 'success',
                 'test': True,
@@ -917,9 +954,9 @@ def grade_test():
         else:
             error_body = response.text[:500]
             log.error('grade:test', 'EC2 error',
-                     serial_id=sanitized,
-                     status_code=response.status_code,
-                     response=error_body)
+                      serial_id=sanitized,
+                      status_code=response.status_code,
+                      response=error_body)
             return jsonify({
                 'status': 'error',
                 'error_code': 'EC2_ERROR',
@@ -946,7 +983,8 @@ def grade_test():
         }), 502
 
     except Exception as e:
-        log.exception('grade:test', 'Unexpected error', serial_id=sanitized, error=str(e))
+        log.exception('grade:test', 'Unexpected error',
+                      serial_id=sanitized, error=str(e))
         return jsonify({
             'status': 'error',
             'error_code': 'INTERNAL_ERROR',
@@ -1032,7 +1070,7 @@ def test_connectivity():
                     results['tests'][key] = {
                         'status': 'ok',
                         'fps': cam_health.get('fps'),
-                        'frame_age': cam_health.get('frame_age_sec')
+                        'resolution': cam_health.get('resolution')
                     }
                 else:
                     results['tests'][key] = {
@@ -1063,10 +1101,10 @@ def test_connectivity():
     results['duration_sec'] = round(time.time() - start, 2)
 
     log.info('test', 'Complete',
-            summary=results['summary'],
-            passed=sum(1 for t in results['tests'].values() if t.get('status') == 'ok'),
-            total=len(results['tests']),
-            duration_sec=results['duration_sec'])
+             summary=results['summary'],
+             passed=sum(1 for t in results['tests'].values() if t.get('status') == 'ok'),
+             total=len(results['tests']),
+             duration_sec=results['duration_sec'])
 
     return jsonify(results)
 
@@ -1075,7 +1113,7 @@ def test_connectivity():
 def proxy_debug_image(serial_id, view):
     """
     Proxy a debug image from EC2.
-    
+
     GET /debug/{serial_id}/{view}  ->  EC2 GET /debug/{serial_id}/{view}
     """
     if view not in ('side', 'top', 'front'):
@@ -1130,7 +1168,7 @@ def proxy_debug_image(serial_id, view):
 
     except Exception as e:
         log.exception('debug_proxy', 'Failed to fetch debug image',
-                     serial_id=sanitized, view=view, error=str(e))
+                      serial_id=sanitized, view=view, error=str(e))
         return jsonify({
             'status': 'error',
             'error_code': 'INTERNAL_ERROR',
@@ -1142,7 +1180,7 @@ def proxy_debug_image(serial_id, view):
 def proxy_debug_list(serial_id):
     """
     Proxy the debug image listing from EC2.
-    
+
     GET /debug/{serial_id}  ->  EC2 GET /debug/{serial_id}
     """
     sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', serial_id.strip())
@@ -1188,7 +1226,7 @@ def proxy_debug_list(serial_id):
 
     except Exception as e:
         log.exception('debug_proxy', 'Failed to list debug images',
-                     serial_id=sanitized, error=str(e))
+                      serial_id=sanitized, error=str(e))
         return jsonify({
             'status': 'error',
             'error_code': 'INTERNAL_ERROR',
@@ -1205,34 +1243,34 @@ def run_startup_checks():
     log.info('startup', '=' * 50)
     log.info('startup', 'PROD PI SERVER STARTING')
     log.info('startup', 'Configuration',
-            ec2_ip=EC2_IP, ec2_api=EC2_API,
-            ec2_api_key_set=bool(EC2_API_KEY),
-            resolution=f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
-            proxy_url=PROXY_URL)
+             ec2_ip=EC2_IP, ec2_api=EC2_API,
+             ec2_api_key_set=bool(EC2_API_KEY),
+             resolution=f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
+             proxy_url=PROXY_URL)
 
     if not EC2_API_KEY:
         log.critical('startup', 'EC2_API_KEY not set — EC2 will reject grading requests',
-                    fix='Set EC2_API_KEY in .env to match API_KEY on EC2')
+                     fix='Set EC2_API_KEY in .env to match API_KEY on EC2')
 
     # System info
     sys_info = get_system_info()
     log.info('startup:system', 'System info',
-            cpu_temp=sys_info.get('cpu_temp_c'),
-            mem_total_mb=sys_info.get('mem_total_mb'),
-            mem_available_mb=sys_info.get('mem_available_mb'),
-            load=sys_info.get('load_avg'),
-            uptime_hrs=sys_info.get('uptime_hours'),
-            disk_free_mb=sys_info.get('disk_free_mb'))
+             cpu_temp=sys_info.get('cpu_temp_c'),
+             mem_total_mb=sys_info.get('mem_total_mb'),
+             mem_available_mb=sys_info.get('mem_available_mb'),
+             load=sys_info.get('load_avg'),
+             uptime_hrs=sys_info.get('uptime_hours'),
+             disk_free_mb=sys_info.get('disk_free_mb'))
 
     if sys_info.get('cpu_temp_c') and sys_info['cpu_temp_c'] > 70:
         log.warn('startup:system', 'CPU temperature high',
-                temp_c=sys_info['cpu_temp_c'],
-                fix='Check Pi ventilation')
+                 temp_c=sys_info['cpu_temp_c'],
+                 fix='Check Pi ventilation')
 
     if sys_info.get('mem_available_mb') and sys_info['mem_available_mb'] < 500:
         log.warn('startup:system', 'Low memory',
-                available_mb=sys_info['mem_available_mb'],
-                fix='Restart Pi or check for memory leaks')
+                 available_mb=sys_info['mem_available_mb'],
+                 fix='Restart Pi or check for memory leaks')
 
     # Check camera proxy
     try:
@@ -1242,15 +1280,16 @@ def run_startup_checks():
             for cam, health in proxy_status.get('cameras', {}).items():
                 if health.get('connected'):
                     log.info(f'startup:camera:{cam}', 'Camera ready via proxy',
-                            fps=health.get('fps'))
+                             fps=health.get('fps'),
+                             resolution=health.get('resolution'))
                 else:
                     log.error(f'startup:camera:{cam}', 'Not connected',
-                             error=health.get('last_error'))
+                              error=health.get('last_error'))
         else:
             log.warn('startup:proxy', 'Proxy returned error', status=resp.status_code)
     except requests.exceptions.ConnectionError:
         log.warn('startup:proxy', 'Camera proxy not yet running',
-                fix='Will retry when grade is requested')
+                 fix='Will retry when grade is requested')
     except Exception as e:
         log.warn('startup:proxy', 'Proxy check failed', error=str(e))
 
@@ -1261,8 +1300,8 @@ def run_startup_checks():
         log.info('startup:network', 'Internet OK', latency_ms=internet.get('latency_ms'))
     else:
         log.error('startup:network', 'No internet connection',
-                 error=internet.get('error'),
-                 fix='Check ethernet cable or WiFi')
+                  error=internet.get('error'),
+                  fix='Check ethernet cable or WiFi')
 
     # Check EC2
     log.info('startup:ec2', 'Testing EC2 connectivity')
@@ -1271,7 +1310,7 @@ def run_startup_checks():
         log.info('startup:ec2', 'EC2 ping OK', latency_ms=ec2_ping.get('latency_ms'))
     else:
         log.warn('startup:ec2', 'EC2 ping failed',
-                error=ec2_ping.get('error'), ip=EC2_IP)
+                 error=ec2_ping.get('error'), ip=EC2_IP)
 
     ec2_api = check_ec2_api()
     ec2_ok = ec2_api['status'] == 'ok'
@@ -1279,15 +1318,15 @@ def run_startup_checks():
         log.info('startup:ec2', 'EC2 API OK', url=EC2_API)
     else:
         log.warn('startup:ec2', 'EC2 API not reachable',
-                error=ec2_api.get('error'), url=EC2_API,
-                fix='May be OK if EC2 is still starting')
+                 error=ec2_api.get('error'), url=EC2_API,
+                 fix='May be OK if EC2 is still starting')
 
     # Summary
     if ec2_ok:
         log.info('startup', 'All systems ready')
     else:
         log.warn('startup', 'Starting with issues',
-                issues='ec2')
+                 issues='ec2')
 
     log.info('startup', 'Server listening', host='0.0.0.0', port=5000)
     log.info('startup', '=' * 50)
