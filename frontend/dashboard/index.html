@@ -1152,160 +1152,6 @@
           gap: 0;
         }
       }
-      @media (max-width: 640px) {
-        .sidebar {
-          position: fixed;
-          left: 0;
-          top: 0;
-          bottom: 0;
-          z-index: 30;
-          width: 64px !important;
-        }
-        .sidebar .brand-logo {
-          height: 40px !important;
-          width: auto;
-        }
-        .sidebar .brand-logo-long,
-        .sidebar .nav-label,
-        .sidebar .footer-user {
-          display: none !important;
-        }
-        .sidebar .brand-logo-short {
-          display: block;
-        }
-        .sidebar .nav-btn {
-          justify-content: center;
-          padding: 9px;
-        }
-        .main {
-          margin-left: 64px;
-        }
-        .content {
-          padding: 14px;
-          overflow-y: auto;
-        }
-        .page.active {
-          display: flex;
-          flex-direction: column;
-          height: auto;
-          min-height: 100%;
-        }
-        .stat-row {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 8px;
-        }
-        .stat-card {
-          min-width: 0;
-          padding: 10px 12px;
-        }
-        .stat-value {
-          font-size: 20px;
-        }
-        .stat-sub {
-          font-size: 9px;
-        }
-        #page-dashboard .grid-2 {
-          grid-template-rows: auto;
-          flex: none;
-        }
-        #page-dashboard .panel {
-          max-height: 50vh;
-        }
-        #page-animals .panel.flex-1,
-        #page-grading .panel,
-        #page-logs .panel {
-          overflow-x: auto;
-          flex: none;
-        }
-        #page-animals .panel.flex-1 > div[style*="overflow-y"],
-        #page-logs .panel > div[style*="overflow-y"] {
-          overflow-y: visible !important;
-          flex: none !important;
-        }
-        .tbl-head,
-        .tbl-row {
-          min-width: 620px;
-        }
-        #provPanel {
-          flex: none !important;
-          max-height: none !important;
-          overflow: visible !important;
-        }
-        #provGrid {
-          overflow-y: visible !important;
-          flex: none !important;
-        }
-        #page-grading .panel:last-child {
-          flex: none !important;
-          max-height: none !important;
-        }
-        #page-grading .panel:last-child > div[style*="overflow-y"] {
-          overflow-y: visible !important;
-          flex: none !important;
-        }
-        .grid-3 {
-          grid-template-columns: 1fr;
-        }
-        .filter-row {
-          gap: 5px;
-        }
-        .filter-chip {
-          padding: 6px 10px;
-          font-size: 10px;
-        }
-        .search-bar {
-          min-width: 100%;
-        }
-        .search-bar input {
-          font-size: 12px;
-        }
-        .topbar {
-          padding: 0 12px;
-          height: 46px;
-        }
-        .topbar h1 {
-          font-size: 13px;
-        }
-        .topbar-user {
-          display: none;
-        }
-        .tbl-head {
-          padding: 6px 12px;
-          font-size: 8px;
-        }
-        .tbl-row {
-          padding: 8px 12px;
-        }
-        .modal {
-          max-width: 98vw;
-          border-radius: 10px;
-        }
-        .modal-body {
-          padding: 14px;
-        }
-        .modal-header {
-          padding: 12px 14px;
-        }
-        .modal-footer {
-          padding: 10px 14px;
-        }
-        #page-grading .flex.gap-12.items-end {
-          flex-direction: column;
-          align-items: stretch;
-        }
-        #page-grading .flex.gap-12.items-end > div {
-          min-width: 0;
-          flex: none;
-        }
-        #page-grading .flex.gap-12.items-end > div:last-child {
-          margin-top: 4px;
-        }
-        .btn-solid {
-          width: 100%;
-          text-align: center;
-        }
-      }
     </style>
   </head>
   <body>
@@ -1973,9 +1819,12 @@
                         "
                         >Dev Only</span
                       ><span style="font-size: 10px; color: var(--text-faint)"
-                        >Upload images directly to EC2 — bypasses Pi
-                        cameras</span
+                        >Upload images directly to EC2 — bypasses Pi cameras</span
                       >
+                      <label style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--orange);cursor:pointer;margin-left:auto">
+                        <input type="checkbox" id="devForceSaveToggle" onchange="_devForceSave = this.checked" />
+                        Force save failed grades
+                      </label>
                     </div>
                     <div class="grid-3" style="margin-bottom: 10px">
                       <div>
@@ -4712,7 +4561,7 @@
           badgeEl.textContent = result.grade;
           badgeEl.className =
             "preview-grade-badge badge lg " + gradeClass(result.grade);
-        } else if (!isOk) {
+        } else if (!isOk && !_devForceSave) {
           badgeEl.textContent = "FAILED";
           badgeEl.className = "preview-grade-badge badge lg";
           badgeEl.style.color = "var(--red)";
@@ -5315,6 +5164,7 @@
       // DEV-ONLY: Manual Image Upload Grading
       // ============================================================
       const _devFiles = { side: null, top: null, front: null };
+      let _devForceSave = false;
       function _isDevUser() {
         return _currentUser && _currentUser.username === "dev";
       }

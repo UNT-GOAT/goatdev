@@ -130,6 +130,11 @@ def hardware_worker():
 
             for pair in pairs:
                 for _ in range(FRAMES_PER_PAIR):
+                    # Re-check demand mid-batch so wake flag is seen immediately
+                    if shm_event.buf[0] == 1:
+                        has_demand = True
+                    if not has_demand:
+                        break
                     loop_start = time.time()
                     for name in pair:
                         if caps.get(name):
@@ -145,7 +150,9 @@ def hardware_worker():
 
                                 # ATOMIC WRITE: Clear size, write data, then commit size
                                 shm_frames[name].buf[:4] = b'\x00\x00\x00\x00'
-                                data = frame.tobytes(); size = len(data)
+                                data = frame.tobytes() if hasattr(frame, 'tobytes') else bytes(frame)
+                                size = len(data)
+                                shm_frames[name].buf[4:4+size] = data
                                 shm_frames[name].buf[4:4+size] = data
                                 shm_frames[name].buf[:4] = size.to_bytes(4, 'little') 
                                 
@@ -261,6 +268,7 @@ def capture(camera):
     except: pass
     # Wait for a frame (up to 3s)
     raw = None
+    time.sleep(0.2)  # give worker time to wake before polling
     for _ in range(60):
         raw = proxy.get_raw_frame()
         if raw and len(raw) > 50000:
