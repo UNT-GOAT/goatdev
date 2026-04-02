@@ -132,7 +132,7 @@ def build_animal_router(table: str) -> APIRouter:
     @router.put("/{serial_id}")
     async def update_animal(request: Request, serial_id: int, body: UpdateModel):
         pool = await get_conn(request)
-        fields_to_update = {k: v for k, v in body.model_dump().items() if v is not None}
+        fields_to_update = body.model_dump(exclude_unset=True)
 
         if not fields_to_update:
             raise HTTPException(400, "No fields to update")

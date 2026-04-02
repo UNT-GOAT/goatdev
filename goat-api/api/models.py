@@ -92,7 +92,6 @@ class HealthResponse(BaseModel):
     side_model: bool
     top_model: bool
     front_model: bool
-    storage_ok: bool
 
 
 class DeepHealthResponse(HealthResponse):

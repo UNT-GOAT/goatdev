@@ -3522,6 +3522,7 @@
         }
       }
 
+
       // ANIMALS
       function filterAnimals() {
         const q = (document.getElementById("animalSearch")?.value || "")
@@ -3998,11 +3999,15 @@
           );
           if (!r.ok) throw new Error("Update failed: " + r.status);
           closeModal("modalEditAnimal");
-          if (type === "goat") await loadGoats();
-          else if (type === "chicken") await loadChickens();
-          else await loadLambs();
-          filterAnimals();
-          updateDashboard();
+          if ((type === "goat" || type === "lamb") && body.hasOwnProperty("grade")) {
+              await syncGradeEverywhere(sid, type, body.grade);
+          } else {
+              if (type === "goat") await loadGoats();
+              else if (type === "chicken") await loadChickens();
+              else await loadLambs();
+              updateDashboard();
+              filterAnimals();
+          }
           selectAnimal(sid, type);
           showToast("success", "Updated " + type + " #" + sid);
         } catch (err) {
@@ -4349,6 +4354,53 @@
       }
 
       // GRADING
+
+      async function syncGradeEverywhere(serialId, type, newGrade) {
+        // 1. Update the animal table
+        try {
+            await HerdAuth.fetch(
+                CONFIG.DB_BASE + "/" + type + "s/" + serialId,
+                {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ grade: newGrade }),
+                },
+            );
+        } catch (err) {
+            console.warn("Animal grade sync failed:", err);
+        }
+
+        // 2. Update grade_results if one exists
+        const gradeRecord = allGrades.find(
+            (g) => String(g.serial_id) === String(serialId)
+        );
+        if (gradeRecord) {
+            try {
+                await HerdAuth.fetch(
+                    CONFIG.DB_BASE + "/grading/result/" + gradeRecord.id,
+                    {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ grade: newGrade }),
+                    },
+                );
+            } catch (err) {
+                console.warn("Grade result sync failed:", err);
+            }
+        }
+
+        // 3. Reload all data and re-render everything
+        await Promise.all([
+            loadGoats().catch(() => {}),
+            loadLambs().catch(() => {}),
+            loadChickens().catch(() => {}),
+            loadGrades().catch(() => {}),
+        ]);
+        updateDashboard();
+        filterAnimals();
+        renderGradeHistory();
+    }
+
       function onGradeSpeciesChange() {
         const species = document.getElementById("gradeSpecies").value;
         const descEl = document.getElementById("gradeDesc");
@@ -4898,55 +4950,43 @@
       // GRADE EDIT/DELETE — syncs to animal record
       async function saveEditGrade() {
         if (!_reviewGradeId) return;
-        const newGrade =
-          document.getElementById("reviewEditGrade").value || null;
+        const newGrade = document.getElementById("reviewEditGrade").value || null;
         try {
-          const r = await HerdAuth.fetch(
-            CONFIG.DB_BASE + "/grading/result/" + _reviewGradeId,
-            {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ grade: newGrade }),
-            },
-          );
-          if (!r.ok) {
-            const err = await r.json().catch(() => ({}));
-            throw new Error(err.detail || "Failed: " + r.status);
-          }
-          const gradeResult = allGrades.find((g) => g.id === _reviewGradeId);
-          if (gradeResult) {
-            const animal = allAnimals.find(
-                (a) => String(a.serial_id) === String(gradeResult.serial_id)
-            );
-            if (animal) {
-              const syncResp = await HerdAuth.fetch(
-                CONFIG.DB_BASE + "/" + animal.type + "s/" + animal.serial_id,
+            const r = await HerdAuth.fetch(
+                CONFIG.DB_BASE + "/grading/result/" + _reviewGradeId,
                 {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ grade: newGrade }),
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ grade: newGrade }),
                 },
-              );
-              if (!syncResp.ok)
-                throw new Error(
-                  "Grade saved but animal record failed to update — try editing the animal directly",
-                );
+            );
+            if (!r.ok) {
+                const err = await r.json().catch(() => ({}));
+                throw new Error(err.detail || "Failed: " + r.status);
             }
-          }
-          closeModal("modalGradeReview");
-          showToast("success", "Grade updated to " + (newGrade || "Ungraded"));
-          await Promise.all([
-            loadGrades().catch(() => {}),
-            loadGoats().catch(() => {}),
-            loadLambs().catch(() => {}),
-          ]);
-          updateDashboard();
-          filterAnimals();
-          renderGradeHistory();
+
+            closeModal("modalGradeReview");
+
+            const gradeResult = allGrades.find((g) => g.id === _reviewGradeId);
+            const serialId = gradeResult ? gradeResult.serial_id : null;
+            const animal = serialId
+                ? allAnimals.find((a) => String(a.serial_id) === String(serialId))
+                : null;
+
+            if (animal) {
+                await syncGradeEverywhere(serialId, animal.type, newGrade);
+                selectAnimal(Number(serialId), animal.type);
+            } else {
+                await loadGrades().catch(() => {});
+                renderGradeHistory();
+                updateDashboard();
+            }
+
+            showToast("success", "Grade updated to " + (newGrade || "Ungraded"));
         } catch (err) {
-          showToast("error", err.message);
+            showToast("error", err.message);
         }
-      }
+    }
       async function deleteGradeResult() {
         if (!_reviewGradeId) return;
         if (!confirm("Delete this grade result permanently?")) return;
