@@ -5,9 +5,9 @@ Camera Proxy Service — HerdSync
 Architecture:
   HardwareWorker (separate process, no gevent)
     - Owns all USB camera I/O via OpenCV + V4L2
-    - Streams at low res (640×480) sequentially to avoid USB 2.0 bandwidth saturation
-    - On capture signal: stops stream, opens cameras one-at-a-time at full res,
-      grabs frames, writes to SHM, resumes streaming
+    - Streams at 720p sequentially to avoid USB 2.0 bandwidth saturation
+    - On capture signal: switches resolution in-place to full res per camera,
+      grabs frames, switches back, resumes streaming
   Flask/gevent (main process)
     - Reads frames from shared memory for /stream endpoints
     - Signals hardware worker for /capture/all full-res grabs
@@ -15,9 +15,9 @@ Architecture:
 
 USB Bandwidth Note:
   Pi 4's VL805 controller tops out at ~35 MB/s for USB 2.0. Three 16MP MJPEG
-  cameras at full res (~2-4 MB/frame × 10fps × 2 active = 40-80 MB/s) exceeds
-  the bus ceiling. Sequential low-res streaming + on-demand full-res one-at-a-time
-  keeps every read well within budget.
+  cameras at full res simultaneously exceeds the bus ceiling. Sequential 720p
+  streaming (~3-7 MB/s total) stays well within budget. Full-res captures use
+  in-place resolution switching (no release/reopen) one camera at a time.
 """
 import multiprocessing as mp
 import os
@@ -37,7 +37,6 @@ import subprocess
 import tarfile
 import io
 import glob
-import struct
 from multiprocessing import shared_memory
 from flask import Flask, Response, request, jsonify
 from turbojpeg import TurboJPEG, TJFLAG_FASTUPSAMPLE
@@ -56,11 +55,10 @@ CAMERA_ORDER = ['side', 'top', 'front']
 CAMERA_INDEX = {name: i for i, name in enumerate(CAMERA_ORDER)}
 
 FULL_RES = (4656, 3496)
-STREAM_RES = (640, 480)
-TARGET_STREAM_FPS = 15
-SETTLE_FRAMES = 3               # Frames to burn after resolution switch (auto-exposure)
+STREAM_RES = (1280, 720)
+SETTLE_FRAMES = 1               # Frames to burn after resolution switch (auto-exposure)
 
-SHM_SIZE = 6 * 1024 * 1024      # 6 MB per camera (full-res MJPEG can be 2-4 MB)
+SHM_SIZE = 6 * 1024 * 1024      # 6 MB per camera (full-res MJPEG can be ~1-2 MB)
 STATS_SHM_SIZE = 8192
 SHM_NAMES = {name: f"herdsync_{name}_raw" for name in CAMERAS}
 STATS_SHM_NAME = "herdsync_system_stats"
@@ -93,17 +91,20 @@ def hardware_worker():
     """
     Hardware Isolation: Owns all USB camera I/O.
 
-    Main loop reads cameras SEQUENTIALLY at STREAM_RES.
-    On capture signal, switches to FULL_RES one-at-a-time, grabs frames,
-    then resumes streaming.
+    Main loop reads cameras SEQUENTIALLY at STREAM_RES with no artificial sleep —
+    USB read latency (~25-40ms at 720p) is the natural throttle, yielding ~8-13fps
+    per camera.
+
+    On capture signal, switches each camera to FULL_RES in-place via cap.set()
+    (no release/reopen), grabs one settle + one real frame, switches back to
+    STREAM_RES, then moves to the next camera.
     """
     import cv2
     from logger.pi_cloudwatch import Logger
     worker_log = Logger('hardware-worker')
     worker_log.info('init', 'HardwareWorker starting',
-                    stream_res=f'{STREAM_RES[0]}x{STREAM_RES[1]}',
-                    full_res=f'{FULL_RES[0]}x{FULL_RES[1]}',
-                    target_fps=TARGET_STREAM_FPS)
+                    stream_res='{}x{}'.format(STREAM_RES[0], STREAM_RES[1]),
+                    full_res='{}x{}'.format(FULL_RES[0], FULL_RES[1]))
 
     # --- SHM Setup ---
     shm_frames = {}
@@ -146,7 +147,7 @@ def hardware_worker():
                 'clients': 0,
                 'connected': False,
                 'errors': 0,
-                'resolution': f'{STREAM_RES[0]}x{STREAM_RES[1]}'
+                'resolution': '{}x{}'.format(STREAM_RES[0], STREAM_RES[1])
             } for n in CAMERAS
         },
         'settings': focus_vals,
@@ -162,35 +163,48 @@ def hardware_worker():
         except Exception:
             pass
 
+    def resolve_device(dev_path):
+        """Resolve symlink to real device path (OpenCV V4L2 needs real paths)."""
+        return os.path.realpath(dev_path)
+
     def open_cam(name, dev, resolution=STREAM_RES):
         """Open a camera at the given resolution with minimal V4L2 buffering."""
-        cap = cv2.VideoCapture(dev, cv2.CAP_V4L2)
+        real_dev = resolve_device(dev)
+        cap = cv2.VideoCapture(real_dev, cv2.CAP_V4L2)
         if cap.isOpened():
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, resolution[0])
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, resolution[1])
             cap.set(cv2.CAP_PROP_CONVERT_RGB, 0)
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize queued USB transfers
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             return cap
         return None
 
+    def set_resolution(cap, width, height):
+        """Switch resolution in-place without release/reopen."""
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+
     def apply_focus(name, dev):
         """Disable autofocus and apply saved focus value."""
+        real_dev = resolve_device(dev)
         subprocess.run(
-            ['v4l2-ctl', '-d', dev, '--set-ctrl', 'focus_automatic_continuous=0'],
+            ['v4l2-ctl', '-d', real_dev, '--set-ctrl', 'focus_automatic_continuous=0'],
             capture_output=True
         )
         subprocess.run(
-            ['v4l2-ctl', '-d', dev, '--set-ctrl', f'focus_absolute={local_state["settings"][name]}'],
+            ['v4l2-ctl', '-d', real_dev, '--set-ctrl',
+             'focus_absolute={}'.format(local_state['settings'][name])],
             capture_output=True
         )
 
     def write_frame_to_shm(name, frame_data):
-        """Atomic write: clear size → write data → commit size."""
+        """Atomic write: clear size -> write data -> commit size."""
         data = frame_data.tobytes()
         size = len(data)
         if size + 4 > SHM_SIZE:
-            worker_log.error('shm', f'Frame too large for SHM: {size} bytes', camera=name)
+            worker_log.error('shm', 'Frame too large for SHM: {} bytes'.format(size),
+                             camera=name)
             return False
         shm_frames[name].buf[:4] = b'\x00\x00\x00\x00'
         shm_frames[name].buf[4:4 + size] = data
@@ -209,7 +223,7 @@ def hardware_worker():
         for n in CAMERA_ORDER:
             caps[n] = open_cam(n, CAMERAS[n], resolution=STREAM_RES)
             local_state['cameras'][n]['connected'] = caps[n] is not None
-            local_state['cameras'][n]['resolution'] = f'{STREAM_RES[0]}x{STREAM_RES[1]}'
+            local_state['cameras'][n]['resolution'] = '{}x{}'.format(STREAM_RES[0], STREAM_RES[1])
             if caps[n]:
                 apply_focus(n, CAMERAS[n])
 
@@ -219,14 +233,14 @@ def hardware_worker():
             raw_in = bytes(shm_stats.buf).split(b'\0')[0].decode('utf-8')
             flask_updates = json.loads(raw_in)
             for n in CAMERAS:
-                # Sync client counts
                 local_state['cameras'][n]['clients'] = flask_updates['cameras'][n].get('clients', 0)
-                # Sync focus changes
                 new_f = flask_updates['settings'].get(n)
                 if new_f and new_f != local_state['settings'][n]:
                     local_state['settings'][n] = new_f
+                    real_dev = resolve_device(CAMERAS[n])
                     subprocess.run(
-                        ['v4l2-ctl', '-d', CAMERAS[n], '--set-ctrl', f'focus_absolute={new_f}'],
+                        ['v4l2-ctl', '-d', real_dev, '--set-ctrl',
+                         'focus_absolute={}'.format(new_f)],
                         capture_output=True
                     )
         except Exception:
@@ -234,63 +248,68 @@ def hardware_worker():
 
     def do_fullres_capture(camera_mask):
         """
-        Full-resolution capture sequence.
-        Releases all stream captures, opens requested cameras one-at-a-time
-        at FULL_RES, burns settle frames, grabs one good frame, writes to SHM.
+        Full-resolution capture via in-place resolution switching.
+
+        For each requested camera:
+          1. cap.set() to FULL_RES (~100ms V4L2 ioctl, no USB renegotiation)
+          2. Burn SETTLE_FRAMES for auto-exposure adjustment
+          3. Read the real frame, write to SHM
+          4. cap.set() back to STREAM_RES
+
+        Tested at ~1.5s per camera with 1 settle frame. Total ~3-4.5s for all 3.
         Returns dict of {name: success_bool}.
         """
         local_state['mode'] = 'capturing'
         sync_stats()
         results = {}
 
-        # Release all streaming captures first — free the USB bus entirely
-        release_all()
-        worker_log.info('capture', 'Stream paused, starting full-res sequence')
+        worker_log.info('capture', 'Starting in-place full-res capture')
+        capture_start = time.time()
 
         for i, name in enumerate(CAMERA_ORDER):
             if not camera_mask[i]:
                 results[name] = False
                 continue
 
-            worker_log.info('capture', f'Opening {name} at full res')
-            cap = open_cam(name, CAMERAS[name], resolution=FULL_RES)
-
+            cap = caps.get(name)
             if not cap:
-                worker_log.error('capture', f'Failed to open {name} at full res')
+                worker_log.error('capture', '{} not open, skipping'.format(name))
                 results[name] = False
                 continue
 
-            # Apply focus
-            apply_focus(name, CAMERAS[name])
+            cam_start = time.time()
 
-            # Burn frames for auto-exposure to settle after resolution switch
+            # Switch to full res in-place
+            set_resolution(cap, FULL_RES[0], FULL_RES[1])
+
+            # Burn settle frames for auto-exposure
             for _ in range(SETTLE_FRAMES):
                 cap.read()
 
-            # Grab the real frame
+            # Real frame
             ret, frame = cap.read()
             if ret:
                 if write_frame_to_shm(name, frame):
                     local_state['cameras'][name]['last_ts'] = time.time()
                     local_state['cameras'][name]['frame_count'] += 1
                     data_size = len(frame.tobytes())
-                    worker_log.info('capture', f'{name} captured',
-                                    size_bytes=data_size,
-                                    resolution=f'{FULL_RES[0]}x{FULL_RES[1]}')
+                    cam_time = round((time.time() - cam_start) * 1000)
+                    worker_log.info('capture',
+                                    '{} captured: {} bytes in {}ms'.format(name, data_size, cam_time))
                     results[name] = True
                 else:
                     results[name] = False
             else:
-                worker_log.error('capture', f'{name} read() failed at full res')
+                worker_log.error('capture', '{} read() failed at full res'.format(name))
                 results[name] = False
 
-            # Release immediately — free bus for next camera
-            cap.release()
+            # Switch back to stream res immediately
+            set_resolution(cap, STREAM_RES[0], STREAM_RES[1])
 
-        # Resume streaming
-        worker_log.info('capture', 'Resuming stream',
+        total_time = round((time.time() - capture_start) * 1000)
+        worker_log.info('capture', 'Capture complete in {}ms'.format(total_time),
                         results={n: r for n, r in results.items()})
-        open_all_streaming()
+
         local_state['mode'] = 'streaming'
         sync_stats()
 
@@ -323,21 +342,24 @@ def hardware_worker():
                     shm_event.buf[0] = EVENT_DONE if all_ok else EVENT_FAILED
                 except Exception as e:
                     worker_log.exception('capture', 'Capture failed', error=str(e))
-                    # Try to recover streaming
-                    try:
-                        open_all_streaming()
-                        local_state['mode'] = 'streaming'
-                        sync_stats()
-                    except Exception:
-                        pass
+                    # Try to recover — switch all back to stream res
+                    for name in CAMERA_ORDER:
+                        cap = caps.get(name)
+                        if cap:
+                            try:
+                                set_resolution(cap, STREAM_RES[0], STREAM_RES[1])
+                            except Exception:
+                                pass
+                    local_state['mode'] = 'streaming'
+                    sync_stats()
                     shm_event.buf[0] = EVENT_FAILED
 
-                continue  # Skip to next iteration — streaming just resumed
+                continue
 
-            # 3. Sequential streaming reads — one camera at a time
+            # 3. Sequential streaming reads — no artificial sleep
+            #    USB read latency at 720p (~25-40ms) is the natural throttle
             for name in CAMERA_ORDER:
                 if not caps.get(name):
-                    # Try to reconnect
                     caps[name] = open_cam(name, CAMERAS[name], resolution=STREAM_RES)
                     if caps[name]:
                         apply_focus(name, CAMERAS[name])
@@ -346,7 +368,6 @@ def hardware_worker():
                     else:
                         continue
 
-                loop_start = time.time()
                 ret, frame = caps[name].read()
 
                 if ret:
@@ -368,18 +389,13 @@ def hardware_worker():
                 else:
                     local_state['cameras'][name]['errors'] += 1
                     if local_state['cameras'][name]['errors'] > 10:
-                        worker_log.error('stream', f'{name} persistent read failures, reopening')
+                        worker_log.error('stream',
+                                         '{} persistent read failures, reopening'.format(name))
                         caps[name].release()
                         caps[name] = open_cam(name, CAMERAS[name], resolution=STREAM_RES)
                         if caps[name]:
                             apply_focus(name, CAMERAS[name])
                         local_state['cameras'][name]['errors'] = 0
-
-                # Sleep to hit target FPS — per camera, so total loop is ~3x this
-                elapsed = time.time() - loop_start
-                sleep_time = (1.0 / TARGET_STREAM_FPS) - elapsed
-                if sleep_time > 0:
-                    time.sleep(sleep_time)
 
             sync_stats()
 
@@ -477,7 +493,6 @@ def _signal_capture(camera_names):
     except FileNotFoundError:
         return False, 'Hardware worker not running'
 
-    # Check not already capturing
     if shm_event.buf[0] in (EVENT_REQUESTED, EVENT_IN_PROGRESS):
         return False, 'Capture already in progress'
 
@@ -488,8 +503,8 @@ def _signal_capture(camera_names):
     # Signal
     shm_event.buf[0] = EVENT_REQUESTED
 
-    # Poll for completion
-    deadline = time.time() + 12.0  # 12s timeout (settle frames + 3 cameras)
+    # Poll for completion — in-place switching ~1.5s per camera, ~4.5s max
+    deadline = time.time() + 8.0
     while time.time() < deadline:
         state = shm_event.buf[0]
         if state == EVENT_DONE:
@@ -500,9 +515,8 @@ def _signal_capture(camera_names):
             return False, 'Hardware worker reported capture failure'
         time.sleep(0.05)
 
-    # Timeout — reset flag so worker doesn't get stuck
     shm_event.buf[0] = EVENT_IDLE
-    return False, 'Capture timed out (12s)'
+    return False, 'Capture timed out (8s)'
 
 
 def heartbeat_loop():
@@ -530,13 +544,13 @@ def health_monitor_loop():
             raw = bytes(shm.buf).split(b'\0')[0].decode('utf-8')
             data = json.loads(raw)
 
-            # Don't watchdog during captures — the stream is intentionally paused
+            # Don't watchdog during captures — stream is intentionally paused
             if data.get('mode') == 'capturing':
                 continue
 
             for name, s in data['cameras'].items():
                 if s['connected'] and (time.time() - s['last_ts'] > 30):
-                    log.error('watchdog', f'Freeze on {name}. Rebooting HardwareWorker.',
+                    log.error('watchdog', 'Freeze on {}. Rebooting HardwareWorker.'.format(name),
                               last_ts=s['last_ts'], age=round(time.time() - s['last_ts'], 1))
                     global hardware_process
                     if hardware_process:
@@ -556,7 +570,7 @@ def health_monitor_loop():
 
 @app.route('/stream/<camera>')
 def stream(camera):
-    """MJPEG stream at low resolution for monitoring."""
+    """MJPEG stream at 720p for monitoring."""
     if camera not in CAMERAS:
         return "Invalid camera", 404
     return Response(
@@ -569,20 +583,19 @@ def stream(camera):
 def capture(camera):
     """
     Capture a single full-res image.
-    Triggers hardware worker to switch to FULL_RES for this camera only.
+    Triggers in-place resolution switch for this camera only.
     """
     if camera not in CAMERAS:
-        return jsonify({'error': f'Unknown camera: {camera}'}), 404
+        return jsonify({'error': 'Unknown camera: {}'.format(camera)}), 404
 
     success, error = _signal_capture([camera])
     if not success:
         return jsonify({'error': error}), 503
 
-    # Read the frame from SHM
     proxy = PROXIES[camera]
     raw = proxy.get_raw_frame()
     if not raw or len(raw) < MIN_IMAGE_BYTES:
-        return jsonify({'error': f'Frame too small or missing for {camera}'}), 503
+        return jsonify({'error': 'Frame too small or missing for {}'.format(camera)}), 503
 
     return Response(raw, mimetype='image/jpeg', headers={
         'X-Frame-Size-Bytes': str(len(raw)),
@@ -593,17 +606,13 @@ def capture(camera):
 def capture_all():
     """
     Capture full-res images from ALL cameras.
-    Hardware worker opens each one-at-a-time at FULL_RES, ensuring no USB contention.
+    In-place resolution switching, one camera at a time.
     Returns all three images as a gzipped tar archive.
-
-    Response headers:
-        X-Capture-Cameras: comma-separated list of cameras captured
     """
     success, error = _signal_capture(CAMERA_ORDER)
     if not success:
         return jsonify({'error': error}), 503
 
-    # Collect frames from SHM
     frames = {}
     for name in CAMERA_ORDER:
         raw = PROXIES[name].get_raw_frame()
@@ -611,16 +620,15 @@ def capture_all():
             frames[name] = raw
         else:
             return jsonify({
-                'error': f'No valid frame for {name}',
+                'error': 'No valid frame for {}'.format(name),
                 'captured': list(frames.keys()),
                 'failed': name
             }), 503
 
-    # Package as gzipped tar
     tar_buf = io.BytesIO()
     with tarfile.open(fileobj=tar_buf, mode='w:gz') as tar:
         for name, data in frames.items():
-            info = tarfile.TarInfo(name=f"{name}.jpg")
+            info = tarfile.TarInfo(name="{}.jpg".format(name))
             info.size = len(data)
             info.mtime = time.time()
             tar.addfile(info, io.BytesIO(data))
@@ -658,7 +666,7 @@ def capture_all_individual():
         else:
             return jsonify({
                 'success': False,
-                'error': f'No valid frame for {name}',
+                'error': 'No valid frame for {}'.format(name),
                 'cameras': result['cameras']
             }), 503
 
@@ -672,11 +680,11 @@ def capture_frame(camera):
     Use after /capture/all/individual to pull individual full-res frames.
     """
     if camera not in CAMERAS:
-        return jsonify({'error': f'Unknown camera: {camera}'}), 404
+        return jsonify({'error': 'Unknown camera: {}'.format(camera)}), 404
 
     raw = PROXIES[camera].get_raw_frame()
     if not raw or len(raw) < MIN_IMAGE_BYTES:
-        return jsonify({'error': f'No valid frame for {camera}'}), 503
+        return jsonify({'error': 'No valid frame for {}'.format(camera)}), 503
 
     return Response(raw, mimetype='image/jpeg', headers={
         'X-Frame-Size-Bytes': str(len(raw)),
@@ -687,7 +695,7 @@ def capture_frame(camera):
 def capture_burst(camera):
     """Burst capture at current streaming resolution. NOT full-res."""
     if camera not in CAMERAS:
-        return jsonify({'error': f'Unknown camera: {camera}'}), 404
+        return jsonify({'error': 'Unknown camera: {}'.format(camera)}), 404
 
     data = request.get_json(silent=True) or {}
     count = min(int(data.get('count', 20)), 100)
@@ -705,7 +713,7 @@ def capture_burst(camera):
     tar_buf = io.BytesIO()
     with tarfile.open(fileobj=tar_buf, mode='w:gz') as tar:
         for i, (f_bytes, ts) in enumerate(frames):
-            info = tarfile.TarInfo(name=f"burst_{camera}_{i:03d}.jpg")
+            info = tarfile.TarInfo(name="burst_{}_{:03d}.jpg".format(camera, i))
             info.size = len(f_bytes)
             info.mtime = ts
             tar.addfile(info, io.BytesIO(f_bytes))
@@ -721,7 +729,7 @@ def capture_burst(camera):
 def set_focus(camera, val):
     """FOCUS: Updates SHM settings and persistence file."""
     if camera not in CAMERAS:
-        return jsonify({'error': f'Unknown camera: {camera}'}), 404
+        return jsonify({'error': 'Unknown camera: {}'.format(camera)}), 404
     try:
         shm = shared_memory.SharedMemory(name=STATS_SHM_NAME)
         raw = bytes(shm.buf).split(b'\0')[0].decode('utf-8')
@@ -734,7 +742,7 @@ def set_focus(camera, val):
             json.dump(data['settings'], f)
     except Exception:
         pass
-    return f"Focus set to {val}"
+    return "Focus set to {}".format(val)
 
 
 @app.route('/status')
@@ -757,7 +765,6 @@ def ensure_initialized():
         return
     _initialized = True
     if mp.current_process().name == 'MainProcess':
-        # Auto-wipe SHM zombies
         for shm_file in glob.glob('/dev/shm/herdsync_*'):
             try:
                 os.unlink(shm_file)

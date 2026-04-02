@@ -4603,7 +4603,7 @@
             "/" +
             view +
             "?token=" +
-            token;s
+            token;
           img.alt = view + " debug";
           img.onerror = function () {
             this.style.opacity = ".2";
@@ -4916,9 +4916,7 @@
           const gradeResult = allGrades.find((g) => g.id === _reviewGradeId);
           if (gradeResult) {
             const animal = allAnimals.find(
-              (a) =>
-                a.serial_id == gradeResult.serial_id &&
-                (a.type === gradeResult.species || !gradeResult.species),
+                (a) => String(a.serial_id) === String(gradeResult.serial_id)
             );
             if (animal) {
               const syncResp = await HerdAuth.fetch(

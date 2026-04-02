@@ -38,9 +38,6 @@ SIDE_CALIBRATION_PATH = MODEL_DIR / "side" / "side_calibration.json"
 TOP_CALIBRATION_PATH = MODEL_DIR / "top" / "top_calibration.json"
 FRONT_CALIBRATION_PATH = MODEL_DIR / "front" / "front_calibration.json"
 
-# Results storage
-RESULTS_FILE = DATA_DIR / "results.json"
-
 # S3 buckets
 S3_CAPTURES_BUCKET = os.environ['S3_CAPTURES_BUCKET']
 S3_PROCESSED_BUCKET = os.environ['S3_PROCESSED_BUCKET']

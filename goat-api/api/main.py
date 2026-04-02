@@ -29,10 +29,9 @@ from .config import (
 )
 from .models import (
     AnalyzeResponse, MeasurementsResponse, ConfidenceScores, ViewError,
-    HealthResponse, DeepHealthResponse, ResultsResponse, ErrorResponse
+    HealthResponse, DeepHealthResponse, ErrorResponse
 )
 from .grader import grader
-from .storage import storage
 from .grade_calculator import calculate_grade
 from .api_auth import APIKeyMiddleware, API_KEY
 
@@ -51,7 +50,7 @@ MAX_DEBUG_SERIAL_IDS = 100
 #
 # Responsibility:
 #   goat-captures bucket  — raw uploaded images (as received from Pi)
-#   goat-processed bucket — debug overlay images + result.json
+#   goat-processed bucket — debug overlay images
 #
 # Archival only happens on successful grades (all views OK).
 # Runs in a background thread so it never blocks the API response.
@@ -95,7 +94,6 @@ def _archive_to_s3(
     serial_id: str,
     raw_images: dict,
     debug_image_paths: dict,
-    result_dict: dict
 ):
     """
     Archive a successful grade to S3. Runs in a background thread.
@@ -103,7 +101,6 @@ def _archive_to_s3(
     Writes:
       goat-captures/{serial_id}/{view}.jpg        — raw images
       goat-processed/{serial_id}/{view}_debug.jpg  — debug overlays
-      goat-processed/{serial_id}/result.json       — full grade result
 
     Args:
         serial_id: Goat identifier
@@ -132,24 +129,6 @@ def _archive_to_s3(
                         f'{serial_id}/{view_name}_debug.jpg',
                         debug_path
                     )
-
-            # Include S3 paths in result for cross-referencing
-            result_with_paths = dict(result_dict)
-            result_with_paths['s3'] = {
-                'captures_bucket': S3_CAPTURES_BUCKET,
-                'processed_bucket': S3_PROCESSED_BUCKET,
-                'raw_images': {v: f'{serial_id}/{v}.jpg' for v in raw_images},
-                'debug_images': {v: f'{serial_id}/{v}_debug.jpg' for v in debug_image_paths},
-                'result_key': f'{serial_id}/result.json'
-            }
-
-            result_json = json.dumps(result_with_paths, indent=2, default=str)
-            _s3_upload_bytes(
-                S3_PROCESSED_BUCKET,
-                f'{serial_id}/result.json',
-                result_json.encode('utf-8'),
-                content_type='application/json'
-            )
         else:
             log.warn('s3:processed', 'S3_PROCESSED_BUCKET not set, skipping')
 
@@ -170,15 +149,6 @@ async def lifespan(app: FastAPI):
     # Startup
     log.info('startup', '=' * 50)
     log.info('startup', 'GOAT GRADING API STARTING')
-    
-    # Initialize storage
-    storage_ok, storage_error = storage.initialize()
-    if not storage_ok:
-        log.critical('startup', 'Storage initialization failed',
-                    error=storage_error,
-                    fix='Check data directory permissions and disk space')
-    else:
-        log.info('startup', 'Storage initialized')
     
     # Initialize grader (loads models)
     grader_ok, grader_errors = grader.initialize()
@@ -450,13 +420,12 @@ def _cleanup_old_debug_dirs():
 async def health():
     """Basic health check"""
     return HealthResponse(
-        status="ok" if grader.is_initialized and storage.is_initialized else "degraded",
+        status="ok" if grader.is_initialized else "degraded",
         timestamp=datetime.now().isoformat(),
         models_loaded=grader.is_initialized,
         side_model=grader.side_model is not None,
         top_model=grader.top_model is not None,
         front_model=grader.front_model is not None,
-        storage_ok=storage.is_initialized
     )
 
 
@@ -480,7 +449,6 @@ async def health_deep():
         side_model=grader.side_model is not None,
         top_model=grader.top_model is not None,
         front_model=grader.front_model is not None,
-        storage_ok=storage.is_initialized,
         inference_test=inference_ok,
         inference_time_ms=inference_time,
         memory_usage_mb=round((memory.total - memory.available) / (1024**2), 1),
@@ -509,7 +477,6 @@ async def analyze(
     On successful grades (all views OK), archives to S3 in a background thread:
     - Raw images → goat-captures bucket: {serial_id}/{view}.jpg
     - Debug overlays → goat-processed bucket: {serial_id}/{view}_debug.jpg
-    - Result JSON → goat-processed bucket: {serial_id}/result.json
     
     S3 archival is skipped for failed grades to avoid polluting buckets
     with unusable data.
@@ -655,13 +622,6 @@ async def analyze(
         success=True
     )
     
-    # Save result to local storage
-    result_dict = response.model_dump()
-    save_ok, save_error = storage.save_result(result_dict)
-    if not save_ok:
-        log.error('analyze', 'Failed to save result',
-                 serial_id=serial_id, error=save_error)
-    
     # =========================================================================
     # S3 ARCHIVAL (background, success-only)
     # =========================================================================
@@ -674,7 +634,7 @@ async def analyze(
     if response.success and response.all_views_successful:
         thread = threading.Thread(
             target=_archive_to_s3,
-            args=(serial_id, raw_images, debug_image_paths, result_dict),
+            args=(serial_id, raw_images, debug_image_paths),
             daemon=True
         )
         thread.start()
@@ -693,66 +653,6 @@ async def analyze(
             duration_sec=duration)
     
     return response
-
-
-@app.get("/results", response_model=ResultsResponse)
-async def get_results():
-    """Get all analysis results"""
-    results = storage.get_all_results()
-    
-    # Convert to response models
-    response_results = []
-    for r in results:
-        try:
-            response_results.append(AnalyzeResponse(**r))
-        except Exception as e:
-            log.warn('results', 'Skipping invalid result', error=str(e))
-    
-    return ResultsResponse(
-        total_results=len(response_results),
-        results=response_results
-    )
-
-
-@app.get("/results/{serial_id}", response_model=AnalyzeResponse)
-async def get_result(serial_id: str):
-    """Get a single analysis result by serial_id"""
-    # Sanitize
-    serial_id, error = sanitize_serial_id(serial_id)
-    if error:
-        raise HTTPException(status_code=400, detail=error)
-    
-    result = storage.get_result(serial_id)
-    
-    if not result:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "error": f"Result not found for serial_id: {serial_id}",
-                "error_code": "NOT_FOUND"
-            }
-        )
-    
-    return AnalyzeResponse(**result)
-
-
-@app.delete("/results/{serial_id}")
-async def delete_result(serial_id: str):
-    """Delete an analysis result"""
-    serial_id, error = sanitize_serial_id(serial_id)
-    if error:
-        raise HTTPException(status_code=400, detail=error)
-    
-    if storage.delete_result(serial_id):
-        return {"status": "deleted", "serial_id": serial_id}
-    else:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "error": f"Result not found for serial_id: {serial_id}",
-                "error_code": "NOT_FOUND"
-            }
-        )
 
 
 @app.get("/debug/{serial_id}/{view}")

@@ -42,7 +42,7 @@ CAMERAS = {
 # Camera proxy
 PROXY_URL = "http://127.0.0.1:8080"
 PROXY_TIMEOUT_SEC = 10
-CAPTURE_ALL_TIMEOUT_SEC = 15   # Full-res capture of all 3 cameras (settle frames + sequential grabs)
+CAPTURE_ALL_TIMEOUT_SEC = 15   # Full-res capture of all 3 cameras via in-place switching
 CAPTURE_FRAME_TIMEOUT_SEC = 5  # Pulling a single frame from SHM after capture
 
 # Capture settings
@@ -139,9 +139,8 @@ def check_camera(name: str, path: str) -> dict:
             result['error'] = f"Frame stale ({cam_health.get('frame_age_sec')}s old)"
             result['fix'] = 'Camera may be frozen. Check USB connection.'
         else:
-            # Check freshness from last_ts if available
-            # Use a longer staleness window since streaming is now sequential
-            # across 3 cameras and capture pauses the stream
+            # Check freshness — use longer threshold during captures since
+            # the stream is intentionally paused for in-place resolution switching
             last_ts = cam_health.get('last_ts', 0)
             mode = data.get('mode', 'streaming')
             stale_threshold = 30 if mode == 'capturing' else 10
@@ -163,9 +162,9 @@ def capture_all_cameras(serial_id: str) -> dict:
     """
     Capture full-res images from all 3 cameras via proxy.
 
-    Calls /capture/all/individual to trigger the hardware worker's sequential
-    full-res capture (one camera at a time, no USB contention), then pulls
-    each frame individually and saves to /tmp.
+    Calls /capture/all/individual to trigger the hardware worker's in-place
+    resolution switching (720p -> 4656x3496 -> 720p per camera, sequential,
+    no USB contention), then pulls each frame individually and saves to /tmp.
 
     Returns:
         {
@@ -325,9 +324,9 @@ def capture_all_cameras(serial_id: str) -> dict:
 
 def do_grade(serial_id: str, live_weight: float):
     """
-    Full capture → grade workflow. Runs in background thread.
-    Captures all 3 cameras via proxy (sequential full-res), sends to EC2 API.
-    EC2 handles S3 archival on success — Pi just captures and relays.
+    Full capture -> grade workflow. Runs in background thread.
+    Captures all 3 cameras via proxy (in-place resolution switching),
+    sends to EC2 API. EC2 handles S3 archival on success.
     """
     start_time = time.time()
 
@@ -338,7 +337,6 @@ def do_grade(serial_id: str, live_weight: float):
         capture = capture_all_cameras(serial_id)
 
         if not capture['success']:
-            # Build error details from per-camera results
             failed = [
                 n for n, r in capture.get('results', {}).items()
                 if not r.get('success')
@@ -379,7 +377,6 @@ def do_grade(serial_id: str, live_weight: float):
         total_size = sum(r.get('file_size_bytes', 0) for r in results.values())
 
         # Phase 2: Send to EC2
-        # EC2 handles grading, S3 archival of raw images, debug images, and result.json.
         set_state(progress='grading')
         log.info('grade', 'Sending to EC2',
                  serial_id=serial_id, ec2_api=EC2_API,
@@ -607,7 +604,6 @@ def get_system_info() -> dict:
     except Exception:
         info['uptime_hours'] = None
 
-    # Disk space
     try:
         import shutil
         _, _, free = shutil.disk_usage('/tmp')
@@ -647,7 +643,7 @@ def health():
         'status': 'ok' if all(cameras.values()) else 'degraded',
         'timestamp': datetime.now().isoformat(),
         'cameras': cameras,
-        'ec2_target': EC2_API,  # type: ignore
+        'ec2_target': EC2_API,
         'mem_available_mb': sys_info.get('mem_available_mb'),
         'cpu_temp_c': sys_info.get('cpu_temp_c'),
         'capture_active': get_state()['active']
@@ -673,11 +669,9 @@ def diagnostics():
         'state': get_state()
     }
 
-    # Check each camera via proxy
     for name, path in CAMERAS.items():
         diag['cameras'][name] = check_camera(name, path)
 
-    # Proxy health
     try:
         resp = requests.get(f'{PROXY_URL}/status', timeout=5)
         if resp.status_code == 200:
@@ -687,7 +681,6 @@ def diagnostics():
     except Exception as e:
         diag['proxy'] = {'ok': False, 'error': str(e)}
 
-    # Check EC2
     ec2_health = check_ec2_api()
     diag['ec2'] = {
         'api': EC2_API,
@@ -735,7 +728,6 @@ def grade():
             }
         }), 409
 
-    # Parse input
     try:
         data = request.get_json(force=True, silent=True) or {}
     except Exception:
@@ -744,7 +736,6 @@ def grade():
     serial_id = data.get('serial_id', '').strip()
     live_weight = data.get('live_weight')
 
-    # Validate serial_id
     if not serial_id:
         return jsonify({
             'status': 'error',
@@ -760,7 +751,6 @@ def grade():
             'message': 'serial_id must be alphanumeric, max 50 chars'
         }), 400
 
-    # Validate weight
     if live_weight is None:
         return jsonify({
             'status': 'error',
@@ -861,7 +851,6 @@ def grade_test():
     serial_id = request.form.get('serial_id', '').strip()
     live_weight = request.form.get('live_weight')
 
-    # Validate
     if not serial_id:
         return jsonify({'status': 'error', 'error_code': 'MISSING_SERIAL_ID',
                         'message': 'serial_id is required'}), 400
@@ -879,7 +868,6 @@ def grade_test():
         return jsonify({'status': 'error', 'error_code': 'INVALID_WEIGHT',
                         'message': 'live_weight must be a number between 0 and 500'}), 400
 
-    # Check all 3 images provided
     for view in ['side_image', 'top_image', 'front_image']:
         if view not in request.files:
             return jsonify({'status': 'error', 'error_code': 'MISSING_IMAGE',
@@ -895,7 +883,6 @@ def grade_test():
              top_size=request.files['top_image'].content_length,
              front_size=request.files['front_image'].content_length)
 
-    # Forward to EC2 (EC2 handles grading + S3 archival)
     start_time = time.time()
     try:
         files = {
@@ -999,7 +986,6 @@ def cancel():
 
     state = get_state()
     if state['serial_id']:
-        # Clean up any temp files
         for name in CAMERAS:
             fp = f'/tmp/{state["serial_id"]}_{name}.jpg'
             if os.path.exists(fp):
@@ -1111,11 +1097,7 @@ def test_connectivity():
 
 @app.route('/debug/<serial_id>/<view>')
 def proxy_debug_image(serial_id, view):
-    """
-    Proxy a debug image from EC2.
-
-    GET /debug/{serial_id}/{view}  ->  EC2 GET /debug/{serial_id}/{view}
-    """
+    """Proxy a debug image from EC2."""
     if view not in ('side', 'top', 'front'):
         return jsonify({
             'status': 'error',
@@ -1178,11 +1160,7 @@ def proxy_debug_image(serial_id, view):
 
 @app.route('/debug/<serial_id>')
 def proxy_debug_list(serial_id):
-    """
-    Proxy the debug image listing from EC2.
-
-    GET /debug/{serial_id}  ->  EC2 GET /debug/{serial_id}
-    """
+    """Proxy the debug image listing from EC2."""
     sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', serial_id.strip())
     if not sanitized or len(sanitized) > MAX_SERIAL_ID_LEN:
         return jsonify({
@@ -1200,7 +1178,6 @@ def proxy_debug_list(serial_id):
 
         if resp.status_code == 200:
             data = resp.json()
-            # Rewrite URLs to point at this Pi proxy instead of EC2
             for img in data.get('debug_images', []):
                 img['url'] = f'/debug/{sanitized}/{img["view"]}'
             return jsonify(data)
@@ -1252,7 +1229,6 @@ def run_startup_checks():
         log.critical('startup', 'EC2_API_KEY not set — EC2 will reject grading requests',
                      fix='Set EC2_API_KEY in .env to match API_KEY on EC2')
 
-    # System info
     sys_info = get_system_info()
     log.info('startup:system', 'System info',
              cpu_temp=sys_info.get('cpu_temp_c'),
@@ -1272,7 +1248,6 @@ def run_startup_checks():
                  available_mb=sys_info['mem_available_mb'],
                  fix='Restart Pi or check for memory leaks')
 
-    # Check camera proxy
     try:
         resp = requests.get(f'{PROXY_URL}/status', timeout=5)
         if resp.status_code == 200:
@@ -1293,7 +1268,6 @@ def run_startup_checks():
     except Exception as e:
         log.warn('startup:proxy', 'Proxy check failed', error=str(e))
 
-    # Check internet
     log.info('startup:network', 'Testing internet connectivity')
     internet = ping_host('8.8.8.8', count=1)
     if internet['status'] == 'ok':
@@ -1303,7 +1277,6 @@ def run_startup_checks():
                   error=internet.get('error'),
                   fix='Check ethernet cable or WiFi')
 
-    # Check EC2
     log.info('startup:ec2', 'Testing EC2 connectivity')
     ec2_ping = ping_host(EC2_IP, count=1)
     if ec2_ping['status'] == 'ok':
@@ -1321,12 +1294,10 @@ def run_startup_checks():
                  error=ec2_api.get('error'), url=EC2_API,
                  fix='May be OK if EC2 is still starting')
 
-    # Summary
     if ec2_ok:
         log.info('startup', 'All systems ready')
     else:
-        log.warn('startup', 'Starting with issues',
-                 issues='ec2')
+        log.warn('startup', 'Starting with issues', issues='ec2')
 
     log.info('startup', 'Server listening', host='0.0.0.0', port=5000)
     log.info('startup', '=' * 50)
