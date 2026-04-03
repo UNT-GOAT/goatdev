@@ -8,11 +8,18 @@ serial_id is always auto-assigned from the unified `animals` table.
 No manual ID assignment — the system owns the sequence.
 """
 
+import boto3
+import os
+import threading
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, create_model
 from typing import Optional
 from datetime import date
 from routes import get_conn
+
+S3_CAPTURES_BUCKET = os.environ.get("S3_CAPTURES_BUCKET", "")
+S3_PROCESSED_BUCKET = os.environ.get("S3_PROCESSED_BUCKET", "")
 
 # All possible animal fields and their types
 ANIMAL_FIELDS = {
@@ -54,6 +61,25 @@ TABLE_TO_SPECIES = {
     "goats": "goat",
     "lambs": "lamb",
 }
+
+def _s3_cleanup(serial_id: int):
+    """Delete all S3 objects for a serial_id. Runs in background thread."""
+    try:
+        s3 = boto3.client("s3")
+        prefix = f"{serial_id}/"
+        for bucket in (S3_CAPTURES_BUCKET, S3_PROCESSED_BUCKET):
+            if not bucket:
+                continue
+            resp = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+            keys = [obj["Key"] for obj in resp.get("Contents", [])]
+            if keys:
+                s3.delete_objects(
+                    Bucket=bucket,
+                    Delete={"Objects": [{"Key": k} for k in keys]},
+                )
+                print(f"[s3] Deleted {len(keys)} objects from {bucket}/{prefix}")
+    except Exception as e:
+        print(f"[s3] Cleanup failed for {serial_id}: {e}")
 
 
 def build_animal_router(table: str) -> APIRouter:
@@ -159,10 +185,16 @@ def build_animal_router(table: str) -> APIRouter:
                 if result == "DELETE 0":
                     raise HTTPException(404, f"{singular.title()} not found")
 
-                # Also delete from animals table
                 await conn.execute(
                     "DELETE FROM animals WHERE serial_id = $1", serial_id
                 )
-                return {"deleted": serial_id}
+
+        # S3 cleanup in background — don't block the response
+        if S3_CAPTURES_BUCKET or S3_PROCESSED_BUCKET:
+            threading.Thread(
+                target=_s3_cleanup, args=(serial_id,), daemon=True
+            ).start()
+
+        return {"deleted": serial_id}
 
     return router

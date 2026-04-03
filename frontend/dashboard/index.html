@@ -4852,16 +4852,21 @@
               (pendingGradeResult.grade || "Ungraded"),
           );
           gradeLog("Saved to database", "ok");
+          const _savedSerial = pendingGradeResult?.serial_id;
+          const _savedSpecies = pendingGradeResult?.species;
           pendingGradeResult = null;
           await Promise.all([
-            loadGrades().catch(() => {}),
-            loadGoats().catch(() => {}),
-            loadLambs().catch(() => {}),
+              loadGrades().catch(() => {}),
+              loadGoats().catch(() => {}),
+              loadLambs().catch(() => {}),
           ]);
           updateDashboard();
           filterAnimals();
           renderGradeHistory();
           computeNextGradeId();
+          if (_savedSerial && _savedSpecies) {
+              selectAnimal(Number(_savedSerial), _savedSpecies);
+          }
         } catch (err) {
           showToast("error", err.message);
           gradeLog("Error: " + err.message, "err");

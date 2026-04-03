@@ -55,7 +55,7 @@ CAMERA_ORDER = ['side', 'top', 'front']
 CAMERA_INDEX = {name: i for i, name in enumerate(CAMERA_ORDER)}
 
 FULL_RES = (4656, 3496)
-STREAM_RES = (1280, 720)
+STREAM_RES = (640, 480)
 SETTLE_FRAMES = 1               # Frames to burn after resolution switch (auto-exposure)
 
 SHM_SIZE = 6 * 1024 * 1024      # 6 MB per camera (full-res MJPEG can be ~1-2 MB)
@@ -464,13 +464,12 @@ class CameraProxy:
             while True:
                 raw = self.get_raw_frame()
                 if raw:
-                    decoded = _tjpeg.decode(raw, scaling_factor=(1, 8), flags=0)
                     yield (
                         b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' +
-                        _tjpeg.encode(decoded, quality=70) +
+                        raw +
                         b'\r\n'
                     )
-                time.sleep(0.1)
+                time.sleep(0.066)  # ~15fps to browser is plenty
         finally:
             self.update_clients(-1)
 
