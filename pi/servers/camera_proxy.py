@@ -144,7 +144,6 @@ def hardware_worker():
                 'fps': 0.0,
                 'frame_count': 0,
                 'last_ts': 0.0,
-                'clients': 0,
                 'connected': False,
                 'errors': 0,
                 'resolution': '{}x{}'.format(STREAM_RES[0], STREAM_RES[1])
@@ -233,7 +232,6 @@ def hardware_worker():
             raw_in = bytes(shm_stats.buf).split(b'\0')[0].decode('utf-8')
             flask_updates = json.loads(raw_in)
             for n in CAMERAS:
-                local_state['cameras'][n]['clients'] = flask_updates['cameras'][n].get('clients', 0)
                 new_f = flask_updates['settings'].get(n)
                 if new_f and new_f != local_state['settings'][n]:
                     local_state['settings'][n] = new_f
@@ -324,7 +322,7 @@ def hardware_worker():
     # --- Main Loop ---
     try:
         while True:
-            # 1. Sync focus / client counts from Flask
+            # 1. Sync focus
             sync_focus_from_flask()
 
             # 2. Check for capture request
@@ -443,23 +441,7 @@ class CameraProxy:
         except Exception:
             return 0.0
 
-    def update_clients(self, delta):
-        if not self._ensure_shm():
-            return
-        try:
-            raw = bytes(self.shm_stats.buf).split(b'\0')[0].decode('utf-8')
-            data = json.loads(raw)
-            data['cameras'][self.name]['clients'] = max(
-                0, data['cameras'][self.name].get('clients', 0) + delta
-            )
-            b = json.dumps(data).encode('utf-8')
-            self.shm_stats.buf[:len(b)] = b
-            self.shm_stats.buf[len(b):len(b) + 1] = b'\0'
-        except Exception:
-            pass
-
     def stream_generator(self):
-        self.update_clients(1)
         try:
             while True:
                 raw = self.get_raw_frame()
@@ -469,9 +451,9 @@ class CameraProxy:
                         raw +
                         b'\r\n'
                     )
-                time.sleep(0.066)  # ~15fps to browser is plenty
+                time.sleep(0.066)
         finally:
-            self.update_clients(-1)
+            pass
 
 
 PROXIES = {n: CameraProxy(n) for n in CAMERAS}
