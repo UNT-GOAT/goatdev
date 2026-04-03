@@ -953,15 +953,6 @@
               <div class="grid-3" id="focusCams"></div>
               <div class="panel p-14">
                 <div class="flex gap-8 flex-wrap">
-                  <button class="btn btn-accent btn-sm" onclick="allAFOff()">
-                    All AF Off
-                  </button>
-                  <button class="btn btn-sm" onclick="saveFocusSettings()">
-                    Save Settings
-                  </button>
-                  <button class="btn btn-sm" onclick="loadFocusSettings()">
-                    Load Saved
-                  </button>
                   <button
                     class="btn btn-sm"
                     style="border-color: var(--purple); color: var(--purple)"
@@ -1357,7 +1348,7 @@
         document.getElementById("footerUser").textContent = user.username;
         checkPi();
         buildFocusGrid();
-        loadFocusSettings();
+        loadFocusFromStatus();
         fetchCaptureCount();
         // Start focus streams since viewfocus is the default page
         startFocusStreams();
@@ -1414,6 +1405,12 @@
             '">' +
             (focusValues[cam] || 200) +
             "</span>" +
+            '<button class="btn btn-sm" style="padding:4px 8px;font-size:10px" ' +
+            'id="af-btn-' +
+            cam +
+            '" onclick="autoFocus(\'' +
+            cam +
+            "')\">AF</button>" +
             "</div>" +
             '<div id="fmsg-' +
             cam +
@@ -1423,9 +1420,33 @@
         });
       }
 
+      let _focusThrottleTimers = {};
+
       function onFocusSliderInput(cam, val) {
         document.getElementById("fval-" + cam).textContent = val;
         focusValues[cam] = parseInt(val);
+
+        // Disable AF if it was active
+        if (_afActive[cam]) {
+          _afActive[cam] = false;
+          const btn = document.getElementById("af-btn-" + cam);
+          const msgEl = document.getElementById("fmsg-" + cam);
+          btn.textContent = "AF";
+          btn.style.color = "";
+          msgEl.textContent = "";
+        }
+
+        if (_focusThrottleTimers[cam]) return;
+        _focusThrottleTimers[cam] = setTimeout(() => {
+          _focusThrottleTimers[cam] = null;
+          HerdAuth.fetch(
+            CONFIG.API_BASE +
+              "/api/viewfocus/focus/" +
+              cam +
+              "/" +
+              focusValues[cam],
+          ).catch(() => {});
+        }, 100);
       }
 
       // --- MJPEG Streaming (mirrors dashboard setCamerasForPage / startCameraStreams) ---
@@ -1535,84 +1556,44 @@
       async function setFocus(cam, val) {
         focusValues[cam] = parseInt(val);
         document.getElementById("fval-" + cam).textContent = val;
-        const msgEl = document.getElementById("fmsg-" + cam);
+        // Clear any pending throttle and send the final value
+        clearTimeout(_focusThrottleTimers[cam]);
+        _focusThrottleTimers[cam] = null;
         try {
-          const r = await HerdAuth.fetch(
+          await HerdAuth.fetch(
             CONFIG.API_BASE + "/api/viewfocus/focus/" + cam + "/" + val,
           );
-          if (r.ok) {
-            msgEl.textContent = "Focus updated";
-            msgEl.style.color = "var(--accent)";
-          } else {
-            msgEl.textContent = "Update failed (" + r.status + ")";
-            msgEl.style.color = "var(--red)";
-          }
-        } catch (e) {
-          msgEl.textContent = "Update failed";
-          msgEl.style.color = "var(--red)";
-        }
-        setTimeout(() => {
-          if (msgEl) msgEl.textContent = "";
-        }, 3000);
+        } catch (e) {}
       }
 
-      async function allAFOff() {
-        const status = document.getElementById("focusActionStatus");
-        status.textContent = "Disabling autofocus...";
-        status.style.color = "var(--text-muted)";
-        let ok = 0;
-        for (const cam of CAMERAS) {
-          try {
-            const r = await HerdAuth.fetch(
-              CONFIG.API_BASE +
-                "/api/viewfocus/focus/" +
-                cam +
-                "/" +
-                (focusValues[cam] || 200),
-            );
-            if (r.ok) ok++;
-          } catch (e) {}
-        }
-        status.textContent = ok + "/" + CAMERAS.length + " cameras — AF off";
-        status.style.color =
-          ok === CAMERAS.length ? "var(--accent)" : "var(--orange)";
-        setTimeout(() => {
-          status.textContent = "";
-        }, 4000);
-      }
+      let _afActive = { side: false, top: false, front: false };
 
-      async function saveFocusSettings() {
-        const status = document.getElementById("focusActionStatus");
-        status.textContent = "Saving...";
-        status.style.color = "var(--text-muted)";
+      async function autoFocus(cam) {
+        const btn = document.getElementById("af-btn-" + cam);
+        const msgEl = document.getElementById("fmsg-" + cam);
+
         try {
-          let ok = 0;
-          for (const cam of CAMERAS) {
-            const val = focusValues[cam] || 200;
-            try {
-              const r = await HerdAuth.fetch(
-                CONFIG.API_BASE + "/api/viewfocus/focus/" + cam + "/" + val,
-              );
-              if (r.ok) ok++;
-            } catch (e) {}
+          const r = await HerdAuth.fetch(
+            CONFIG.API_BASE + "/api/viewfocus/autofocus/" + cam,
+            { method: "POST" },
+          );
+          if (r.ok) {
+            _afActive[cam] = true;
+            btn.textContent = "AF ●";
+            btn.style.color = "var(--accent)";
+            msgEl.textContent = "AF active — touch slider to lock";
+            msgEl.style.color = "var(--accent)";
           }
-          localStorage.setItem("herdsync-focus", JSON.stringify(focusValues));
-          status.textContent =
-            "Settings saved (" + ok + "/" + CAMERAS.length + ")";
-          status.style.color = "var(--accent)";
-          showToast("success", "Focus settings saved");
         } catch (e) {
-          status.textContent = "Save failed";
-          status.style.color = "var(--red)";
-          showToast("error", "Failed to save focus settings");
+          msgEl.textContent = "AF failed";
+          msgEl.style.color = "var(--red)";
+          setTimeout(() => {
+            msgEl.textContent = "";
+          }, 3000);
         }
-        setTimeout(() => {
-          status.textContent = "";
-        }, 4000);
       }
 
-      async function loadFocusSettings() {
-        const status = document.getElementById("focusActionStatus");
+      async function loadFocusFromStatus() {
         try {
           const r = await HerdAuth.fetch(
             CONFIG.API_BASE + "/api/viewfocus/status",
@@ -1629,38 +1610,7 @@
                   if (valEl) valEl.textContent = focusValues[cam];
                 }
               });
-              if (status) {
-                status.textContent = "Loaded from grader";
-                status.style.color = "var(--accent)";
-                setTimeout(() => {
-                  status.textContent = "";
-                }, 3000);
-              }
-              return;
             }
-          }
-        } catch (e) {}
-
-        // Fall back to localStorage
-        try {
-          const saved = JSON.parse(
-            localStorage.getItem("herdsync-focus") || "{}",
-          );
-          CAMERAS.forEach((cam) => {
-            if (saved[cam] !== undefined) {
-              focusValues[cam] = saved[cam];
-              const slider = document.getElementById("focus-slider-" + cam);
-              const valEl = document.getElementById("fval-" + cam);
-              if (slider) slider.value = focusValues[cam];
-              if (valEl) valEl.textContent = focusValues[cam];
-            }
-          });
-          if (status) {
-            status.textContent = "Loaded from local cache";
-            status.style.color = "var(--text-muted)";
-            setTimeout(() => {
-              status.textContent = "";
-            }, 3000);
           }
         } catch (e) {}
       }

@@ -5,7 +5,7 @@ Camera Proxy Service — HerdSync
 Architecture:
   HardwareWorker (separate process, no gevent)
     - Owns all USB camera I/O via OpenCV + V4L2
-    - Streams at 720p sequentially to avoid USB 2.0 bandwidth saturation
+    - Streams at 640x480p sequentially to avoid USB 2.0 bandwidth saturation
     - On capture signal: switches resolution in-place to full res per camera,
       grabs frames, switches back, resumes streaming
   Flask/gevent (main process)
@@ -15,7 +15,7 @@ Architecture:
 
 USB Bandwidth Note:
   Pi 4's VL805 controller tops out at ~35 MB/s for USB 2.0. Three 16MP MJPEG
-  cameras at full res simultaneously exceeds the bus ceiling. Sequential 720p
+  cameras at full res simultaneously exceeds the bus ceiling. Sequential 640x480p
   streaming (~3-7 MB/s total) stays well within budget. Full-res captures use
   in-place resolution switching (no release/reopen) one camera at a time.
 """
@@ -39,7 +39,6 @@ import io
 import glob
 from multiprocessing import shared_memory
 from flask import Flask, Response, request, jsonify
-from turbojpeg import TurboJPEG, TJFLAG_FASTUPSAMPLE
 
 # HerdSync Internal Logger
 sys.path.insert(0, '/home/pi/goatdev/pi')
@@ -47,7 +46,6 @@ from logger.pi_cloudwatch import Logger
 
 app = Flask(__name__)
 log = Logger('camera-proxy')
-_tjpeg = TurboJPEG()
 
 # === CONFIGURATION ===
 CAMERAS = {'side': '/dev/camera_side', 'top': '/dev/camera_top', 'front': '/dev/camera_front'}
@@ -187,13 +185,19 @@ def hardware_worker():
     def apply_focus(name, dev):
         """Disable autofocus and apply saved focus value."""
         real_dev = resolve_device(dev)
+        focus_val = 200
+        try:
+            with open(FOCUS_FILE, 'r') as f:
+                focus_val = json.load(f).get(name, 200)
+        except Exception:
+            pass
         subprocess.run(
             ['v4l2-ctl', '-d', real_dev, '--set-ctrl', 'focus_automatic_continuous=0'],
             capture_output=True
         )
         subprocess.run(
             ['v4l2-ctl', '-d', real_dev, '--set-ctrl',
-             'focus_absolute={}'.format(local_state['settings'][name])],
+            'focus_absolute={}'.format(focus_val)],
             capture_output=True
         )
 
@@ -225,24 +229,6 @@ def hardware_worker():
             local_state['cameras'][n]['resolution'] = '{}x{}'.format(STREAM_RES[0], STREAM_RES[1])
             if caps[n]:
                 apply_focus(n, CAMERAS[n])
-
-    def sync_focus_from_flask():
-        """Check if Flask process wrote new focus values into stats SHM."""
-        try:
-            raw_in = bytes(shm_stats.buf).split(b'\0')[0].decode('utf-8')
-            flask_updates = json.loads(raw_in)
-            for n in CAMERAS:
-                new_f = flask_updates['settings'].get(n)
-                if new_f and new_f != local_state['settings'][n]:
-                    local_state['settings'][n] = new_f
-                    real_dev = resolve_device(CAMERAS[n])
-                    subprocess.run(
-                        ['v4l2-ctl', '-d', real_dev, '--set-ctrl',
-                         'focus_absolute={}'.format(new_f)],
-                        capture_output=True
-                    )
-        except Exception:
-            pass
 
     def do_fullres_capture(camera_mask):
         """
@@ -322,10 +308,8 @@ def hardware_worker():
     # --- Main Loop ---
     try:
         while True:
-            # 1. Sync focus
-            sync_focus_from_flask()
 
-            # 2. Check for capture request
+            # 1. Check for capture request
             if shm_event.buf[0] == EVENT_REQUESTED:
                 camera_mask = [shm_event.buf[1 + i] for i in range(3)]
                 shm_event.buf[0] = EVENT_IN_PROGRESS
@@ -354,8 +338,7 @@ def hardware_worker():
 
                 continue
 
-            # 3. Sequential streaming reads — no artificial sleep
-            #    USB read latency at 720p (~25-40ms) is the natural throttle
+            # 2. Sequential streaming reads — no artificial sleep
             for name in CAMERA_ORDER:
                 if not caps.get(name):
                     caps[name] = open_cam(name, CAMERAS[name], resolution=STREAM_RES)
@@ -705,12 +688,105 @@ def capture_burst(camera):
         headers={'X-Frame-Count': str(len(frames))}
     )
 
+@app.route('/autofocus/<camera>', methods=['POST'])
+def autofocus(camera):
+    """Enable hardware continuous AF."""
+    if camera not in CAMERAS:
+        return jsonify({'error': 'Unknown camera'}), 404
+    real_dev = os.path.realpath(CAMERAS[camera])
+    subprocess.run(
+        ['v4l2-ctl', '-d', real_dev, '--set-ctrl', 'focus_automatic_continuous=1'],
+        capture_output=True
+    )
+    return jsonify({'camera': camera, 'autofocus': True})
+
+
+@app.route('/autofocus/<camera>/lock', methods=['POST'])
+def lock_autofocus(camera):
+    """Read current focus position, disable AF, lock at that value, persist."""
+    if camera not in CAMERAS:
+        return jsonify({'error': 'Unknown camera'}), 404
+    real_dev = os.path.realpath(CAMERAS[camera])
+
+    # Read where AF settled
+    result = subprocess.run(
+        ['v4l2-ctl', '-d', real_dev, '--get-ctrl', 'focus_absolute'],
+        capture_output=True, text=True
+    )
+    focus_val = 200
+    try:
+        focus_val = int(result.stdout.strip().split(':')[-1].strip())
+    except Exception:
+        pass
+
+    # Disable AF and lock
+    subprocess.run(
+        ['v4l2-ctl', '-d', real_dev, '--set-ctrl', 'focus_automatic_continuous=0'],
+        capture_output=True
+    )
+    subprocess.run(
+        ['v4l2-ctl', '-d', real_dev, '--set-ctrl', 'focus_absolute={}'.format(focus_val)],
+        capture_output=True
+    )
+
+    # Persist
+    try:
+        focus_vals = {}
+        if os.path.exists(FOCUS_FILE):
+            with open(FOCUS_FILE, 'r') as f:
+                focus_vals = json.load(f)
+        focus_vals[camera] = focus_val
+        with open(FOCUS_FILE, 'w') as f:
+            json.dump(focus_vals, f)
+    except Exception:
+        pass
+
+    # Update SHM
+    try:
+        shm = shared_memory.SharedMemory(name=STATS_SHM_NAME)
+        raw = bytes(shm.buf).split(b'\0')[0].decode('utf-8')
+        data = json.loads(raw)
+        data['settings'][camera] = focus_val
+        b = json.dumps(data).encode('utf-8')
+        shm.buf[:len(b)] = b
+        shm.buf[len(b):len(b) + 1] = b'\0'
+    except Exception:
+        pass
+
+    return jsonify({'camera': camera, 'focus_value': focus_val, 'locked': True})
+
 
 @app.route('/focus/<camera>/<int:val>', methods=['GET', 'POST'])
 def set_focus(camera, val):
-    """FOCUS: Updates SHM settings and persistence file."""
+    """Apply focus immediately via v4l2-ctl and persist."""
     if camera not in CAMERAS:
         return jsonify({'error': 'Unknown camera: {}'.format(camera)}), 404
+
+    real_dev = os.path.realpath(CAMERAS[camera])
+
+    # Apply directly — immediate effect
+    subprocess.run(
+        ['v4l2-ctl', '-d', real_dev, '--set-ctrl', 'focus_automatic_continuous=0'],
+        capture_output=True
+    )
+    result = subprocess.run(
+        ['v4l2-ctl', '-d', real_dev, '--set-ctrl', 'focus_absolute={}'.format(val)],
+        capture_output=True
+    )
+
+    # Persist to file
+    try:
+        focus_vals = {}
+        if os.path.exists(FOCUS_FILE):
+            with open(FOCUS_FILE, 'r') as f:
+                focus_vals = json.load(f)
+        focus_vals[camera] = val
+        with open(FOCUS_FILE, 'w') as f:
+            json.dump(focus_vals, f)
+    except Exception:
+        pass
+
+    # Update SHM so status endpoint reflects it
     try:
         shm = shared_memory.SharedMemory(name=STATS_SHM_NAME)
         raw = bytes(shm.buf).split(b'\0')[0].decode('utf-8')
@@ -719,11 +795,11 @@ def set_focus(camera, val):
         b = json.dumps(data).encode('utf-8')
         shm.buf[:len(b)] = b
         shm.buf[len(b):len(b) + 1] = b'\0'
-        with open(FOCUS_FILE, 'w') as f:
-            json.dump(data['settings'], f)
     except Exception:
         pass
-    return "Focus set to {}".format(val)
+
+    ok = result.returncode == 0
+    return jsonify({'camera': camera, 'focus': val, 'applied': ok})
 
 
 @app.route('/status')
