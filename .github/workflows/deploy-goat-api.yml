@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
     paths:
-      - "goat-api/**"
+      - "goat-api/api/**"
+      - "goat-api/Dockerfile"
       - "model/**"
       - ".github/workflows/deploy-goat-api.yml"
   workflow_dispatch:

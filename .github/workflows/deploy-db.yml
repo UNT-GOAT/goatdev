@@ -4,7 +4,11 @@ on:
   push:
     branches: [main]
     paths:
-      - "db/**"
+      - "db/routes/**"
+      - "db/Dockerfile"
+      - "db/main.py"
+      - "db/schema.sql"
+      - "db/requirements.txt"
       - ".github/workflows/deploy-db.yml"
   workflow_dispatch:
 

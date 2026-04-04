@@ -4,7 +4,9 @@ on:
   push:
     branches: [main]
     paths:
-      - "auth/**"
+      - "auth/auth/**"
+      - "auth/Dockerfile"
+      - "auth/requirements.txt"
       - ".github/workflows/deploy-auth.yml"
   workflow_dispatch:
 
