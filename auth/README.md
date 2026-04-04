@@ -1,4 +1,4 @@
-# Auth Service — `herdsync-auth`
+# Auth Service - `herdsync-auth`
 
 Standalone authentication and user management service for the HerdSync platform. Runs as a Docker container on EC2 (port 8001), independent of the grading pipeline.
 
