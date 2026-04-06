@@ -322,7 +322,7 @@ def capture_all_cameras(serial_id: str) -> dict:
 # GRADING WORKFLOW
 # ============================================================
 
-def do_grade(serial_id: str, live_weight: float):
+def do_grade(serial_id: str, live_weight: float, description: str = 'meat'):
     """
     Full capture -> grade workflow. Runs in background thread.
     Captures all 3 cameras via proxy (in-place resolution switching),
@@ -403,6 +403,7 @@ def do_grade(serial_id: str, live_weight: float):
             data = {
                 'serial_id': serial_id,
                 'live_weight': str(live_weight),
+                'description': description,
             }
 
             ec2_start = time.time()
@@ -429,6 +430,7 @@ def do_grade(serial_id: str, live_weight: float):
                         'serial_id': serial_id,
                         'success': True,
                         'grade': grade_result.get('grade'),
+                        'grade_details': grade_result.get('grade_details'),
                         'measurements': grade_result.get('measurements'),
                         'confidence_scores': grade_result.get('confidence_scores'),
                         'all_views_successful': grade_result.get('all_views_successful'),
@@ -735,6 +737,7 @@ def grade():
 
     serial_id = data.get('serial_id', '').strip()
     live_weight = data.get('live_weight')
+    description = data.get('description', 'meat')
 
     if not serial_id:
         return jsonify({
@@ -814,7 +817,7 @@ def grade():
         last_error=None
     )
 
-    thread = threading.Thread(target=do_grade, args=(sanitized, live_weight))
+    thread = threading.Thread(target=do_grade, args=(sanitized, live_weight, description))
     thread.start()
 
     log.info('grade', 'Grade started',
@@ -850,6 +853,7 @@ def grade_test():
     """
     serial_id = request.form.get('serial_id', '').strip()
     live_weight = request.form.get('live_weight')
+    description = request.form.get('description', 'meat')
 
     if not serial_id:
         return jsonify({'status': 'error', 'error_code': 'MISSING_SERIAL_ID',
@@ -903,9 +907,10 @@ def grade_test():
             ),
         }
         data = {
-            'serial_id': sanitized,
-            'live_weight': str(live_weight),
-        }
+                'serial_id': serial_id,
+                'live_weight': str(live_weight),
+                'description': description,
+            }
 
         ec2_start = time.time()
         response = requests.post(

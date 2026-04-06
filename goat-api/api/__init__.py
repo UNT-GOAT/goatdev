@@ -6,4 +6,4 @@ from .main import app
 from .grader import grader
 from .logger import log
 
-__all__ = ['app', 'grader', 'storage', 'log']
+__all__ = ['app', 'grader', 'log']

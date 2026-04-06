@@ -3,7 +3,7 @@ Pydantic models for API request/response schemas
 """
 
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 from datetime import datetime
 import re
 
@@ -16,16 +16,16 @@ class MeasurementsResponse(BaseModel):
     head_height_cm: Optional[float] = None
     withers_height_cm: Optional[float] = None
     rump_height_cm: Optional[float] = None
-    
+
     # Widths from top view (using leg positions from side view)
     shoulder_width_cm: Optional[float] = None
     waist_width_cm: Optional[float] = None
     rump_width_cm: Optional[float] = None
-    
+
     # Fallback/legacy width measurements
     top_body_width_cm: Optional[float] = None  # Fallback if leg detection fails
     front_body_width_cm: Optional[float] = None  # From front view
-    
+
     # Computed
     avg_body_width_cm: Optional[float] = None
 
@@ -48,18 +48,17 @@ class AnalyzeRequest(BaseModel):
     """Request validation for /analyze endpoint (metadata only, images come via form)"""
     serial_id: str = Field(..., min_length=1, max_length=50)
     live_weight: float = Field(..., gt=0)
-    
+
     @field_validator('serial_id')
     @classmethod
     def validate_serial_id(cls, v: str) -> str:
-        # Allow alphanumeric, underscore, hyphen only
         sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', v)
         if not sanitized:
             raise ValueError('serial_id must contain alphanumeric characters')
         if sanitized != v:
             raise ValueError('serial_id contains invalid characters (use alphanumeric, underscore, hyphen only)')
         return sanitized
-    
+
     @field_validator('live_weight')
     @classmethod
     def validate_weight(cls, v: float) -> float:
@@ -78,6 +77,7 @@ class AnalyzeResponse(BaseModel):
     measurements: MeasurementsResponse
     confidence_scores: ConfidenceScores
     grade: Optional[str] = None
+    grade_details: Optional[Dict[str, Any]] = None
     all_views_successful: bool
     view_errors: Optional[List[ViewError]] = None
     warnings: Optional[List[str]] = None
