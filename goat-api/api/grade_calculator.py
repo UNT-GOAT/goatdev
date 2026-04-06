@@ -113,7 +113,7 @@ def calculate_grade(
 
     ci = None
     if withers_height and withers_height > 0 and avg_width and avg_width > 0:
-        ci = round(avg_width / withers_height, 3)
+        ci = round(float(avg_width / withers_height), 3)
     else:
         log.warn('grade', 'Cannot compute CI — missing withers_height or avg_body_width',
                  serial_id=serial_id,
@@ -122,8 +122,8 @@ def calculate_grade(
 
     details['ci'] = ci
     details['ci_inputs'] = {
-        'avg_body_width_cm': avg_width,
-        'withers_height_cm': withers_height,
+        'avg_body_width_cm': float(avg_width) if avg_width is not None else None,
+        'withers_height_cm': float(withers_height) if withers_height is not None else None,
     }
 
     # --- Compute MDR (Muscle Distribution Ratio) ---
@@ -132,7 +132,7 @@ def calculate_grade(
 
     mdr = None
     if rump_width and rump_width > 0 and waist_width and waist_width > 0:
-        mdr = round(rump_width / waist_width, 3)
+        mdr = round(float(rump_width / waist_width), 3)
     else:
         log.warn('grade', 'Cannot compute MDR — missing rump_width or waist_width',
                  serial_id=serial_id,
@@ -141,8 +141,8 @@ def calculate_grade(
 
     details['mdr'] = mdr
     details['mdr_inputs'] = {
-        'rump_width_cm': rump_width,
-        'waist_width_cm': waist_width,
+        'rump_width_cm': float(rump_width) if rump_width is not None else None,
+        'waist_width_cm': float(waist_width) if waist_width is not None else None,
     }
 
     log.info('grade', 'Computed ratios',
@@ -208,11 +208,11 @@ def calculate_grade(
         lowest = tiers[-1]
         deficits = {}
         if live_weight_lbs < lowest[1]:
-            deficits['weight'] = round(lowest[1] - live_weight_lbs, 1)
+            deficits['weight'] = round(float(lowest[1] - live_weight_lbs), 1)
         if ci < lowest[2]:
-            deficits['ci'] = round(lowest[2] - ci, 3)
+            deficits['ci'] = round(float(lowest[2] - ci), 3)
         if mdr < lowest[3]:
-            deficits['mdr'] = round(lowest[3] - mdr, 3)
+            deficits['mdr'] = round(float(lowest[3] - mdr), 3)
 
         details['deficits_from_select'] = deficits
         details['reason'] = f'Below Select floor — deficits: {deficits}'

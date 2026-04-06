@@ -2279,7 +2279,8 @@
               <label class="field-label">Grade</label
               ><select class="field-select" id="addAnimalGrade">
                 <option value="">Ungraded</option>
-                <option value="CAB Prime">CAB Prime</option>
+                <option value="Reserve">Reserve</option>
+                  <option value="CAB Prime">CAB Prime</option>
                 <option value="Prime">Prime</option>
                 <option value="Choice">Choice</option>
                 <option value="Select">Select</option>
@@ -2408,7 +2409,8 @@
             <label class="field-label">Grade</label
             ><select class="field-select" id="editAnimalGrade">
               <option value="">Ungraded</option>
-              <option value="CAB Prime">CAB Prime</option>
+              <option value="Reserve">Reserve</option>
+                  <option value="CAB Prime">CAB Prime</option>
               <option value="Prime">Prime</option>
               <option value="Choice">Choice</option>
               <option value="Select">Select</option>
@@ -2492,6 +2494,27 @@
               <div class="val" id="reviewTime">—</div>
               <div class="lbl">Total Time</div>
             </div>
+          </div>
+          <div id="reviewGradeDetails" style="display: none" class="mb-14">
+          <div class="section-label">Grade reasoning</div>
+          <div class="flex gap-10 mb-14">
+            <div class="inset flex-1 preview-metric">
+              <div class="val" id="reviewCI">—</div>
+              <div class="lbl">CI (width / height)</div>
+            </div>
+            <div class="inset flex-1 preview-metric">
+              <div class="val" id="reviewMDR">—</div>
+              <div class="lbl">MDR (rump / waist)</div>
+            </div>
+            <div class="inset flex-1 preview-metric">
+              <div class="val" id="reviewCategory">—</div>
+              <div class="lbl">Category</div>
+            </div>
+          </div>
+          <div class="inset" id="reviewReasonBox">
+            <div id="reviewReason" style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;"></div>
+            <div id="reviewTierTable" style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-muted); overflow-x: auto;"></div>
+          </div>
           </div>
           <div id="reviewFailure" style="display: none" class="mb-14">
             <div
@@ -2579,6 +2602,7 @@
                 <label class="field-label">Grade</label
                 ><select class="field-select" id="reviewEditGrade">
                   <option value="">Ungraded</option>
+                  <option value="Reserve">Reserve</option>
                   <option value="CAB Prime">CAB Prime</option>
                   <option value="Prime">Prime</option>
                   <option value="Choice">Choice</option>
@@ -4550,6 +4574,7 @@
               total_sec: result.timing?.total_sec || null,
               warnings: result.warnings || [],
               view_errors: result.view_errors || [],
+              grade_details: result.grade_details || null,
               _isExisting: isExisting,
             };
             openGradeReview(pendingGradeResult, serialId);
@@ -4714,6 +4739,74 @@
           okFooter.style.display = "";
           retryFooter.style.display = "none";
         }
+
+        // Grade details / reasoning
+        const detailsEl = document.getElementById("reviewGradeDetails");
+        const gd = result.grade_details;
+        if (gd) {
+          detailsEl.style.display = "";
+          document.getElementById("reviewCI").textContent =
+            gd.ci != null ? gd.ci.toFixed(3) : "\u2014";
+          const selectTier = gd.tier_comparison
+            ? gd.tier_comparison[gd.tier_comparison.length - 1]
+            : null;
+          document.getElementById("reviewCI").style.color =
+            selectTier && gd.ci != null
+              ? (selectTier.ci_ok ? "" : "var(--red)")
+              : "";
+          document.getElementById("reviewMDR").textContent =
+            gd.mdr != null ? gd.mdr.toFixed(3) : "\u2014";
+          document.getElementById("reviewMDR").style.color =
+            selectTier && gd.mdr != null
+              ? (selectTier.mdr_ok ? "" : "var(--red)")
+              : "";
+          document.getElementById("reviewCategory").textContent =
+            gd.category || "\u2014";
+          document.getElementById("reviewReason").textContent = gd.reason || "";
+          if (gd.tier_comparison && gd.tier_comparison.length) {
+            const chk = (v) => v === true ? "\u2713" : v === false ? "\u2717" : "\u2014";
+            const dlt = (v) => v != null ? (v >= 0 ? "+" : "") + v.toFixed(3) : "";
+            let tbl =
+              '<table style="width:100%;border-collapse:collapse;text-align:center">' +
+              "<tr>" +
+              '<th style="text-align:left;padding:3px 8px 3px 0">Tier</th>' +
+              '<th style="padding:3px 6px">Weight</th>' +
+              '<th style="padding:3px 6px">CI</th>' +
+              '<th style="padding:3px 6px">MDR</th>' +
+              "</tr>";
+            gd.tier_comparison.forEach((t) => {
+              const allOk =
+                t.weight_ok &&
+                (t.ci_ok === true || t.ci_ok === null) &&
+                (t.mdr_ok === true || t.mdr_ok === null);
+              const rc = allOk ? "color:var(--accent)" : "";
+              tbl +=
+                '<tr style="' + rc + '">' +
+                '<td style="text-align:left;padding:3px 8px 3px 0;font-weight:500">' +
+                esc(t.tier) + "</td>" +
+                '<td style="padding:3px 6px">' +
+                chk(t.weight_ok) + " " + t.min_weight + "</td>" +
+                '<td style="padding:3px 6px">' +
+                chk(t.ci_ok) + " " + t.min_ci +
+                (t.ci_delta != null
+                  ? ' <span style="opacity:.6">(' + dlt(t.ci_delta) + ")</span>"
+                  : "") +
+                "</td>" +
+                '<td style="padding:3px 6px">' +
+                chk(t.mdr_ok) + " " + t.min_mdr +
+                (t.mdr_delta != null
+                  ? ' <span style="opacity:.6">(' + dlt(t.mdr_delta) + ")</span>"
+                  : "") +
+                "</td></tr>";
+            });
+            tbl += "</table>";
+            document.getElementById("reviewTierTable").innerHTML = tbl;
+          } else {
+            document.getElementById("reviewTierTable").innerHTML = "";
+          }
+        } else {
+          detailsEl.style.display = "none";
+        }
       }
       function retryGrade() {
         closeModal("modalGradeReview");
@@ -4826,6 +4919,7 @@
           delete gradePayload.description;
           delete gradePayload._isExisting;
           delete gradePayload.view_errors;
+          delete gradePayload.grade_details;
           const gradeResp = await HerdAuth.fetch(CONFIG.DB_BASE + "/grading", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -4937,6 +5031,7 @@
               species: r.species || null,
               description: r.description || null,
               view_errors: r.view_errors || [],
+              grade_details: r.grade_details || null,
             },
             r.serial_id,
           );
@@ -5309,6 +5404,7 @@
             total_sec: body.timing?.total_sec || null,
             warnings: body.warnings || [],
             view_errors: body.view_errors || [],
+            grade_details: body.grade_details || null,
             _isExisting: isExisting,
           };
           openGradeReview(pendingGradeResult, serialId);

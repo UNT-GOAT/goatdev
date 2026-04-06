@@ -337,7 +337,17 @@ async def analyze(
         success=True
     )
 
-    # S3 archival (background, success-only)
+    # Serialize response BEFORE archival. If serialization fails (e.g. numpy
+    # types leaking into grade_details), we want the whole request to fail
+    # cleanly — no orphaned S3 uploads for a grade the frontend never received.
+    try:
+        response_json = response.model_dump()
+    except Exception as e:
+        log.error('analyze', 'Response serialization failed — aborting before S3 archival',
+                  serial_id=serial_id, error=str(e))
+        raise
+
+    # S3 archival (background, success-only) — only after response is confirmed serializable
     if response.success and response.all_views_successful:
         archive_in_background(serial_id, raw_images, debug_image_paths)
     else:
