@@ -140,7 +140,6 @@ def s3_upload_check(bucket: str, would_upload_keys: list[str]) -> dict:
         result["error"] = str(e)
         return result
 
-
 def sanitize_goat_id(goat_id) -> str:
     """Sanitize goat_id to prevent path traversal and weirdness."""
     goat_id = str(goat_id)
@@ -629,6 +628,42 @@ def health():
         'disk_free_mb': disk_mb,
         'recording_active': get_state()['active']
     })
+
+
+@app.route('/next_id')
+def get_next_id():
+    """Calculate the next numeric goat_id by listing S3 prefixes."""
+    try:
+        s3 = get_s3()
+        # List top-level "folders" (prefixes) using a delimiter
+        response = s3.list_objects_v2(
+            Bucket=S3_TRAINING_BUCKET, 
+            Delimiter='/'
+        )
+        
+        prefixes = response.get('CommonPrefixes', [])
+        max_id = 0
+        
+        for p in prefixes:
+            # Strip the trailing slash and try to parse as int
+            prefix_name = p.get('Prefix', '').strip('/')
+            try:
+                n = int(prefix_name)
+                if n > max_id:
+                    max_id = n
+            except ValueError:
+                continue # Skip non-numeric folders
+        
+        return jsonify({
+            'status': 'ok',
+            'next_id': max_id + 1
+        })
+    except Exception as e:
+        log.error('s3', 'Failed to calculate next_id', error=str(e))
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 
 @app.route('/diagnostics')

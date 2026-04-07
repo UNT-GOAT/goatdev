@@ -29,8 +29,7 @@ load_dotenv("/home/pi/goatdev/pi/.env")
 # ============================================================
 
 EC2_IP = os.environ.get('EC2_IP')
-EC2_API = f'http://{EC2_IP}:8000'
-EC2_API_KEY = os.environ.get('EC2_API_KEY')
+EC2_GOAT_API = os.environ.get('EC2_GOAT_API')
 
 # Camera paths (for reference / diagnostics)
 CAMERAS = {
@@ -379,7 +378,7 @@ def do_grade(serial_id: str, live_weight: float, description: str = 'meat'):
         # Phase 2: Send to EC2
         set_state(progress='grading')
         log.info('grade', 'Sending to EC2',
-                 serial_id=serial_id, ec2_api=EC2_API,
+                 serial_id=serial_id, ec2_goat_api=EC2_GOAT_API,
                  total_size_bytes=total_size)
 
         try:
@@ -408,10 +407,9 @@ def do_grade(serial_id: str, live_weight: float, description: str = 'meat'):
 
             ec2_start = time.time()
             response = requests.post(
-                f'{EC2_API}/analyze',
+                f'{EC2_GOAT_API}/analyze',
                 files=files,
                 data=data,
-                headers={'X-API-Key': EC2_API_KEY} if EC2_API_KEY else {},
                 timeout=EC2_TIMEOUT_SEC
             )
             ec2_time = round(time.time() - ec2_start, 2)
@@ -479,7 +477,7 @@ def do_grade(serial_id: str, live_weight: float, description: str = 'meat'):
                 }
             )
             log.error('grade', 'EC2 connection timeout',
-                      serial_id=serial_id, ec2_api=EC2_API)
+                      serial_id=serial_id, ec2_goat_api=EC2_GOAT_API)
 
         except requests.exceptions.ConnectionError:
             set_state(
@@ -493,7 +491,7 @@ def do_grade(serial_id: str, live_weight: float, description: str = 'meat'):
                 }
             )
             log.error('grade', 'EC2 connection refused',
-                      serial_id=serial_id, ec2_api=EC2_API)
+                      serial_id=serial_id, ec2_goat_api=EC2_GOAT_API)
 
         except Exception as e:
             set_state(
@@ -557,10 +555,10 @@ def ping_host(host: str, count: int = 3) -> dict:
         return {'status': 'error', 'error': str(e)}
 
 
-def check_ec2_api() -> dict:
+def check_ec2_goat_api() -> dict:
     """Check EC2 API health endpoint."""
     try:
-        response = requests.get(f'{EC2_API}/health', timeout=REQUEST_TIMEOUT_SEC)
+        response = requests.get(f'{EC2_GOAT_API}/health', timeout=REQUEST_TIMEOUT_SEC)
         if response.status_code == 200:
             return {'status': 'ok', 'response': response.json()}
         else:
@@ -645,7 +643,7 @@ def health():
         'status': 'ok' if all(cameras.values()) else 'degraded',
         'timestamp': datetime.now().isoformat(),
         'cameras': cameras,
-        'ec2_target': EC2_API,
+        'ec2_target': EC2_GOAT_API,
         'mem_available_mb': sys_info.get('mem_available_mb'),
         'cpu_temp_c': sys_info.get('cpu_temp_c'),
         'capture_active': get_state()['active']
@@ -683,9 +681,9 @@ def diagnostics():
     except Exception as e:
         diag['proxy'] = {'ok': False, 'error': str(e)}
 
-    ec2_health = check_ec2_api()
+    ec2_health = check_ec2_goat_api()
     diag['ec2'] = {
-        'api': EC2_API,
+        'api': EC2_GOAT_API,
         'health': ec2_health
     }
 
@@ -773,17 +771,17 @@ def grade():
         }), 400
 
     # Check EC2 reachability BEFORE capturing images.
-    ec2_check = check_ec2_api()
+    ec2_check = check_ec2_goat_api()
     if ec2_check['status'] != 'ok':
         log.error('grade', 'EC2 not reachable, aborting before capture',
                   serial_id=sanitized,
-                  ec2_api=EC2_API,
+                  ec2_goat_api=EC2_GOAT_API,
                   error=ec2_check.get('error'))
         return jsonify({
             'status': 'error',
             'error_code': 'EC2_UNREACHABLE',
             'message': 'EC2 API not reachable, aborting before capture',
-            'ec2_api': EC2_API,
+            'ec2_goat_api': EC2_GOAT_API,
             'ec2_error': ec2_check.get('error'),
             'fix': 'Check EC2 is running and port 8000 is open'
         }), 503
@@ -827,7 +825,7 @@ def grade():
         'status': 'grade_started',
         'serial_id': sanitized,
         'live_weight': live_weight,
-        'ec2_target': EC2_API
+        'ec2_target': EC2_GOAT_API
     })
 
 
@@ -914,10 +912,9 @@ def grade_test():
 
         ec2_start = time.time()
         response = requests.post(
-            f'{EC2_API}/analyze',
+            f'{EC2_GOAT_API}/analyze',
             files=files,
             data=data,
-            headers={'X-API-Key': EC2_API_KEY} if EC2_API_KEY else {},
             timeout=EC2_TIMEOUT_SEC
         )
         ec2_time = round(time.time() - ec2_start, 2)
@@ -1034,19 +1031,19 @@ def test_connectivity():
         log.error('test:ec2_ping', 'Failed', error=ec2_ping.get('error'))
 
     # Test 3: EC2 API
-    log.info('test:ec2_api', f'Checking EC2 API {EC2_API}')
-    ec2_api = check_ec2_api()
-    results['tests']['ec2_api'] = ec2_api
-    if ec2_api['status'] == 'ok':
-        log.info('test:ec2_api', 'OK')
+    log.info('test:ec2_goat_api', f'Checking EC2 API {EC2_GOAT_API}')
+    ec2_goat_api = check_ec2_goat_api()
+    results['tests']['ec2_goat_api'] = ec2_goat_api
+    if ec2_goat_api['status'] == 'ok':
+        log.info('test:ec2_goat_api', 'OK')
     else:
-        if ec2_api.get('error') == 'Connection refused':
-            ec2_api['fix'] = 'EC2 API container may be down. SSH and run: docker ps'
-        elif ec2_api.get('error') == 'Connection timeout':
-            ec2_api['fix'] = 'Check security group allows port 8000'
+        if ec2_goat_api.get('error') == 'Connection refused':
+            ec2_goat_api['fix'] = 'EC2 API container may be down. SSH and run: docker ps'
+        elif ec2_goat_api.get('error') == 'Connection timeout':
+            ec2_goat_api['fix'] = 'Check security group allows port 8000'
         else:
-            ec2_api['fix'] = 'Check EC2 logs in CloudWatch'
-        log.error('test:ec2_api', 'Failed', error=ec2_api.get('error'))
+            ec2_goat_api['fix'] = 'Check EC2 logs in CloudWatch'
+        log.error('test:ec2_goat_api', 'Failed', error=ec2_goat_api.get('error'))
 
     # Test 4: Camera proxy check
     try:
@@ -1120,8 +1117,7 @@ def proxy_debug_image(serial_id, view):
 
     try:
         resp = requests.get(
-            f'{EC2_API}/debug/{sanitized}/{view}',
-            headers={'X-API-Key': EC2_API_KEY} if EC2_API_KEY else {},
+            f'{EC2_GOAT_API}/debug/{sanitized}/{view}',
             timeout=REQUEST_TIMEOUT_SEC
         )
 
@@ -1176,8 +1172,7 @@ def proxy_debug_list(serial_id):
 
     try:
         resp = requests.get(
-            f'{EC2_API}/debug/{sanitized}',
-            headers={'X-API-Key': EC2_API_KEY} if EC2_API_KEY else {},
+            f'{EC2_GOAT_API}/debug/{sanitized}',
             timeout=REQUEST_TIMEOUT_SEC
         )
 
@@ -1225,14 +1220,9 @@ def run_startup_checks():
     log.info('startup', '=' * 50)
     log.info('startup', 'PROD PI SERVER STARTING')
     log.info('startup', 'Configuration',
-             ec2_ip=EC2_IP, ec2_api=EC2_API,
-             ec2_api_key_set=bool(EC2_API_KEY),
+             ec2_ip=EC2_IP, ec2_goat_api=EC2_GOAT_API,
              resolution=f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
              proxy_url=PROXY_URL)
-
-    if not EC2_API_KEY:
-        log.critical('startup', 'EC2_API_KEY not set — EC2 will reject grading requests',
-                     fix='Set EC2_API_KEY in .env to match API_KEY on EC2')
 
     sys_info = get_system_info()
     log.info('startup:system', 'System info',
@@ -1290,13 +1280,13 @@ def run_startup_checks():
         log.warn('startup:ec2', 'EC2 ping failed',
                  error=ec2_ping.get('error'), ip=EC2_IP)
 
-    ec2_api = check_ec2_api()
-    ec2_ok = ec2_api['status'] == 'ok'
+    ec2_goat_api = check_ec2_goat_api()
+    ec2_ok = ec2_goat_api['status'] == 'ok'
     if ec2_ok:
-        log.info('startup:ec2', 'EC2 API OK', url=EC2_API)
+        log.info('startup:ec2', 'EC2 API OK', url=EC2_GOAT_API)
     else:
         log.warn('startup:ec2', 'EC2 API not reachable',
-                 error=ec2_api.get('error'), url=EC2_API,
+                 error=ec2_goat_api.get('error'), url=EC2_GOAT_API,
                  fix='May be OK if EC2 is still starting')
 
     if ec2_ok:

@@ -22,13 +22,13 @@ jobs:
           tags: tag:ci
       - name: Deploy to Pi
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.PI_SSH_PRIVATE_KEY }}
-          TAILSCALE_IP: ${{ secrets.TAILSCALE_IP }}
+          SSH_KEY: ${{ secrets.PI_SSH_KEY }}
+          PI_TAILSCALE_IP: ${{ secrets.PI_TAILSCALE_IP }}
         run: |
           mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no pi@${TAILSCALE_IP} << 'EOF'
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no pi@${PI_TAILSCALE_IP} << 'EOF'
             set -e
             cd /home/pi/goatdev
             git fetch origin

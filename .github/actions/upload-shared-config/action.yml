@@ -2,12 +2,6 @@ name: Upload shared frontend config to S3 root
 description: Generates frontend/config.js and uploads it to S3 bucket root as /config.js
 
 inputs:
-  s3_bucket:
-    description: S3 bucket name (no s3://)
-    required: true
-  aws_region:
-    description: AWS region (e.g. us-east-2)
-    required: true
   auth_base:
     description: Base URL for auth api
     required: true
@@ -16,9 +10,6 @@ inputs:
     required: true
   db_base:
     description: Base URL for db api
-    required: true
-  s3_training_bucket:
-    description: Training bucket name used by UI
     required: true
 
 runs:
@@ -33,8 +24,6 @@ runs:
           AUTH_BASE: "__AUTH_BASE__",
           DB_BASE: "__DB_BASE__/db",
           API_BASE: "__API_BASE__",
-          S3_BUCKET: "__S3_TRAINING_BUCKET__",
-          S3_REGION: "__S3_REGION__",
         };
         EOF
 
@@ -42,8 +31,6 @@ runs:
           -e "s|__AUTH_BASE__|${{ inputs.auth_base }}|g" \
           -e "s|__DB_BASE__|${{ inputs.db_base }}|g" \
           -e "s|__API_BASE__|${{ inputs.api_base }}|g" \
-          -e "s|__S3_TRAINING_BUCKET__|${{ inputs.s3_training_bucket }}|g" \
-          -e "s|__S3_REGION__|${{ inputs.aws_region }}|g" \
           frontend/config.js
 
     - name: Upload config.js to S3 root
