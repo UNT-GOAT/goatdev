@@ -217,7 +217,7 @@
         user: "herdsync_user",
       };
 
-      // If already authenticated, skip to dashboardd
+      // If already authenticated, skip to dashboard
       (function checkExisting() {
         const token = sessionStorage.getItem(KEYS.accessToken);
         const expiresAt = parseInt(
