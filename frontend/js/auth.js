@@ -25,10 +25,6 @@
  */
 
 const HerdAuth = (() => {
-    const AUTH_BASE =
-        (typeof CONFIG !== "undefined" && CONFIG.AUTH_BASE)
-            ? CONFIG.AUTH_BASE
-            : "";
 
     const REFRESH_BUFFER_SEC = 120; // refresh 2 min before expiry
 
@@ -121,7 +117,7 @@ const HerdAuth = (() => {
         const refreshToken = getRefreshToken();
         if (!refreshToken) throw new Error('No refresh token');
 
-        const resp = await fetch(`${AUTH_BASE}/auth/refresh`, {
+        const resp = await fetch(`$/auth/refresh`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ refresh_token: refreshToken }),
@@ -155,7 +151,7 @@ const HerdAuth = (() => {
         const refreshToken = getRefreshToken();
         if (refreshToken) {
             try {
-                await fetch(`${AUTH_BASE}/auth/logout`, {
+                await fetch(`$/auth/logout`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ refresh_token: refreshToken }),

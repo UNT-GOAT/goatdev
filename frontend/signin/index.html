@@ -10,7 +10,6 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap"
       rel="stylesheet"
     />
-    <script src="/js/config.js"></script>
     <style>
       *,
       *::before,
@@ -211,11 +210,6 @@
     </div>
 
     <script>
-      const AUTH_BASE =
-        typeof CONFIG !== "undefined" && CONFIG.AUTH_BASE
-          ? CONFIG.AUTH_BASE
-          : "";
-
       const KEYS = {
         accessToken: "herdsync_access_token",
         refreshToken: "herdsync_refresh_token",
@@ -223,7 +217,7 @@
         user: "herdsync_user",
       };
 
-      // If already authenticated, skip to dashboard
+      // If already authenticated, skip to dashboardd
       (function checkExisting() {
         const token = sessionStorage.getItem(KEYS.accessToken);
         const expiresAt = parseInt(
@@ -236,7 +230,7 @@
         // Try refresh token
         const refresh = localStorage.getItem(KEYS.refreshToken);
         if (refresh) {
-          fetch(AUTH_BASE + "/auth/refresh", {
+          fetch("/auth/refresh", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ refresh_token: refresh }),
@@ -281,7 +275,7 @@
         errorEl.textContent = "";
 
         try {
-          const resp = await fetch(AUTH_BASE + "/auth/login", {
+          const resp = await fetch("/auth/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ username, password }),

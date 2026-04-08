@@ -8,7 +8,6 @@
     />
     <title>HerdSync</title>
     <link rel="icon" href="https://herd-sync.com/logos/favicon.ico?v=2" />
-    <script src="/js/config.js"></script>
     <script src="/js/auth.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link
@@ -3135,7 +3134,7 @@
         setTimeout(() => document.getElementById("provNameInput").focus(), 100);
       }
 
-      // AUTH + INIT
+      // AUTH + INIT 
       function showApp(user) {
         allAnimals = [];
         allProviders = [];
@@ -3220,12 +3219,12 @@
 
       // DATA LOADING
       async function dbFetch(path) {
-        const r = await HerdAuth.fetch(CONFIG.DB_BASE + path);
+        const r = await HerdAuth.fetch("/db" + path);
         if (!r.ok) throw new Error(r.status + " on " + path);
         return r.json();
       }
       async function authFetch(path, opts) {
-        return HerdAuth.fetch(CONFIG.AUTH_BASE + path, opts);
+        return HerdAuth.fetch(path, opts);
       }
       async function loadProviders() {
         allProviders = await dbFetch("/providers");
@@ -3368,7 +3367,7 @@
         clearTimeout(img._wsRetryTimer);
 
         // Standard MJPEG stream
-        img.src = CONFIG.API_BASE + "/api/viewfocus/stream/" + cam
+        img.src = "/api/viewfocus/stream/" + cam
           + "?token=" + token;
 
         img.onerror = function () {
@@ -3412,7 +3411,7 @@
         try {
           const controller = new AbortController();
           const timer = setTimeout(() => controller.abort(), 5000);
-          await HerdAuth.fetch(CONFIG.API_BASE + "/api/prod/status", {
+          await HerdAuth.fetch("/api/prod/status", {
             signal: controller.signal,
           });
           clearTimeout(timer);
@@ -3865,7 +3864,7 @@
         if (kd) body.kill_date = kd;
         const pd = document.getElementById("addAnimalProc").value;
         if (pd) body.process_date = pd;
-        const resp = await HerdAuth.fetch(CONFIG.DB_BASE + "/" + type + "s", {
+        const resp = await HerdAuth.fetch("/db/" + type + "s", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -3903,7 +3902,7 @@
             if (prov) body.prov_id = parseInt(prov);
             if (kd) body.kill_date = kd;
             if (pd) body.process_date = pd;
-            const r = await HerdAuth.fetch(CONFIG.DB_BASE + "/" + type + "s", {
+            const r = await HerdAuth.fetch("/db/" + type + "s", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(body),
@@ -4014,7 +4013,7 @@
         if (pd) body.process_date = pd;
         try {
           const r = await HerdAuth.fetch(
-            CONFIG.DB_BASE + "/" + type + "s/" + sid,
+            "/db/" + type + "s/" + sid,
             {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
@@ -4065,7 +4064,7 @@
         try {
           const grades = allGrades.filter((g) => g.serial_id == sid);
           const r = await HerdAuth.fetch(
-            CONFIG.DB_BASE + "/" + type + "s/" + sid,
+            "/db/" + type + "s/" + sid,
             { method: "DELETE" },
           );
           if (!r.ok) {
@@ -4239,7 +4238,7 @@
         }
         if (!ok) return;
         try {
-          const r = await HerdAuth.fetch(CONFIG.DB_BASE + "/providers", {
+          const r = await HerdAuth.fetch("/db/providers", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -4309,7 +4308,7 @@
         }
         const email = document.getElementById("editProvEmail").value.trim();
         try {
-          const r = await HerdAuth.fetch(CONFIG.DB_BASE + "/providers/" + id, {
+          const r = await HerdAuth.fetch("/db/providers/" + id, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -4354,7 +4353,7 @@
         const id = parseInt(document.getElementById("editProvId").value);
         closeModal("modalDeleteProvider");
         try {
-          const r = await HerdAuth.fetch(CONFIG.DB_BASE + "/providers/" + id, {
+          const r = await HerdAuth.fetch("/db/providers/" + id, {
             method: "DELETE",
           });
           if (!r.ok) {
@@ -4383,7 +4382,7 @@
         // 1. Update the animal table
         try {
             await HerdAuth.fetch(
-                CONFIG.DB_BASE + "/" + type + "s/" + serialId,
+                "/db/" + type + "s/" + serialId,
                 {
                     method: "PUT",
                     headers: { "Content-Type": "application/json" },
@@ -4401,7 +4400,7 @@
         if (gradeRecord) {
             try {
                 await HerdAuth.fetch(
-                    CONFIG.DB_BASE + "/grading/result/" + gradeRecord.id,
+                    "/db/grading/result/" + gradeRecord.id,
                     {
                         method: "PUT",
                         headers: { "Content-Type": "application/json" },
@@ -4514,7 +4513,7 @@
           try {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 5000);
-            await HerdAuth.fetch(CONFIG.API_BASE + "/api/prod/status", {
+            await HerdAuth.fetch("/api/prod/status", {
               signal: controller.signal,
             });
             clearTimeout(timer);
@@ -4531,7 +4530,7 @@
           }
           gradeLog("POST /api/prod/grade ...", "info");
           const resp = await HerdAuth.fetch(
-            CONFIG.API_BASE + "/api/prod/grade",
+            "/api/prod/grade",
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -4598,7 +4597,7 @@
           let data;
           try {
             const r = await HerdAuth.fetch(
-              CONFIG.API_BASE + "/api/prod/status",
+              "/api/prod/status",
             );
             data = await r.json();
           } catch (e) {
@@ -4674,7 +4673,6 @@
           if (existing) existing.remove();
           const img = document.createElement("img");
           img.src =
-            CONFIG.API_BASE +
             "/api/prod/debug/" +
             serialId +
             "/" +
@@ -4862,7 +4860,7 @@
             if (gradeProv) putBody.prov_id = parseInt(gradeProv);
             if (gradeKillDate) putBody.kill_date = gradeKillDate;
             const putResp = await HerdAuth.fetch(
-              CONFIG.DB_BASE + endpoint + "/" + pendingGradeResult.serial_id,
+              "/db" + endpoint + "/" + pendingGradeResult.serial_id,
               {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
@@ -4895,7 +4893,7 @@
             };
             if (gradeProv) createBody.prov_id = parseInt(gradeProv);
             if (gradeKillDate) createBody.kill_date = gradeKillDate;
-            const animalResp = await HerdAuth.fetch(CONFIG.DB_BASE + endpoint, {
+            const animalResp = await HerdAuth.fetch("/db" + endpoint, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(createBody),
@@ -4920,7 +4918,7 @@
           delete gradePayload._isExisting;
           delete gradePayload.view_errors;
           delete gradePayload.grade_details;
-          const gradeResp = await HerdAuth.fetch(CONFIG.DB_BASE + "/grading", {
+          const gradeResp = await HerdAuth.fetch("/db/grading", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(gradePayload),
@@ -5053,7 +5051,7 @@
         const newGrade = document.getElementById("reviewEditGrade").value || null;
         try {
             const r = await HerdAuth.fetch(
-                CONFIG.DB_BASE + "/grading/result/" + _reviewGradeId,
+                "/db/grading/result/" + _reviewGradeId,
                 {
                     method: "PUT",
                     headers: { "Content-Type": "application/json" },
@@ -5092,7 +5090,7 @@
         if (!confirm("Delete this grade result permanently?")) return;
         try {
           const r = await HerdAuth.fetch(
-            CONFIG.DB_BASE + "/grading/result/" + _reviewGradeId,
+            "/db/grading/result/" + _reviewGradeId,
             { method: "DELETE" },
           );
           if (!r.ok) {
@@ -5375,7 +5373,7 @@
           formData.append("top_image", _devFiles.top);
           formData.append("front_image", _devFiles.front);
           const resp = await HerdAuth.fetch(
-            CONFIG.API_BASE + "/api/prod/grade/test",
+            "/api/prod/grade/test",
             { method: "POST", body: formData },
           );
           const body = await resp.json();
