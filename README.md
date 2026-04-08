@@ -38,11 +38,11 @@ The platform also manages the facility's day-to-day operations: animal records, 
 | **Auth Verifier**   | Flask, PyJWT                         | Pi-local JWT validation for Caddy                 |
 | **Status Display**  | Pillow, SPI LCD                      | Real-time system health on 2.4" ILI9341           |
 
-**Cloud (AWS us-east-2):** EC2 t3.medium runs 4 Docker containers (auth, db, db-proxy, goat-api). RDS PostgreSQL 17.2 for data. S3 for frontend hosting, raw captures, debug images, and training data. CloudFront CDN with OAC for the frontend. ALB routes API traffic.
+**Cloud (AWS us-east-2):** EC2 t3.medium runs 4 Docker containers (auth, db, db-proxy, goat-api) behind a Caddy reverse proxy. RDS PostgreSQL 17.2 for data. S3 for frontend hosting, raw captures, debug images, and training data. CloudFront CDN serves the frontend and routes all API traffic (/auth/_, /db/_, /api/\*) to EC2.
 
-**Edge (Raspberry Pi 4):** On-premise at the facility. Owns 3 USB cameras, 3 temperature sensors, 3 heater circuits, and an SPI display. 6 application services managed by systemd. Connected to the cloud via Cloudflare Tunnel (HTTPS) and Tailscale VPN (SSH/deployment).
+**Edge (Raspberry Pi 4):** On-premise at the facility. Owns 3 USB cameras, 3 temperature sensors, 3 heater circuits, and an SPI display. 6 application services managed by systemd. Connected to the cloud via Tailscale VPN for both API traffic and SSH deployment.
 
-**CI/CD (GitHub Actions):** 6 workflows deploy to EC2 (Docker via SSM), S3 (frontend sync), and Pi (git pull via Tailscale SSH).
+**CI/CD (GitHub Actions):** 6 workflows deploy to EC2 (Docker via Tailscale SSH), S3 (frontend sync), and Pi (git pull via Tailscale SSH).
 
 ## Repository Structure
 
@@ -58,7 +58,7 @@ goatdev/
 │   ├── dashboard/          # Main application (animals, grading, providers, logs)
 │   ├── signin/             # Login page
 │   ├── setup/              # Camera focus, heater, and capture setup
-│   ├── js/                 # auth.js, config.js
+│   ├── js/                 # auth.js
 │   └── logos/              # Brand assets (dark/light variants)
 ├── pi/                     # Raspberry Pi services and system config
 │   ├── servers/            # camera_proxy, prod, training, heating, auth_verifier
@@ -92,7 +92,7 @@ Each service directory has its own README with detailed documentation:
 10. Operator reviews grade, measurements, and debug overlays in a modal
 11. On accept: animal record created/updated in PostgreSQL, grade result stored
 
-## Training Data Colection Pipeline
+## Training Data Collection Pipeline
 
 ```
 Setup Page → Pi Training Server → Camera Proxy (burst) → S3 Training Bucket
@@ -107,7 +107,7 @@ Separate from grading. Captures 20 frames per camera at 1.5-second intervals for
 - **Rate limiting** - login attempts tracked by IP and username independently. 5 attempts per 5-minute window, 15-minute lockout.
 - **S3 private buckets** - frontend bucket uses CloudFront OAC (no public access). Capture/training buckets are private with IAM policies.
 - **Pi auth gating** - every API request through Caddy goes through `forward_auth` to a local JWT verifier. The verifier caches the public key from JWKS.
-- **API key for Pi→EC2** - service-to-service grading calls use a shared API key in `X-API-Key` header. Simpler than JWT for machine-to-machine.
+- **API key for Pi→EC2** - service-to-service grading calls use a shared API key in `X-API-Key` header over Tailscale. Simpler than JWT for machine-to-machine.
 
 ## Tech Stack
 
@@ -118,9 +118,9 @@ Separate from grading. Captures 20 frames per camera at 1.5-second intervals for
 | Database       | PostgreSQL 17.2 (RDS), asyncpg, FastAPI                     |
 | AI/CV          | PyTorch 2.5 (CPU), YOLO (ultralytics), OpenCV               |
 | Edge           | Flask, gunicorn + gevent, OpenCV, RPi.GPIO, Pillow          |
-| Infrastructure | EC2, RDS, S3, CloudFront, ALB, ECR, CloudWatch              |
-| Networking     | Cloudflare Tunnel, Tailscale VPN, Caddy v2                  |
-| CI/CD          | GitHub Actions (6 workflows), Docker, SSM                   |
+| Infrastructure | EC2, RDS, S3, CloudFront, ECR, CloudWatch, Route53          |
+| Networking     | Tailscale VPN, Caddy v2                                     |
+| CI/CD          | GitHub Actions (6 workflows), Docker, Tailscale SSH         |
 | Hardware       | Raspberry Pi 4 (4GB), 3x Arducam 16MP, DS18B20, ILI9341 LCD |
 
 ##

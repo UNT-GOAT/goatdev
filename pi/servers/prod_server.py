@@ -30,6 +30,7 @@ load_dotenv("/home/pi/goatdev/pi/.env")
 
 EC2_IP = os.environ.get('EC2_IP')
 EC2_GOAT_API = os.environ.get('EC2_GOAT_API')
+API_KEY = os.environ.get('API_KEY', '')
 
 # Camera paths (for reference / diagnostics)
 CAMERAS = {
@@ -410,6 +411,7 @@ def do_grade(serial_id: str, live_weight: float, description: str = 'meat'):
                 f'{EC2_GOAT_API}/analyze',
                 files=files,
                 data=data,
+                headers={'X-API-Key': API_KEY},
                 timeout=EC2_TIMEOUT_SEC
             )
             ec2_time = round(time.time() - ec2_start, 2)
@@ -915,6 +917,7 @@ def grade_test():
             f'{EC2_GOAT_API}/analyze',
             files=files,
             data=data,
+            headers={'X-API-Key': API_KEY},
             timeout=EC2_TIMEOUT_SEC
         )
         ec2_time = round(time.time() - ec2_start, 2)
@@ -1118,6 +1121,7 @@ def proxy_debug_image(serial_id, view):
     try:
         resp = requests.get(
             f'{EC2_GOAT_API}/debug/{sanitized}/{view}',
+            headers={'X-API-Key': API_KEY},
             timeout=REQUEST_TIMEOUT_SEC
         )
 

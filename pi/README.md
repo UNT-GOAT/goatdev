@@ -1,6 +1,6 @@
 # Raspberry Pi - Edge Device
 
-All software running on the Raspberry Pi 4 at the livestock facility. Owns cameras, temperature sensors, heater circuits, and an LCD status display. Connects to the cloud via Cloudflare Tunnel (HTTPS) and Tailscale VPN (SSH/deployment).
+All software running on the Raspberry Pi 4 at the livestock facility. Owns cameras, temperature sensors, heater circuits, and an LCD status display. Connected to the cloud via Tailscale VPN for both API traffic and SSH deployment.
 
 ## Services
 
@@ -19,12 +19,12 @@ Six application services run as systemd units, plus Caddy as the reverse proxy:
 ## Architecture
 
 ```
-Internet → Cloudflare Tunnel → Caddy (:8444)
-                                  ├── /api/viewfocus/* → camera-proxy (:8080)
-                                  ├── /api/prod/*      → prod_server (:5000)
-                                  ├── /api/capture/*   → training_server (:5001)
-                                  ├── /api/heater/*    → camera_heating (:5002)
-                                  └── forward_auth     → auth_verifier (:5003)
+EC2 Caddy → Tailscale → Pi Caddy (:8444)
+                            ├── /api/viewfocus/* → camera-proxy (:8080)
+                            ├── /api/prod/*      → prod_server (:5000)
+                            ├── /api/capture/*   → training_server (:5001)
+                            ├── /api/heater/*    → camera_heating (:5002)
+                            └── forward_auth     → auth_verifier (:5003)
 
 Tailscale VPN → Caddy (:443, Tailscale TLS)
                   └── (same routing as above)
@@ -52,7 +52,7 @@ pi/
 │   └── pi_heartbeat_cron.py        # Cron health check: logs errors when services are down
 └── system/
     ├── deploy.sh                   # Installs services, udev rules, cron, Caddyfile
-    ├── Caddyfile                   # Reverse proxy config (two server blocks: Tailscale + tunnel)
+    ├── Caddyfile                   # Reverse proxy config (Tailscale TLS + HTTP on 8444)
     ├── 99-cameras.rules            # udev rules for stable /dev/camera_* symlinks
     ├── camera-proxy.service        # systemd unit (gunicorn + geventwebsocket worker, root)
     ├── goat-prod.service           # systemd unit (python3, user=pi)
@@ -85,7 +85,7 @@ Production grading workflow:
 1. Pre-checks: verify EC2 reachable, all cameras connected
 2. Signals camera proxy for full-res capture of all 3 cameras
 3. Pulls individual frames from SHM via `/capture/frame/<camera>`
-4. Sends all 3 images + metadata to EC2's `/analyze` endpoint
+4. Sends all 3 images + metadata to EC2's `/analyze` endpoint over Tailscale
 5. EC2 runs YOLO inference, returns grade + measurements
 6. EC2 handles S3 archival (Pi does not write to S3 for grading)
 
@@ -115,7 +115,7 @@ Thermostat for camera enclosure heaters:
 
 Lightweight JWT verifier for Caddy's `forward_auth`:
 
-- Fetches RSA public key from EC2's JWKS endpoint on startup
+- Fetches RSA public key from EC2's JWKS endpoint via Tailscale on startup
 - Caches key, refreshes hourly
 - Validates JWT from `Authorization: Bearer` header or `?token=` query param (for MJPEG streams loaded via `<img>` tags)
 - Returns 200 (allow) or 401 (deny) - Caddy only checks the status code
@@ -138,16 +138,16 @@ SPI LCD status display (2.4" ILI9341, 240x320):
 
 ## Environment Variables
 
-Stored in `/home/pi/goatdev/pi/.env` and `/home/pi/.env`:
+Stored in `/home/pi/goatdev/pi/.env`:
 
-| Variable             | Description                                         |
-| -------------------- | --------------------------------------------------- |
-| `EC2_IP`             | Public IP of the EC2 instance                       |
-| `EC2_API_KEY`        | API key matching goat-api's `API_KEY`               |
-| `EC2_GOAT_API`       | Full URL to goat-api (e.g., `http://<EC2_IP>:8000`) |
-| `S3_TRAINING_BUCKET` | S3 bucket for training data uploads                 |
-| `AUTH_JWKS_URL`      | JWKS endpoint URL for public key fetch              |
-| `SITE_DOMAIN`        | Caddy domain for Tailscale TLS cert                 |
+| Variable             | Description                                                       |
+| -------------------- | ----------------------------------------------------------------- |
+| `EC2_IP`             | Tailscale IP of the EC2 instance                                  |
+| `EC2_GOAT_API`       | Full URL to goat-api over Tailscale                               |
+| `API_KEY`            | API key matching goat-api's `API_KEY` (sent via X-API-Key header) |
+| `S3_TRAINING_BUCKET` | S3 bucket for training data uploads                               |
+| `AUTH_JWKS_URL`      | JWKS endpoint over Tailscale                                      |
+| `SITE_DOMAIN`        | Caddy domain for Tailscale TLS cert                               |
 
 ## Deployment
 

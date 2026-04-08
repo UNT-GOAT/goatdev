@@ -1314,7 +1314,7 @@
         try {
           const c = new AbortController();
           const t = setTimeout(() => c.abort(), 5000);
-          await HerdAuth.fetch(CONFIG.API_BASE + "/api/prod/status", {
+          await HerdAuth.fetch("/api/prod/status", {
             signal: c.signal,
           });
           clearTimeout(t);
@@ -1440,11 +1440,7 @@
         _focusThrottleTimers[cam] = setTimeout(() => {
           _focusThrottleTimers[cam] = null;
           HerdAuth.fetch(
-            CONFIG.API_BASE +
-              "/api/viewfocus/focus/" +
-              cam +
-              "/" +
-              focusValues[cam],
+            "/api/viewfocus/focus/" + cam + "/" + focusValues[cam],
           ).catch(() => {});
         }, 100);
       }
@@ -1503,8 +1499,7 @@
       function _connectFocusStream(img, cam, offlineEl) {
         const token = HerdAuth.getAccessToken();
         img.style.display = "";
-        img.src =
-          CONFIG.API_BASE + "/api/viewfocus/stream/" + cam + "?token=" + token;
+        img.src = "/api/viewfocus/stream/" + cam + "?token=" + token;
       }
 
       function stopFocusStreams() {
@@ -1560,9 +1555,7 @@
         clearTimeout(_focusThrottleTimers[cam]);
         _focusThrottleTimers[cam] = null;
         try {
-          await HerdAuth.fetch(
-            CONFIG.API_BASE + "/api/viewfocus/focus/" + cam + "/" + val,
-          );
+          await HerdAuth.fetch("/api/viewfocus/focus/" + cam + "/" + val);
         } catch (e) {}
       }
 
@@ -1573,10 +1566,9 @@
         const msgEl = document.getElementById("fmsg-" + cam);
 
         try {
-          const r = await HerdAuth.fetch(
-            CONFIG.API_BASE + "/api/viewfocus/autofocus/" + cam,
-            { method: "POST" },
-          );
+          const r = await HerdAuth.fetch("/api/viewfocus/autofocus/" + cam, {
+            method: "POST",
+          });
           if (r.ok) {
             _afActive[cam] = true;
             btn.textContent = "AF ●";
@@ -1595,9 +1587,7 @@
 
       async function loadFocusFromStatus() {
         try {
-          const r = await HerdAuth.fetch(
-            CONFIG.API_BASE + "/api/viewfocus/status",
-          );
+          const r = await HerdAuth.fetch("/api/viewfocus/status");
           if (r.ok) {
             const data = await r.json();
             if (data.settings) {
@@ -1624,7 +1614,7 @@
         for (const cam of CAMERAS) {
           try {
             const r = await HerdAuth.fetch(
-              CONFIG.API_BASE + "/api/viewfocus/capture/burst/" + cam,
+              "/api/viewfocus/capture/burst/" + cam,
               {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -1692,7 +1682,6 @@
               ) {
                 this.style.display = "";
                 this.src =
-                  CONFIG.API_BASE +
                   "/api/viewfocus/stream/" +
                   cam +
                   "?token=" +
@@ -1703,12 +1692,7 @@
             }, 10000);
           };
           slot.insertBefore(img, slot.firstChild);
-          img.src =
-            CONFIG.API_BASE +
-            "/api/viewfocus/stream/" +
-            cam +
-            "?token=" +
-            token;
+          img.src = "/api/viewfocus/stream/" + cam + "?token=" + token;
         });
       }
 
@@ -1782,9 +1766,7 @@
           return;
         }
         try {
-          const r = await HerdAuth.fetch(
-            CONFIG.API_BASE + "/api/heater/status",
-          );
+          const r = await HerdAuth.fetch("/api/heater/status");
           if (!r.ok) throw new Error("HTTP " + r.status);
           const data = await r.json();
           if (data.thresholds) {
@@ -1913,7 +1895,7 @@
           return;
         }
         try {
-          await HerdAuth.fetch(CONFIG.API_BASE + "/api/heater/override", {
+          await HerdAuth.fetch("/api/heater/override", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ camera, state }),
@@ -1931,9 +1913,7 @@
       async function fetchHeaterHistory() {
         if (!piConnected) return;
         try {
-          const r = await HerdAuth.fetch(
-            CONFIG.API_BASE + "/api/heater/history",
-          );
+          const r = await HerdAuth.fetch("/api/heater/history");
           if (!r.ok) throw new Error("HTTP " + r.status);
           const data = await r.json();
           const list = document.getElementById("heaterHistory");
@@ -2005,9 +1985,7 @@
 
         try {
           // Call your new Pi endpoint instead of hitting S3 directly
-          const r = await HerdAuth.fetch(
-            CONFIG.API_BASE + "/api/capture/next_id",
-          );
+          const r = await HerdAuth.fetch("/api/capture/next_id");
           if (!r.ok) throw new Error("Server error");
 
           const data = await r.json();
@@ -2068,12 +2046,9 @@
           try {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 5000);
-            const pingResp = await HerdAuth.fetch(
-              CONFIG.API_BASE + "/api/prod/status",
-              {
-                signal: controller.signal,
-              },
-            );
+            const pingResp = await HerdAuth.fetch("/api/prod/status", {
+              signal: controller.signal,
+            });
             clearTimeout(timer);
             if (!pingResp.ok) throw new Error("Status " + pingResp.status);
             captureLog("Pi connected", "ok");
@@ -2095,19 +2070,16 @@
           const captureId = isMock ? "test_" + Date.now() : captureGoatId;
 
           captureLog("POST /api/capture/record ...", "info");
-          const response = await HerdAuth.fetch(
-            CONFIG.API_BASE + "/api/capture/record",
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                goat_id: captureId,
-                goat_data: goatData,
-                is_test: isMock,
-                require_all_cameras: !isMock,
-              }),
-            },
-          );
+          const response = await HerdAuth.fetch("/api/capture/record", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              goat_id: captureId,
+              goat_data: goatData,
+              is_test: isMock,
+              require_all_cameras: !isMock,
+            }),
+          });
           if (!response.ok) {
             const err = await response.json().catch(() => ({}));
             const msg =
@@ -2173,9 +2145,7 @@
           await new Promise((r) => setTimeout(r, 500));
           let data;
           try {
-            const r = await HerdAuth.fetch(
-              CONFIG.API_BASE + "/api/capture/status",
-            );
+            const r = await HerdAuth.fetch("/api/capture/status");
             data = await r.json();
           } catch (e) {
             captureLog("Retrying...", "warn");

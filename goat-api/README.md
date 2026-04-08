@@ -68,12 +68,12 @@ model/                      # At repo root, NOT inside goat-api/
 
 ## Environment Variables
 
-| Variable              | Required | Description                                                         |
-| --------------------- | -------- | ------------------------------------------------------------------- |
-| `API_KEY`             | Yes      | Shared secret for Pi authentication (must match Pi's `EC2_API_KEY`) |
-| `S3_CAPTURES_BUCKET`  | Yes      | Bucket for raw capture images                                       |
-| `S3_PROCESSED_BUCKET` | Yes      | Bucket for debug overlays                                           |
-| `AWS_REGION`          | No       | AWS region (default: `us-east-2`)                                   |
+| Variable              | Required | Description                                                     |
+| --------------------- | -------- | --------------------------------------------------------------- |
+| `API_KEY`             | Yes      | Shared secret for Pi authentication (must match Pi's `API_KEY`) |
+| `S3_CAPTURES_BUCKET`  | Yes      | Bucket for raw capture images                                   |
+| `S3_PROCESSED_BUCKET` | Yes      | Bucket for debug overlays                                       |
+| `AWS_REGION`          | No       | AWS region (default: `us-east-2`)                               |
 
 ## Grade Algorithm
 
