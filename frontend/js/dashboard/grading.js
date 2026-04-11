@@ -45,6 +45,276 @@
         renderGradeHistory();
     }
 
+      function _renderOverrideHistory(history) {
+        const wrap = document.getElementById("reviewOverrideHistoryWrap");
+        const body = document.getElementById("reviewOverrideHistory");
+        if (!Array.isArray(history) || !history.length) {
+          wrap.style.display = "none";
+          body.innerHTML = "";
+          return;
+        }
+        wrap.style.display = "";
+        body.innerHTML = history
+          .map((entry) => {
+            const fromGrade = entry.from_grade || "Ungraded";
+            const toGrade = entry.to_grade || "Ungraded";
+            const when = entry.changed_at
+              ? new Date(entry.changed_at).toLocaleString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })
+              : "—";
+            const who = entry.username || "unknown";
+            const reason = entry.reason_code ? " · " + esc(entry.reason_code) : "";
+            return (
+              '<div style="padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.06)">' +
+              '<div style="font-weight:600;color:var(--text-primary)">' +
+              esc(fromGrade) + " → " + esc(toGrade) +
+              "</div>" +
+              '<div style="font-size:10px;color:var(--text-faint);margin:3px 0 6px 0">' +
+              esc(who) + " · " + esc(when) + reason +
+              "</div>" +
+              '<div>' + esc(entry.annotation || "") + "</div>" +
+              "</div>"
+            );
+          })
+          .join("");
+      }
+
+      function _reviewDisplayGrade() {
+        return document.getElementById("reviewFinalGrade").value || pendingGradeResult?.grade || _reviewCurrentResult?.grade || "";
+      }
+
+      function onReviewFinalGradeChange() {
+        const badgeEl = document.getElementById("reviewGradeBadge");
+        const grade = _reviewDisplayGrade();
+        if (!badgeEl) return;
+        badgeEl.textContent = grade || "UNGRADED";
+        badgeEl.className =
+          "preview-grade-badge badge lg " + (grade ? gradeClass(grade) : "badge-ungraded");
+      }
+
+      function _buildOverrideEntry(fromGrade, toGrade, changeContext) {
+        return {
+          from_grade: fromGrade || null,
+          to_grade: toGrade || null,
+          annotation: "",
+          reason_code: "",
+          username: _currentUser?.username || "unknown",
+          changed_at: new Date().toISOString(),
+          change_context: changeContext,
+        };
+      }
+
+      function openGradeAnnotationModal(context) {
+        _gradeAnnotationContext = context;
+        document.getElementById("gradeAnnotationReason").value = "";
+        document.getElementById("gradeAnnotationText").value = "";
+        openModal("modalGradeAnnotation");
+        setTimeout(() => {
+          document.getElementById("gradeAnnotationText").focus();
+        }, 50);
+      }
+
+      function closeGradeAnnotationModal() {
+        _gradeAnnotationContext = null;
+        closeModal("modalGradeAnnotation");
+      }
+
+      async function submitGradeAnnotation() {
+        if (!_gradeAnnotationContext) return;
+        const note = (document.getElementById("gradeAnnotationText").value || "").trim();
+        const reason = document.getElementById("gradeAnnotationReason").value || "";
+        if (!note) {
+          showToast("error", "Annotation is required for manual grade changes");
+          return;
+        }
+        const ctx = _gradeAnnotationContext;
+        closeGradeAnnotationModal();
+        try {
+          await ctx.onSubmit(note, reason);
+        } catch (err) {
+          showToast("error", err.message || "Could not save grade annotation");
+        }
+      }
+
+      async function _savePendingGradeResult() {
+        const btn = document.getElementById("acceptGradeBtn");
+        const species = pendingGradeResult.species;
+        const endpoint = "/" + species + "s";
+        const label = species.charAt(0).toUpperCase() + species.slice(1);
+        const isExisting = !!pendingGradeResult._isExisting;
+        const gradeProv = document.getElementById("gradeProv").value;
+        const gradeKillDate = document.getElementById("gradeKillDate").value;
+        const finalGrade = document.getElementById("reviewFinalGrade").value || null;
+
+        pendingGradeResult.grade = finalGrade;
+
+        if (
+          finalGrade !== (pendingGradeResult._aiGrade || null)
+        ) {
+          const existingHistory = Array.isArray(pendingGradeResult.manual_override_history)
+            ? pendingGradeResult.manual_override_history.slice()
+            : [];
+          if (
+            !existingHistory.length ||
+            existingHistory[existingHistory.length - 1].change_context !== "pre_save_override" ||
+            existingHistory[existingHistory.length - 1].to_grade !== finalGrade ||
+            existingHistory[existingHistory.length - 1].from_grade !== (pendingGradeResult._aiGrade || null)
+          ) {
+            btn.disabled = false;
+            btn.textContent = "Accept & Save";
+            openGradeAnnotationModal({
+              onSubmit: async (note, reason) => {
+                const history = existingHistory.concat({
+                  ..._buildOverrideEntry(
+                    pendingGradeResult._aiGrade || null,
+                    finalGrade,
+                    "pre_save_override",
+                  ),
+                  annotation: note,
+                  reason_code: reason || null,
+                });
+                pendingGradeResult.manual_override_history = history;
+                await _savePendingGradeResult();
+              },
+            });
+            return;
+          }
+        }
+
+        try {
+          if (isExisting) {
+            gradeLog(
+              "Updating existing " +
+                species +
+                " #" +
+                pendingGradeResult.serial_id +
+                "...",
+              "info",
+            );
+            const putBody = {
+              grade: pendingGradeResult.grade || null,
+              live_weight: pendingGradeResult.live_weight,
+            };
+            if (gradeProv) putBody.prov_id = parseInt(gradeProv);
+            if (gradeKillDate) putBody.kill_date = gradeKillDate;
+            const putResp = await HerdAuth.fetch(
+              "/db" + endpoint + "/" + pendingGradeResult.serial_id,
+              {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(putBody),
+              },
+            );
+            if (!putResp.ok) {
+              const err = await putResp.json().catch(() => ({}));
+              throw new Error(
+                "Update failed: " + (err.detail || putResp.status),
+              );
+            }
+            gradeLog(
+              label + " #" + pendingGradeResult.serial_id + " updated",
+              "ok",
+            );
+          } else if (!_gradeAnimalCreated) {
+            gradeLog(
+              "Creating " +
+                species +
+                " #" +
+                pendingGradeResult.serial_id +
+                "...",
+              "info",
+            );
+            const createBody = {
+              live_weight: pendingGradeResult.live_weight,
+              grade: pendingGradeResult.grade || null,
+              description: pendingGradeResult.description || null,
+            };
+            if (gradeProv) createBody.prov_id = parseInt(gradeProv);
+            if (gradeKillDate) createBody.kill_date = gradeKillDate;
+            const animalResp = await HerdAuth.fetch("/db" + endpoint, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(createBody),
+            });
+            if (!animalResp.ok) {
+              const err = await animalResp.json().catch(() => ({}));
+              throw new Error(
+                label +
+                  " creation failed: " +
+                  (err.detail || animalResp.status),
+              );
+            }
+            const created = await animalResp.json();
+            pendingGradeResult.serial_id = created.serial_id;
+            _gradeAnimalCreated = true;
+            gradeLog(label + " #" + created.serial_id + " created", "ok");
+          }
+          gradeLog("Saving grade result...", "info");
+          const gradePayload = { ...pendingGradeResult };
+          delete gradePayload.species;
+          delete gradePayload.description;
+          delete gradePayload._isExisting;
+          delete gradePayload.view_errors;
+          delete gradePayload._aiGrade;
+          const gradeResp = await HerdAuth.fetch("/db/grading", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(gradePayload),
+          });
+          if (!gradeResp.ok) {
+            const err = await gradeResp.json().catch(() => ({}));
+            gradeLog("Grade save failed — click Retry.", "err");
+            showToast("error", err.detail || "Grade save failed — retry or discard");
+            btn.disabled = false;
+            btn.textContent = "Retry Save";
+            return;
+          }
+          _gradeAnimalCreated = false;
+          _gradeExistingId = null;
+          closeModal("modalGradeReview");
+          _reviewCurrentResult = null;
+          showToast(
+            "success",
+            label +
+              " #" +
+              pendingGradeResult.serial_id +
+              " " +
+              (isExisting ? "graded" : "created") +
+              " — " +
+              (pendingGradeResult.grade || "Ungraded"),
+          );
+          gradeLog("Saved to database", "ok");
+          const _savedSerial = pendingGradeResult?.serial_id;
+          const _savedSpecies = pendingGradeResult?.species;
+          pendingGradeResult = null;
+          await Promise.all([
+              loadGrades().catch(() => {}),
+              loadGoats().catch(() => {}),
+              loadLambs().catch(() => {}),
+          ]);
+          updateDashboard();
+          filterAnimals();
+          renderGradeHistory();
+          computeNextGradeId();
+          if (_savedSerial && _savedSpecies) {
+              selectAnimal(Number(_savedSerial), _savedSpecies);
+          }
+        } catch (err) {
+          showToast("error", err.message);
+          gradeLog("Error: " + err.message, "err");
+        } finally {
+          if (!_gradeAnimalCreated) {
+            btn.disabled = false;
+            btn.textContent = "Accept & Save";
+          }
+        }
+      }
+
       function onGradeSpeciesChange() {
         const species = document.getElementById("gradeSpecies").value;
         const descEl = document.getElementById("gradeDesc");
@@ -202,6 +472,7 @@
               species,
               description: desc,
               grade: result.grade || null,
+              _aiGrade: result.grade || null,
               live_weight: lw,
               all_views_ok:
                 result.all_views_successful ?? result.all_views_ok ?? null,
@@ -212,6 +483,10 @@
               warnings: result.warnings || [],
               view_errors: result.view_errors || [],
               grade_details: result.grade_details || null,
+              manual_override_history:
+                (
+                  allGrades.find((g) => String(g.serial_id) === String(serialId)) || {}
+                ).manual_override_history || [],
               _isExisting: isExisting,
             };
             openGradeReview(pendingGradeResult, serialId);
@@ -266,7 +541,9 @@
         document.getElementById("reviewSubtitle").textContent =
           "Review before saving";
         document.getElementById("reviewEditSection").style.display = "none";
+        document.getElementById("reviewFinalGradeSection").style.display = "";
         _reviewGradeId = null;
+        _reviewCurrentResult = result;
         const isOk = result.all_views_ok;
         const badgeEl = document.getElementById("reviewGradeBadge");
         badgeEl.style.color = "";
@@ -375,6 +652,8 @@
           okFooter.style.display = "";
           retryFooter.style.display = "none";
         }
+        document.getElementById("reviewFinalGrade").value = result.grade || "";
+        if (!isOk) document.getElementById("reviewFinalGradeSection").style.display = "none";
 
         // Grade details / reasoning
         const detailsEl = document.getElementById("reviewGradeDetails");
@@ -443,10 +722,12 @@
         } else {
           detailsEl.style.display = "none";
         }
+        _renderOverrideHistory(result.manual_override_history || []);
       }
       function retryGrade() {
         closeModal("modalGradeReview");
         pendingGradeResult = null;
+        _reviewCurrentResult = null;
         _gradeAnimalCreated = false;
         gradeLog("Retrying — previous attempt had view failures", "warn");
         document.getElementById("gradeWeight").focus();
@@ -455,6 +736,7 @@
         closeModal("modalDiscard");
         closeModal("modalGradeReview");
         pendingGradeResult = null;
+        _reviewCurrentResult = null;
         _gradeAnimalCreated = false;
         _gradeExistingId = null;
         gradeLog("Discarded by operator", "warn");
@@ -475,137 +757,7 @@
         const btn = document.getElementById("acceptGradeBtn");
         btn.disabled = true;
         btn.textContent = "Saving...";
-        const species = pendingGradeResult.species;
-        const endpoint = "/" + species + "s";
-        const label = species.charAt(0).toUpperCase() + species.slice(1);
-        const isExisting = !!pendingGradeResult._isExisting;
-        const gradeProv = document.getElementById("gradeProv").value;
-        const gradeKillDate = document.getElementById("gradeKillDate").value;
-        try {
-          if (isExisting) {
-            gradeLog(
-              "Updating existing " +
-                species +
-                " #" +
-                pendingGradeResult.serial_id +
-                "...",
-              "info",
-            );
-            const putBody = {
-              grade: pendingGradeResult.grade || null,
-              live_weight: pendingGradeResult.live_weight,
-            };
-            if (gradeProv) putBody.prov_id = parseInt(gradeProv);
-            if (gradeKillDate) putBody.kill_date = gradeKillDate;
-            const putResp = await HerdAuth.fetch(
-              "/db" + endpoint + "/" + pendingGradeResult.serial_id,
-              {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(putBody),
-              },
-            );
-            if (!putResp.ok) {
-              const err = await putResp.json().catch(() => ({}));
-              throw new Error(
-                "Update failed: " + (err.detail || putResp.status),
-              );
-            }
-            gradeLog(
-              label + " #" + pendingGradeResult.serial_id + " updated",
-              "ok",
-            );
-          } else if (!_gradeAnimalCreated) {
-            gradeLog(
-              "Creating " +
-                species +
-                " #" +
-                pendingGradeResult.serial_id +
-                "...",
-              "info",
-            );
-            const createBody = {
-              live_weight: pendingGradeResult.live_weight,
-              grade: pendingGradeResult.grade || null,
-              description: pendingGradeResult.description || null,
-            };
-            if (gradeProv) createBody.prov_id = parseInt(gradeProv);
-            if (gradeKillDate) createBody.kill_date = gradeKillDate;
-            const animalResp = await HerdAuth.fetch("/db" + endpoint, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(createBody),
-            });
-            if (!animalResp.ok) {
-              const err = await animalResp.json().catch(() => ({}));
-              throw new Error(
-                label +
-                  " creation failed: " +
-                  (err.detail || animalResp.status),
-              );
-            }
-            const created = await animalResp.json();
-            pendingGradeResult.serial_id = created.serial_id;
-            _gradeAnimalCreated = true;
-            gradeLog(label + " #" + created.serial_id + " created", "ok");
-          }
-          gradeLog("Saving grade result...", "info");
-          const gradePayload = { ...pendingGradeResult };
-          delete gradePayload.species;
-          delete gradePayload.description;
-          delete gradePayload._isExisting;
-          delete gradePayload.view_errors;
-          delete gradePayload.grade_details;
-          const gradeResp = await HerdAuth.fetch("/db/grading", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(gradePayload),
-          });
-          if (!gradeResp.ok) {
-            gradeLog("Grade save failed — click Retry.", "err");
-            showToast("error", "Grade save failed — retry or discard");
-            btn.disabled = false;
-            btn.textContent = "Retry Save";
-            return;
-          }
-          _gradeAnimalCreated = false;
-          _gradeExistingId = null;
-          closeModal("modalGradeReview");
-          showToast(
-            "success",
-            label +
-              " #" +
-              pendingGradeResult.serial_id +
-              " " +
-              (isExisting ? "graded" : "created") +
-              " — " +
-              (pendingGradeResult.grade || "Ungraded"),
-          );
-          gradeLog("Saved to database", "ok");
-          const _savedSerial = pendingGradeResult?.serial_id;
-          const _savedSpecies = pendingGradeResult?.species;
-          pendingGradeResult = null;
-          await Promise.all([
-              loadGrades().catch(() => {}),
-              loadGoats().catch(() => {}),
-              loadLambs().catch(() => {}),
-          ]);
-          updateDashboard();
-          filterAnimals();
-          renderGradeHistory();
-          computeNextGradeId();
-          if (_savedSerial && _savedSpecies) {
-              selectAnimal(Number(_savedSerial), _savedSpecies);
-          }
-        } catch (err) {
-          showToast("error", err.message);
-          gradeLog("Error: " + err.message, "err");
-        } finally {
-          if (!_gradeAnimalCreated) {
-            btn.disabled = false;
-            btn.textContent = "Accept & Save";
-          }
-        }
+        await _savePendingGradeResult();
       }
 
       // GRADE HISTORY

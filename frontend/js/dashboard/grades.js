@@ -57,11 +57,13 @@
               description: r.description || null,
               view_errors: r.view_errors || [],
               grade_details: r.grade_details || null,
+              manual_override_history: r.manual_override_history || [],
             },
             r.serial_id,
           );
           document.getElementById("reviewFooter").style.display = "none";
           document.getElementById("reviewRetryFooter").style.display = "none";
+          document.getElementById("reviewFinalGradeSection").style.display = "none";
           document.getElementById("reviewSubtitle").textContent =
             "Saved grade — click to edit";
           _reviewGradeId = resultId;
@@ -76,13 +78,73 @@
       async function saveEditGrade() {
         if (!_reviewGradeId) return;
         const newGrade = document.getElementById("reviewEditGrade").value || null;
+        const currentGrade = _reviewCurrentResult?.grade || null;
+        const currentHistory = Array.isArray(_reviewCurrentResult?.manual_override_history)
+          ? _reviewCurrentResult.manual_override_history.slice()
+          : [];
         try {
+            let payload = { grade: newGrade };
+            if (newGrade !== currentGrade) {
+                openGradeAnnotationModal({
+                    onSubmit: async (note, reason) => {
+                        const history = currentHistory.concat({
+                            ..._buildOverrideEntry(currentGrade, newGrade, "saved_result_edit"),
+                            annotation: note,
+                            reason_code: reason || null,
+                        });
+                        const r = await HerdAuth.fetch(
+                            "/db/grading/result/" + _reviewGradeId,
+                            {
+                                method: "PUT",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ grade: newGrade, manual_override_history: history }),
+                            },
+                        );
+                        if (!r.ok) {
+                            const err = await r.json().catch(() => ({}));
+                            throw new Error(err.detail || "Failed: " + r.status);
+                        }
+
+                        closeModal("modalGradeReview");
+                        _reviewCurrentResult = null;
+
+                        const gradeResult = allGrades.find((g) => g.id === _reviewGradeId);
+                        const serialId = gradeResult ? gradeResult.serial_id : null;
+                        const animal = serialId
+                            ? allAnimals.find((a) => String(a.serial_id) === String(serialId))
+                            : null;
+
+                        if (animal) {
+                            await HerdAuth.fetch(
+                                "/db/" + animal.type + "s/" + serialId,
+                                {
+                                    method: "PUT",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ grade: newGrade }),
+                                },
+                            );
+                            await Promise.all([loadGrades().catch(() => {}), loadGoats().catch(() => {}), loadLambs().catch(() => {})]);
+                            updateDashboard();
+                            filterAnimals();
+                            renderGradeHistory();
+                            selectAnimal(Number(serialId), animal.type);
+                        } else {
+                            await loadGrades().catch(() => {});
+                            renderGradeHistory();
+                            updateDashboard();
+                        }
+
+                        showToast("success", "Grade updated to " + (newGrade || "Ungraded"));
+                    },
+                });
+                return;
+            }
             const r = await HerdAuth.fetch(
                 "/db/grading/result/" + _reviewGradeId,
                 {
                     method: "PUT",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ grade: newGrade }),
+                    body: JSON.stringify(payload),
                 },
             );
             if (!r.ok) {
@@ -91,6 +153,7 @@
             }
 
             closeModal("modalGradeReview");
+            _reviewCurrentResult = null;
 
             const gradeResult = allGrades.find((g) => g.id === _reviewGradeId);
             const serialId = gradeResult ? gradeResult.serial_id : null;
@@ -99,7 +162,18 @@
                 : null;
 
             if (animal) {
-                await syncGradeEverywhere(serialId, animal.type, newGrade);
+                await HerdAuth.fetch(
+                    "/db/" + animal.type + "s/" + serialId,
+                    {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ grade: newGrade }),
+                    },
+                );
+                await Promise.all([loadGrades().catch(() => {}), loadGoats().catch(() => {}), loadLambs().catch(() => {})]);
+                updateDashboard();
+                filterAnimals();
+                renderGradeHistory();
                 selectAnimal(Number(serialId), animal.type);
             } else {
                 await loadGrades().catch(() => {});
@@ -125,6 +199,7 @@
             throw new Error(err.detail || "Delete failed: " + r.status);
           }
           closeModal("modalGradeReview");
+          _reviewCurrentResult = null;
           showToast("success", "Grade result deleted");
           _reviewGradeId = null;
           await loadGrades().catch(() => {});

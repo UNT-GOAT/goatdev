@@ -1382,6 +1382,30 @@
             <div id="reviewTierTable" style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-muted); overflow-x: auto;"></div>
           </div>
           </div>
+          <div id="reviewFinalGradeSection" style="display: none" class="mb-14">
+            <div class="section-label">Final Grade</div>
+            <div class="flex gap-10 items-end">
+              <div style="flex: 0 0 220px">
+                <label class="field-label">Approved grade</label>
+                <select class="field-select" id="reviewFinalGrade" onchange="onReviewFinalGradeChange()">
+                  <option value="">Ungraded</option>
+                  <option value="Reserve / CAB Prime">Reserve / CAB Prime</option>
+                  <option value="Prime">Prime</option>
+                  <option value="CAB Choice">CAB Choice</option>
+                  <option value="Choice">Choice</option>
+                  <option value="Select">Select</option>
+                  <option value="No Roll">No Roll</option>
+                </select>
+              </div>
+              <div style="font-size: 11px; color: var(--text-muted); line-height: 1.5">
+                Any manual grade change requires an annotation that will be visible on the saved animal record.
+              </div>
+            </div>
+          </div>
+          <div id="reviewOverrideHistoryWrap" style="display: none" class="mb-14">
+            <div class="section-label">Manual Override History</div>
+            <div class="inset" id="reviewOverrideHistory" style="font-size: 11px; color: var(--text-secondary); line-height: 1.6"></div>
+          </div>
           <div id="reviewFailure" style="display: none" class="mb-14">
             <div
               style="
@@ -1468,9 +1492,9 @@
                 <label class="field-label">Grade</label
                 ><select class="field-select" id="reviewEditGrade">
                   <option value="">Ungraded</option>
-                  <option value="Reserve">Reserve</option>
-                  <option value="CAB Prime">CAB Prime</option>
+                  <option value="Reserve / CAB Prime">Reserve / CAB Prime</option>
                   <option value="Prime">Prime</option>
+                  <option value="CAB Choice">CAB Choice</option>
                   <option value="Choice">Choice</option>
                   <option value="Select">Select</option>
                   <option value="No Roll">No Roll</option>
@@ -1554,6 +1578,45 @@
             onclick="confirmDiscard()"
           >
             Yes, Discard
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="modalGradeAnnotation">
+      <div class="modal small">
+        <div class="modal-header">
+          <h2>Manual Grade Annotation</h2>
+          <span style="color: var(--text-muted); font-size: 11px">
+            Required for customer-visible grade changes
+          </span>
+        </div>
+        <div class="modal-body">
+          <div class="field">
+            <label class="field-label">Reason</label>
+            <select class="field-select" id="gradeAnnotationReason">
+              <option value="">Custom note</option>
+              <option value="internal_findings">Internal findings after processing</option>
+              <option value="carcass_condition">Carcass condition</option>
+              <option value="quality_adjustment">Quality adjustment</option>
+              <option value="operator_review">Operator review</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label">Annotation</label>
+            <textarea
+              class="field-input"
+              id="gradeAnnotationText"
+              rows="5"
+              placeholder="Explain why the grade changed. Example: Black guts found after opening; customer must be notified."
+              style="resize: vertical; min-height: 120px"
+            ></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" onclick="closeGradeAnnotationModal()">Cancel</button>
+          <button class="btn-solid btn-sm" onclick="submitGradeAnnotation()">
+            Save Annotation
           </button>
         </div>
       </div>

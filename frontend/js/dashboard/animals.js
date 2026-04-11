@@ -418,13 +418,7 @@
         } else {
           descWrap.style.display = "none";
         }
-        const gradeWrap = document.getElementById("editAnimalGradeWrap");
-        if (a.type === "goat" || a.type === "lamb") {
-          gradeWrap.style.display = "";
-          document.getElementById("editAnimalGrade").value = a.grade || "";
-        } else {
-          gradeWrap.style.display = "none";
-        }
+        document.getElementById("editAnimalGradeWrap").style.display = "none";
         populateProviderSelect(
           document.getElementById("editAnimalProv"),
           a.prov_id,

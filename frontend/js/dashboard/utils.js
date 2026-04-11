@@ -5,9 +5,9 @@
         lamb: ["lamb", "ewe"],
       };
       const GRADE_OPTIONS = [
-        "CAB Prime",
-        "Reserve",
+        "Reserve / CAB Prime",
         "Prime",
+        "CAB Choice",
         "Choice",
         "Select",
         "No Roll",
@@ -65,12 +65,12 @@
         return v != null ? parseFloat(v).toFixed(1) : "—";
       }
       const GRADE_ORDER = {
-        "CAB Prime": 1,
-        Reserve: 1,
+        "Reserve / CAB Prime": 1,
         Prime: 2,
-        Choice: 3,
-        Select: 4,
-        "No Roll": 5,
+        "CAB Choice": 3,
+        Choice: 4,
+        Select: 5,
+        "No Roll": 6,
       };
       function gradeBadge(g) {
         if (!g) return '<span class="badge badge-ungraded">Ungraded</span>';
@@ -81,8 +81,9 @@
       function gradeClass(g) {
         if (!g) return "badge-ungraded";
         const l = g.toLowerCase().replace(/\s+/g, "");
-        if (l === "reserve") return "badge-cabprime";
+        if (l === "reserve/cabprime") return "badge-cabprime";
         if (l === "cabprime") return "badge-cabprime";
+        if (l === "cabchoice") return "badge-choice";
         if (l === "prime") return "badge-prime";
         if (l === "choice") return "badge-choice";
         if (l === "select") return "badge-select";
