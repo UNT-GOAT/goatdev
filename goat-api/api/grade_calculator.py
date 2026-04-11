@@ -38,7 +38,7 @@ from .config import VALID_GRADES
 GRADE_TIERS: Dict[str, List[Tuple[str, float, float, float]]] = {
     # Goat: Meat
     'goat:meat': [
-        ('CAB Prime',  105, 0.60, 1.06),
+        ('Reserve / CAB Prime',  105, 0.60, 1.06),
         ('Prime',       90, 0.55, 1.02),
         ('CAB Choice',  82, 0.52, 1.00),
         ('Choice',      75, 0.48, 0.98),
@@ -46,7 +46,7 @@ GRADE_TIERS: Dict[str, List[Tuple[str, float, float, float]]] = {
     ],
     # Goat: Cross
     'goat:cross': [
-        ('CAB Prime',  100, 0.58, 1.04),
+        ('Reserve / CAB Prime',  100, 0.58, 1.04),
         ('Prime',       85, 0.53, 1.00),
         ('Choice',      70, 0.46, 0.96),
         ('Select',      45, 0.40, 0.90),
@@ -59,7 +59,7 @@ GRADE_TIERS: Dict[str, List[Tuple[str, float, float, float]]] = {
     ],
     # Lamb: Lamb
     'lamb:lamb': [
-        ('CAB Prime',  125, 0.62, 1.10),
+        ('Reserve / CAB Prime',  125, 0.62, 1.10),
         ('Prime',      110, 0.58, 1.05),
         ('Choice',      95, 0.52, 1.00),
         ('Select',      80, 0.45, 0.95),

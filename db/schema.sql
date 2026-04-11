@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS grade_results (
     live_weight         NUMERIC(10,2),
     all_views_ok        BOOLEAN,
     measurements        JSONB,
+    grade_details       JSONB,
+    manual_override_history JSONB NOT NULL DEFAULT '[]'::jsonb,
 
     -- Raw capture S3 keys
     side_raw_s3_key     TEXT,
@@ -110,6 +112,12 @@ CREATE TABLE IF NOT EXISTS grade_results (
 
 CREATE INDEX IF NOT EXISTS idx_grade_results_serial ON grade_results(serial_id);
 CREATE INDEX IF NOT EXISTS idx_grade_results_date ON grade_results(graded_at);
+
+ALTER TABLE grade_results
+    ADD COLUMN IF NOT EXISTS grade_details JSONB;
+
+ALTER TABLE grade_results
+    ADD COLUMN IF NOT EXISTS manual_override_history JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 -- updated_at trigger
 CREATE OR REPLACE FUNCTION update_updated_at()

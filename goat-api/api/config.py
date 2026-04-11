@@ -68,8 +68,7 @@ VALID_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 
 # Grade values (for validation)
 VALID_GRADES = [
-    "Reserve",
-    "CAB Prime",
+    "Reserve / CAB Prime",
     "Prime",
     "CAB Choice",
     "Choice",

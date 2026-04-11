@@ -361,7 +361,7 @@ def _sanitize_path(path: str) -> str:
     return path.lstrip("/")
 
 
-def _pick_forward_headers(req: Request) -> Dict[str, str]:
+def _pick_forward_headers(req: Request, user_info: Optional[dict] = None) -> Dict[str, str]:
     h: Dict[str, str] = {}
     ct = req.headers.get("content-type")
     if ct:
@@ -369,6 +369,9 @@ def _pick_forward_headers(req: Request) -> Dict[str, str]:
     accept = req.headers.get("accept")
     if accept:
         h["accept"] = accept
+    if user_info:
+        h["x-auth-username"] = user_info.get("username", "unknown")
+        h["x-auth-role"] = user_info.get("role", "unknown")
     return h
 
 
@@ -443,7 +446,7 @@ async def proxy(path: str, request: Request):
     upstream_url = f"{DB_INTERNAL}/{path}" + (f"?{qs}" if qs else "")
 
     body = await request.body()
-    forward_headers = _pick_forward_headers(request)
+    forward_headers = _pick_forward_headers(request, user_info)
 
     # For updates, snapshot the record BEFORE the mutation (for from→to audit)
     before_body = b""
