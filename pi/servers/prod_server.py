@@ -53,6 +53,9 @@ IMAGE_HEIGHT = 3496
 EC2_TIMEOUT_SEC = 30         # EC2 API request timeout
 PING_TIMEOUT_SEC = 15
 REQUEST_TIMEOUT_SEC = 10
+PROXY_STATUS_TIMEOUT_SEC = 5
+MIN_OPERATING_TEMP_F = 32.0
+COLD_GATE_MESSAGE = 'Cameras are below the minimum operating temperature. Please wait for the heating system.'
 
 # Validation
 MIN_IMAGE_BYTES = 50000      # 50KB minimum valid image
@@ -103,6 +106,10 @@ def reset_state():
 # CAMERA HELPERS
 # ============================================================
 
+def get_proxy_status(timeout: int = PROXY_STATUS_TIMEOUT_SEC):
+    """Fetch camera proxy status for health and cold-gate checks."""
+    return requests.get(f'{PROXY_URL}/status', timeout=timeout)
+
 def check_camera(name: str, path: str) -> dict:
     """Check a single camera's status via proxy."""
     result = {
@@ -116,13 +123,23 @@ def check_camera(name: str, path: str) -> dict:
     }
 
     try:
-        resp = requests.get(f'{PROXY_URL}/status', timeout=5)
+        resp = get_proxy_status(timeout=5)
         if resp.status_code != 200:
             result['error'] = 'Camera proxy returned error'
             result['fix'] = 'Run: sudo systemctl restart camera-proxy'
             return result
 
         data = resp.json()
+        safety = data.get('safety') or {}
+        if safety.get('cold_gate_active'):
+            result['error'] = COLD_GATE_MESSAGE
+            result['error_code'] = 'CAMERA_BELOW_OPERATING_TEMP'
+            result['temps_f'] = safety.get('temps_f')
+            result['blocked_cameras'] = safety.get('blocked_cameras', [])
+            result['min_operating_temp_f'] = safety.get('min_operating_temp_f', MIN_OPERATING_TEMP_F)
+            result['fix'] = 'Wait for the heating system to warm the cameras above 32F'
+            return result
+
         cam_health = data.get('cameras', {}).get(name)
 
         if not cam_health:
@@ -624,11 +641,13 @@ def get_system_info() -> dict:
 def health():
     """Quick health check with camera status."""
     cameras = {}
+    proxy_safety = None
 
     try:
-        resp = requests.get(f'{PROXY_URL}/status', timeout=5)
+        resp = get_proxy_status(timeout=5)
         if resp.status_code == 200:
             proxy_data = resp.json()
+            proxy_safety = proxy_data.get('safety')
             for name in CAMERAS:
                 cam_health = proxy_data.get('cameras', {}).get(name, {})
                 cameras[name] = cam_health.get('connected', False)
@@ -645,6 +664,7 @@ def health():
         'status': 'ok' if all(cameras.values()) else 'degraded',
         'timestamp': datetime.now().isoformat(),
         'cameras': cameras,
+        'camera_safety': proxy_safety,
         'ec2_target': EC2_GOAT_API,
         'mem_available_mb': sys_info.get('mem_available_mb'),
         'cpu_temp_c': sys_info.get('cpu_temp_c'),
@@ -675,7 +695,7 @@ def diagnostics():
         diag['cameras'][name] = check_camera(name, path)
 
     try:
-        resp = requests.get(f'{PROXY_URL}/status', timeout=5)
+        resp = get_proxy_status(timeout=5)
         if resp.status_code == 200:
             diag['proxy'] = {'ok': True, 'data': resp.json()}
         else:
@@ -789,12 +809,60 @@ def grade():
         }), 503
 
     # Pre-check cameras via proxy
+    try:
+        proxy_resp = get_proxy_status(timeout=5)
+        if proxy_resp.status_code == 200:
+            proxy_safety = proxy_resp.json().get('safety') or {}
+            if proxy_safety.get('cold_gate_active'):
+                blocked_cameras = proxy_safety.get('blocked_cameras', [])
+                temps_f = proxy_safety.get('temps_f', {})
+                log.warn('grade', 'Rejected: cameras below operating temperature',
+                         serial_id=sanitized,
+                         blocked_cameras=blocked_cameras,
+                         temps_f=temps_f)
+                return jsonify({
+                    'status': 'error',
+                    'error_code': 'CAMERA_BELOW_OPERATING_TEMP',
+                    'message': COLD_GATE_MESSAGE,
+                    'blocked_cameras': blocked_cameras,
+                    'temps_f': temps_f,
+                    'min_operating_temp_f': proxy_safety.get('min_operating_temp_f', MIN_OPERATING_TEMP_F),
+                    'fix': 'Wait for the heating system to warm the cameras above 32F'
+                }), 503
+    except Exception:
+        pass
+
     camera_checks = {}
     for name, path in CAMERAS.items():
         camera_checks[name] = check_camera(name, path)
 
     failed = {n: c for n, c in camera_checks.items() if c.get('error')}
     if failed:
+        cold_failures = {
+            n: c for n, c in failed.items()
+            if c.get('error_code') == 'CAMERA_BELOW_OPERATING_TEMP'
+        }
+        if cold_failures:
+            blocked_cameras = sorted({
+                cam
+                for c in cold_failures.values()
+                for cam in (c.get('blocked_cameras') or [])
+            })
+            temps_f = next(
+                (c.get('temps_f') for c in cold_failures.values() if c.get('temps_f')),
+                None
+            )
+            return jsonify({
+                'status': 'error',
+                'error_code': 'CAMERA_BELOW_OPERATING_TEMP',
+                'message': COLD_GATE_MESSAGE,
+                'blocked_cameras': blocked_cameras,
+                'temps_f': temps_f,
+                'min_operating_temp_f': MIN_OPERATING_TEMP_F,
+                'fix': 'Wait for the heating system to warm the cameras above 32F',
+                'cameras': camera_checks
+            }), 503
+
         errors = [f"{n}: {c['error']}" for n, c in failed.items()]
         fixes = [f"{n}: {c['fix']}" for n, c in failed.items() if c.get('fix')]
         log.error('grade', 'Cameras not ready',

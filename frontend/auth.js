@@ -144,7 +144,7 @@ const HerdAuth = (() => {
     }
 
     function _redirectToSignin() {
-        window.location.href = 'signin.html';
+        window.location.href = '/signin';
     }
 
     async function logout() {

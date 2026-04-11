@@ -63,6 +63,15 @@ STATS_SHM_NAME = "herdsync_system_stats"
 EVENT_SHM_NAME = "herdsync_capture_flag"
 FOCUS_FILE = '/home/pi/camera_focus_settings.json'
 MIN_IMAGE_BYTES = 50000
+HEATER_STATE_FILE = '/tmp/heater_state.json'
+MIN_OPERATING_TEMP_F = 32.0
+HEATER_STATE_MAX_AGE_SEC = 10.0
+CAMERA_COLD_MESSAGE = 'Cameras are below the minimum operating temperature. Please wait for the heating system.'
+HEATING_CAMERA_MAP = {
+    'side': 'camera1',
+    'top': 'camera2',
+    'front': 'camera3',
+}
 
 # Capture event protocol (EVENT_SHM layout):
 #   byte 0: state
@@ -442,6 +451,92 @@ class CameraProxy:
 PROXIES = {n: CameraProxy(n) for n in CAMERAS}
 
 
+def get_temperature_safety():
+    """Return current camera temperature safety state from heater shared state."""
+    temps_f = {}
+    blocked_cameras = []
+
+    try:
+        with open(HEATER_STATE_FILE, 'r') as f:
+            data = json.load(f)
+    except Exception as e:
+        return {
+            'ok': False,
+            'error': 'Heater state unavailable',
+            'detail': str(e),
+            'blocked_cameras': CAMERA_ORDER[:],
+            'temps_f': {name: None for name in CAMERA_ORDER},
+            'min_operating_temp_f': MIN_OPERATING_TEMP_F,
+        }
+
+    timestamp = data.get('timestamp')
+    if not isinstance(timestamp, (int, float)):
+        return {
+            'ok': False,
+            'error': 'Heater state missing timestamp',
+            'blocked_cameras': CAMERA_ORDER[:],
+            'temps_f': {name: None for name in CAMERA_ORDER},
+            'min_operating_temp_f': MIN_OPERATING_TEMP_F,
+        }
+
+    age_sec = time.time() - float(timestamp)
+    if age_sec > HEATER_STATE_MAX_AGE_SEC:
+        return {
+            'ok': False,
+            'error': 'Heater state stale',
+            'age_sec': round(age_sec, 2),
+            'blocked_cameras': CAMERA_ORDER[:],
+            'temps_f': {name: None for name in CAMERA_ORDER},
+            'min_operating_temp_f': MIN_OPERATING_TEMP_F,
+        }
+
+    cameras = data.get('cameras', {})
+    for proxy_name in CAMERA_ORDER:
+        heater_name = HEATING_CAMERA_MAP[proxy_name]
+        cam_state = cameras.get(heater_name) or {}
+        temp_f = cam_state.get('temp_f')
+        temps_f[proxy_name] = temp_f
+        if not isinstance(temp_f, (int, float)):
+            blocked_cameras.append(proxy_name)
+        elif float(temp_f) <= MIN_OPERATING_TEMP_F:
+            blocked_cameras.append(proxy_name)
+
+    return {
+        'ok': len(blocked_cameras) == 0,
+        'blocked_cameras': blocked_cameras,
+        'temps_f': temps_f,
+        'min_operating_temp_f': MIN_OPERATING_TEMP_F,
+        'age_sec': round(age_sec, 2),
+        'timestamp': timestamp,
+    }
+
+
+def cold_gate_response():
+    safety = get_temperature_safety()
+    payload = {
+        'error': CAMERA_COLD_MESSAGE,
+        'error_code': 'CAMERA_BELOW_OPERATING_TEMP',
+        'message': CAMERA_COLD_MESSAGE,
+        'blocked_cameras': safety.get('blocked_cameras', CAMERA_ORDER[:]),
+        'temps_f': safety.get('temps_f', {name: None for name in CAMERA_ORDER}),
+        'min_operating_temp_f': safety.get('min_operating_temp_f', MIN_OPERATING_TEMP_F),
+    }
+    if safety.get('age_sec') is not None:
+        payload['heater_state_age_sec'] = safety['age_sec']
+    if safety.get('error'):
+        payload['safety_error'] = safety['error']
+    if safety.get('detail'):
+        payload['safety_detail'] = safety['detail']
+    return jsonify(payload), 503
+
+
+def require_safe_temperature():
+    safety = get_temperature_safety()
+    if safety.get('ok'):
+        return None
+    return cold_gate_response()
+
+
 def _signal_capture(camera_names):
     """
     Signal the hardware worker to do a full-res capture.
@@ -537,6 +632,9 @@ def stream(camera):
     """MJPEG stream at 720p for monitoring."""
     if camera not in CAMERAS:
         return "Invalid camera", 404
+    blocked = require_safe_temperature()
+    if blocked:
+        return blocked
     return Response(
         PROXIES[camera].stream_generator(),
         mimetype='multipart/x-mixed-replace; boundary=frame'
@@ -551,6 +649,9 @@ def capture(camera):
     """
     if camera not in CAMERAS:
         return jsonify({'error': 'Unknown camera: {}'.format(camera)}), 404
+    blocked = require_safe_temperature()
+    if blocked:
+        return blocked
 
     success, error = _signal_capture([camera])
     if not success:
@@ -573,6 +674,10 @@ def capture_all():
     In-place resolution switching, one camera at a time.
     Returns all three images as a gzipped tar archive.
     """
+    blocked = require_safe_temperature()
+    if blocked:
+        return blocked
+
     success, error = _signal_capture(CAMERA_ORDER)
     if not success:
         return jsonify({'error': error}), 503
@@ -615,6 +720,10 @@ def capture_all_individual():
 
     Designed for prod_server.py which needs to send images as separate multipart fields.
     """
+    blocked = require_safe_temperature()
+    if blocked:
+        return blocked
+
     success, error = _signal_capture(CAMERA_ORDER)
     if not success:
         return jsonify({'success': False, 'error': error}), 503
@@ -645,6 +754,9 @@ def capture_frame(camera):
     """
     if camera not in CAMERAS:
         return jsonify({'error': 'Unknown camera: {}'.format(camera)}), 404
+    blocked = require_safe_temperature()
+    if blocked:
+        return blocked
 
     raw = PROXIES[camera].get_raw_frame()
     if not raw or len(raw) < MIN_IMAGE_BYTES:
@@ -807,7 +919,18 @@ def status():
     try:
         shm = shared_memory.SharedMemory(name=STATS_SHM_NAME)
         raw = bytes(shm.buf).split(b'\0')[0].decode('utf-8')
-        return jsonify(json.loads(raw))
+        data = json.loads(raw)
+        safety = get_temperature_safety()
+        data['safety'] = {
+            'cold_gate_active': not safety.get('ok', False),
+            'message': CAMERA_COLD_MESSAGE,
+            'blocked_cameras': safety.get('blocked_cameras', CAMERA_ORDER[:]),
+            'temps_f': safety.get('temps_f', {name: None for name in CAMERA_ORDER}),
+            'min_operating_temp_f': safety.get('min_operating_temp_f', MIN_OPERATING_TEMP_F),
+            'heater_state_age_sec': safety.get('age_sec'),
+            'heater_state_error': safety.get('error'),
+        }
+        return jsonify(data)
     except Exception:
         return jsonify({"status": "starting"})
 
