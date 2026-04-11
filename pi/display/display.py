@@ -58,6 +58,8 @@ EC2_GOAT_API = os.environ.get('EC2_GOAT_API')
 # Path to the shared state file written by camera_heating.py every 2s.
 HEATER_STATE_FILE = '/tmp/heater_state.json'
 HEATER_STATE_STALE_SEC = 10
+MIN_SAFE_CAMERA_TEMP_F = 32
+FULLY_WARM_CAMERA_TEMP_F = 40
 
 CAMERAS = {
     'SIDE': '/dev/camera_side',
@@ -188,6 +190,41 @@ def check_cameras():
         else:
             result[name] = 'OK'
     return result
+
+
+def get_temp_status(heater_state):
+    """Compute operator-facing temperature readiness from camera temps."""
+    temps = heater_state['temps']
+    temp_values = list(temps.values())
+    temps_all_ok = all(t is not None for t in temp_values)
+
+    if heater_state['stale']:
+        return RED, 'HEATER SVC STALE'
+
+    if heater_state['any_failsafe']:
+        return RED, 'FAILSAFE'
+
+    if not temps_all_ok:
+        return RED, 'MISSING'
+
+    if any(t <= MIN_SAFE_CAMERA_TEMP_F for t in temp_values):
+        return RED, 'UNSAFE'
+
+    if any(t < FULLY_WARM_CAMERA_TEMP_F for t in temp_values):
+        return ORANGE, 'WARMING'
+
+    return GREEN, 'READY'
+
+
+def get_temp_value_color(temp_f):
+    """Return per-camera temp color by readiness band."""
+    if temp_f is None:
+        return RED
+    if temp_f <= MIN_SAFE_CAMERA_TEMP_F:
+        return RED
+    if temp_f < FULLY_WARM_CAMERA_TEMP_F:
+        return ORANGE
+    return GREEN
 
 
 def check_network():
@@ -399,17 +436,8 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
         else:
             camera_color = RED
 
+        temp_color, temp_status = get_temp_status(heater_state)
         temps_all_ok = all(t is not None for t in temps.values())
-        if heater_state['stale']:
-            temp_color = RED
-        elif heater_state['any_failsafe']:
-            temp_color = RED
-        elif not temps_all_ok:
-            temp_color = RED
-        elif heater_state['any_on']:
-            temp_color = ORANGE
-        else:
-            temp_color = GREEN
 
         # === BUILD FRAME ===
         try:
@@ -482,16 +510,6 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
                     draw.text((14, y + 46), ", ".join(fs), font=font_xs, fill=RED)
                 else:
                     draw.text((14, y + 34), line, font=font_xs, fill=RED)
-            elif heater_state['any_override']:
-                ov = [k for k, v in heater_state['details'].items() if v.get('override') != 'auto']
-                line = "OVERRIDE: " + ", ".join(ov)
-                if draw.textlength(line, font=font_xs) > SCREEN_W - 28:
-                    draw.text((14, y + 34), "OVERRIDE:", font=font_xs, fill=ORANGE)
-                    draw.text((14, y + 46), ", ".join(ov), font=font_xs, fill=ORANGE)
-                else:
-                    draw.text((14, y + 34), line, font=font_xs, fill=ORANGE)
-            elif heater_state['any_on']:
-                draw.text((14, y + 34), "HEATERS ON", font=font_xs, fill=ORANGE)
             elif not temps_all_ok:
                 missing = [k for k, v in temps.items() if v is None]
                 line = "ERR: " + ", ".join(missing)
@@ -502,7 +520,17 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
                 else:
                     draw.text((14, y + 34), line, font=font_xs, fill=RED)
             else:
-                draw.text((14, y + 34), "ALL OK", font=font_xs, fill=GREEN)
+                draw.text((14, y + 34), temp_status, font=font_xs, fill=temp_color)
+                if heater_state['any_override']:
+                    ov = [k for k, v in heater_state['details'].items() if v.get('override') != 'auto']
+                    line = "OVERRIDE: " + ", ".join(ov)
+                    if draw.textlength(line, font=font_xs) > SCREEN_W - 28:
+                        draw.text((14, y + 46), "OVERRIDE:", font=font_xs, fill=ORANGE)
+                        draw.text((14, y + 58), ", ".join(ov), font=font_xs, fill=ORANGE)
+                    else:
+                        draw.text((14, y + 46), line, font=font_xs, fill=ORANGE)
+                elif heater_state['any_on']:
+                    draw.text((14, y + 46), "HEATING", font=font_xs, fill=ORANGE)
 
             # --- Camera temps ---
             temp_y = 235
@@ -513,7 +541,7 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
                 y = temp_y + i * 28
                 t = temps.get(key)
                 t_str = f"{t}°F" if t is not None else "--°F"
-                t_color = WHITE if t is not None else RED
+                t_color = get_temp_value_color(t)
                 draw.text((16, y), label, font=font_med, fill=WHITE)
                 tw = draw.textlength(t_str, font=font_med)
                 draw.text((SCREEN_W - tw - 14, y), t_str, font=font_med, fill=t_color)
