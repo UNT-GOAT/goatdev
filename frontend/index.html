@@ -353,25 +353,6 @@
 
     <div class="sep"></div>
 
-    <script>
-      // Strip hash on load so shared links open at top
-      if (window.location.hash) {
-        history.replaceState(null, "", window.location.pathname);
-        window.scrollTo(0, 0);
-      }
-
-      const o = new IntersectionObserver(
-        (e) => {
-          e.forEach((e) => {
-            if (e.isIntersecting) {
-              e.target.classList.add("v");
-              o.unobserve(e.target);
-            }
-          });
-        },
-        { threshold: 0.06, rootMargin: "0px 0px -40px 0px" },
-      );
-      document.querySelectorAll(".sr").forEach((e) => o.observe(e)); //
-    </script>
+    <script src="js/index/app.js"></script>
   </body>
 </html>
