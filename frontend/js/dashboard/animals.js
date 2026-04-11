@@ -418,7 +418,18 @@
         } else {
           descWrap.style.display = "none";
         }
-        document.getElementById("editAnimalGradeWrap").style.display = "none";
+        const gradeWrap = document.getElementById("editAnimalGradeWrap");
+        if (a.type === "goat" || a.type === "lamb") {
+          gradeWrap.style.display = "";
+          document.getElementById("editAnimalGrade").value = a.grade || "";
+          _editAnimalGradeState = {
+            originalGrade: a.grade || null,
+            pendingEntry: null,
+          };
+        } else {
+          gradeWrap.style.display = "none";
+          _editAnimalGradeState = null;
+        }
         populateProviderSelect(
           document.getElementById("editAnimalProv"),
           a.prov_id,
@@ -434,17 +445,23 @@
         const type = document.getElementById("editAnimalType").value,
           sid = parseInt(document.getElementById("editAnimalSerial").value),
           body = {};
+        const gradeWrap = document.getElementById("editAnimalGradeWrap");
+        const gradeRecord = allGrades.find((g) => String(g.serial_id) === String(sid));
+        let newGrade = null;
+        let gradeChanged = false;
         const desc = document.getElementById("editAnimalDesc")?.value;
         if (
           desc !== undefined &&
           document.getElementById("editAnimalDescWrap").style.display !== "none"
         )
           body.description = desc || null;
-        if (
-          document.getElementById("editAnimalGradeWrap").style.display !==
-          "none"
-        ) {
-          body.grade = document.getElementById("editAnimalGrade").value || null;
+        if (gradeWrap.style.display !== "none") {
+          newGrade = document.getElementById("editAnimalGrade").value || null;
+          gradeChanged =
+            newGrade !== (_editAnimalGradeState?.originalGrade || null);
+          if (!gradeRecord) {
+            body.grade = newGrade;
+          }
         }
         const hw = parseFloat(document.getElementById("editAnimalHW").value);
         if (!isNaN(hw)) body.hang_weight = hw;
@@ -457,6 +474,9 @@
         const pd = document.getElementById("editAnimalProc").value;
         if (pd) body.process_date = pd;
         try {
+          if (gradeChanged && !_editAnimalGradeState?.pendingEntry) {
+            throw new Error("Manual grade changes require an annotation");
+          }
           const r = await HerdAuth.fetch(
             "/db/" + type + "s/" + sid,
             {
@@ -466,15 +486,40 @@
             },
           );
           if (!r.ok) throw new Error("Update failed: " + r.status);
+          if (gradeRecord && gradeChanged) {
+            const history = Array.isArray(gradeRecord.manual_override_history)
+              ? gradeRecord.manual_override_history.slice()
+              : [];
+            const gradeResp = await HerdAuth.fetch(
+              "/db/grading/result/" + gradeRecord.id,
+              {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  grade: newGrade,
+                  manual_override_history: history.concat(
+                    _editAnimalGradeState.pendingEntry,
+                  ),
+                }),
+              },
+            );
+            if (!gradeResp.ok) {
+              const err = await gradeResp.json().catch(() => ({}));
+              throw new Error(err.detail || "Grade update failed: " + gradeResp.status);
+            }
+          }
           closeModal("modalEditAnimal");
-          if ((type === "goat" || type === "lamb") && body.hasOwnProperty("grade")) {
-              await syncGradeEverywhere(sid, type, body.grade);
+          _editAnimalGradeState = null;
+          if (typeof reloadGradeDataAndUI === "function") {
+              await reloadGradeDataAndUI();
           } else {
               if (type === "goat") await loadGoats();
               else if (type === "chicken") await loadChickens();
               else await loadLambs();
+              await loadGrades().catch(() => {});
               updateDashboard();
               filterAnimals();
+              renderGradeHistory();
           }
           selectAnimal(sid, type);
           showToast("success", "Updated " + type + " #" + sid);

@@ -101,6 +101,14 @@
         );
       }
       function closeModal(id) {
+        if (
+          id === "modalGradeAnnotation" &&
+          typeof closeGradeAnnotationModal === "function" &&
+          _gradeAnnotationContext
+        ) {
+          closeGradeAnnotationModal();
+          return;
+        }
         const el = document.getElementById(id);
         el.classList.remove("open");
         el.classList.remove("stacked");
@@ -203,12 +211,32 @@
             return;
           }
           const topModal = document.querySelector(".modal-overlay.open");
-          if (topModal) topModal.classList.remove("open");
+          if (topModal) {
+            if (
+              topModal.id === "modalGradeAnnotation" &&
+              typeof closeGradeAnnotationModal === "function" &&
+              _gradeAnnotationContext
+            ) {
+              closeGradeAnnotationModal();
+            } else {
+              topModal.classList.remove("open");
+            }
+          }
         }
       });
       document.querySelectorAll(".modal-overlay").forEach((m) => {
         m.addEventListener("click", function (e) {
-          if (e.target === this) this.classList.remove("open");
+          if (e.target === this) {
+            if (
+              this.id === "modalGradeAnnotation" &&
+              typeof closeGradeAnnotationModal === "function" &&
+              _gradeAnnotationContext
+            ) {
+              closeGradeAnnotationModal();
+            } else {
+              this.classList.remove("open");
+            }
+          }
         });
       });
 

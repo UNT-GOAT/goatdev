@@ -1273,11 +1273,11 @@
           </div>
           <div class="field" id="editAnimalGradeWrap" style="display: none">
             <label class="field-label">Grade</label
-            ><select class="field-select" id="editAnimalGrade">
+            ><select class="field-select" id="editAnimalGrade" onchange="onEditAnimalGradeChange()">
               <option value="">Ungraded</option>
-              <option value="Reserve">Reserve</option>
-                  <option value="CAB Prime">CAB Prime</option>
+              <option value="Reserve / CAB Prime">Reserve / CAB Prime</option>
               <option value="Prime">Prime</option>
+              <option value="CAB Choice">CAB Choice</option>
               <option value="Choice">Choice</option>
               <option value="Select">Select</option>
               <option value="No Roll">No Roll</option>
@@ -1387,7 +1387,7 @@
             <div class="flex gap-10 items-end">
               <div style="flex: 0 0 220px">
                 <label class="field-label">Approved grade</label>
-                <select class="field-select" id="reviewFinalGrade" onchange="onReviewFinalGradeChange()">
+                <select class="field-select" id="reviewFinalGrade">
                   <option value="">Ungraded</option>
                   <option value="Reserve / CAB Prime">Reserve / CAB Prime</option>
                   <option value="Prime">Prime</option>
@@ -1490,7 +1490,7 @@
             <div class="flex gap-10 mb-14 items-end">
               <div style="flex: 0 0 140px">
                 <label class="field-label">Grade</label
-                ><select class="field-select" id="reviewEditGrade">
+                ><select class="field-select" id="reviewEditGrade" onchange="onReviewEditGradeChange()">
                   <option value="">Ungraded</option>
                   <option value="Reserve / CAB Prime">Reserve / CAB Prime</option>
                   <option value="Prime">Prime</option>

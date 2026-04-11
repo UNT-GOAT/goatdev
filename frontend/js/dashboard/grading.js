@@ -1,49 +1,50 @@
 
-      async function syncGradeEverywhere(serialId, type, newGrade) {
-        // 1. Update the animal table
-        try {
-            await HerdAuth.fetch(
-                "/db/" + type + "s/" + serialId,
-                {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ grade: newGrade }),
-                },
-            );
-        } catch (err) {
-            console.warn("Animal grade sync failed:", err);
-        }
-
-        // 2. Update grade_results if one exists
-        const gradeRecord = allGrades.find(
-            (g) => String(g.serial_id) === String(serialId)
-        );
-        if (gradeRecord) {
-            try {
-                await HerdAuth.fetch(
-                    "/db/grading/result/" + gradeRecord.id,
-                    {
-                        method: "PUT",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ grade: newGrade }),
-                    },
-                );
-            } catch (err) {
-                console.warn("Grade result sync failed:", err);
-            }
-        }
-
-        // 3. Reload all data and re-render everything
+      async function reloadGradeDataAndUI() {
         await Promise.all([
-            loadGoats().catch(() => {}),
-            loadLambs().catch(() => {}),
-            loadChickens().catch(() => {}),
-            loadGrades().catch(() => {}),
+          loadGoats().catch(() => {}),
+          loadLambs().catch(() => {}),
+          loadChickens().catch(() => {}),
+          loadGrades().catch(() => {}),
         ]);
         updateDashboard();
         filterAnimals();
         renderGradeHistory();
-    }
+      }
+
+      async function syncGradeEverywhere(serialId, type, newGrade) {
+        try {
+          await HerdAuth.fetch(
+            "/db/" + type + "s/" + serialId,
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ grade: newGrade }),
+            },
+          );
+        } catch (err) {
+          console.warn("Animal grade sync failed:", err);
+        }
+
+        const gradeRecord = allGrades.find(
+          (g) => String(g.serial_id) === String(serialId),
+        );
+        if (gradeRecord) {
+          try {
+            await HerdAuth.fetch(
+              "/db/grading/result/" + gradeRecord.id,
+              {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ grade: newGrade }),
+              },
+            );
+          } catch (err) {
+            console.warn("Grade result sync failed:", err);
+          }
+        }
+
+        await reloadGradeDataAndUI();
+      }
 
       function _renderOverrideHistory(history) {
         const wrap = document.getElementById("reviewOverrideHistoryWrap");
@@ -84,17 +85,13 @@
           .join("");
       }
 
-      function _reviewDisplayGrade() {
-        return document.getElementById("reviewFinalGrade").value || pendingGradeResult?.grade || _reviewCurrentResult?.grade || "";
+      function _normalizeGradeValue(value) {
+        return value || null;
       }
 
-      function onReviewFinalGradeChange() {
-        const badgeEl = document.getElementById("reviewGradeBadge");
-        const grade = _reviewDisplayGrade();
-        if (!badgeEl) return;
-        badgeEl.textContent = grade || "UNGRADED";
-        badgeEl.className =
-          "preview-grade-badge badge lg " + (grade ? gradeClass(grade) : "badge-ungraded");
+      function _setGradeSelectValue(selectId, value) {
+        const el = document.getElementById(selectId);
+        if (el) el.value = value || "";
       }
 
       function _buildOverrideEntry(fromGrade, toGrade, changeContext) {
@@ -109,6 +106,64 @@
         };
       }
 
+      function _confirmedGradeForState(state) {
+        if (!state) return null;
+        return _normalizeGradeValue(
+          state.pendingEntry ? state.pendingEntry.to_grade : state.originalGrade,
+        );
+      }
+
+      function _queueManualGradeOverride(stateKey, selectId, nextGrade, changeContext) {
+        const state = window[stateKey];
+        if (!state) return;
+
+        const desiredGrade = _normalizeGradeValue(nextGrade);
+        const originalGrade = _normalizeGradeValue(state.originalGrade);
+        const confirmedGrade = _confirmedGradeForState(state);
+
+        if (desiredGrade === confirmedGrade) return;
+
+        if (desiredGrade === originalGrade) {
+          state.pendingEntry = null;
+          _setGradeSelectValue(selectId, originalGrade);
+          return;
+        }
+
+        openGradeAnnotationModal({
+          onSubmit: async (note, reason) => {
+            state.pendingEntry = {
+              ..._buildOverrideEntry(originalGrade, desiredGrade, changeContext),
+              annotation: note,
+              reason_code: reason || null,
+            };
+            _setGradeSelectValue(selectId, desiredGrade);
+          },
+          onCancel: () => {
+            _setGradeSelectValue(selectId, confirmedGrade);
+          },
+        });
+      }
+
+      function onEditAnimalGradeChange() {
+        const select = document.getElementById("editAnimalGrade");
+        _queueManualGradeOverride(
+          "_editAnimalGradeState",
+          "editAnimalGrade",
+          select ? select.value : "",
+          "saved_result_edit",
+        );
+      }
+
+      function onReviewEditGradeChange() {
+        const select = document.getElementById("reviewEditGrade");
+        _queueManualGradeOverride(
+          "_reviewEditGradeState",
+          "reviewEditGrade",
+          select ? select.value : "",
+          "saved_result_edit",
+        );
+      }
+
       function openGradeAnnotationModal(context) {
         _gradeAnnotationContext = context;
         document.getElementById("gradeAnnotationReason").value = "";
@@ -120,8 +175,16 @@
       }
 
       function closeGradeAnnotationModal() {
+        const ctx = _gradeAnnotationContext;
         _gradeAnnotationContext = null;
-        closeModal("modalGradeAnnotation");
+        const modal = document.getElementById("modalGradeAnnotation");
+        if (modal) {
+          modal.classList.remove("open");
+          modal.classList.remove("stacked");
+        }
+        if (ctx && typeof ctx.onCancel === "function") {
+          ctx.onCancel();
+        }
       }
 
       async function submitGradeAnnotation() {
@@ -133,7 +196,12 @@
           return;
         }
         const ctx = _gradeAnnotationContext;
-        closeGradeAnnotationModal();
+        _gradeAnnotationContext = null;
+        const modal = document.getElementById("modalGradeAnnotation");
+        if (modal) {
+          modal.classList.remove("open");
+          modal.classList.remove("stacked");
+        }
         try {
           await ctx.onSubmit(note, reason);
         } catch (err) {
@@ -149,42 +217,6 @@
         const isExisting = !!pendingGradeResult._isExisting;
         const gradeProv = document.getElementById("gradeProv").value;
         const gradeKillDate = document.getElementById("gradeKillDate").value;
-        const finalGrade = document.getElementById("reviewFinalGrade").value || null;
-
-        pendingGradeResult.grade = finalGrade;
-
-        if (
-          finalGrade !== (pendingGradeResult._aiGrade || null)
-        ) {
-          const existingHistory = Array.isArray(pendingGradeResult.manual_override_history)
-            ? pendingGradeResult.manual_override_history.slice()
-            : [];
-          if (
-            !existingHistory.length ||
-            existingHistory[existingHistory.length - 1].change_context !== "pre_save_override" ||
-            existingHistory[existingHistory.length - 1].to_grade !== finalGrade ||
-            existingHistory[existingHistory.length - 1].from_grade !== (pendingGradeResult._aiGrade || null)
-          ) {
-            btn.disabled = false;
-            btn.textContent = "Accept & Save";
-            openGradeAnnotationModal({
-              onSubmit: async (note, reason) => {
-                const history = existingHistory.concat({
-                  ..._buildOverrideEntry(
-                    pendingGradeResult._aiGrade || null,
-                    finalGrade,
-                    "pre_save_override",
-                  ),
-                  annotation: note,
-                  reason_code: reason || null,
-                });
-                pendingGradeResult.manual_override_history = history;
-                await _savePendingGradeResult();
-              },
-            });
-            return;
-          }
-        }
 
         try {
           if (isExisting) {
@@ -292,14 +324,9 @@
           const _savedSerial = pendingGradeResult?.serial_id;
           const _savedSpecies = pendingGradeResult?.species;
           pendingGradeResult = null;
-          await Promise.all([
-              loadGrades().catch(() => {}),
-              loadGoats().catch(() => {}),
-              loadLambs().catch(() => {}),
-          ]);
-          updateDashboard();
-          filterAnimals();
-          renderGradeHistory();
+          _editAnimalGradeState = null;
+          _reviewEditGradeState = null;
+          await reloadGradeDataAndUI();
           computeNextGradeId();
           if (_savedSerial && _savedSpecies) {
               selectAnimal(Number(_savedSerial), _savedSpecies);
@@ -541,9 +568,10 @@
         document.getElementById("reviewSubtitle").textContent =
           "Review before saving";
         document.getElementById("reviewEditSection").style.display = "none";
-        document.getElementById("reviewFinalGradeSection").style.display = "";
+        document.getElementById("reviewFinalGradeSection").style.display = "none";
         _reviewGradeId = null;
         _reviewCurrentResult = result;
+        _reviewEditGradeState = null;
         const isOk = result.all_views_ok;
         const badgeEl = document.getElementById("reviewGradeBadge");
         badgeEl.style.color = "";
@@ -652,9 +680,6 @@
           okFooter.style.display = "";
           retryFooter.style.display = "none";
         }
-        document.getElementById("reviewFinalGrade").value = result.grade || "";
-        if (!isOk) document.getElementById("reviewFinalGradeSection").style.display = "none";
-
         // Grade details / reasoning
         const detailsEl = document.getElementById("reviewGradeDetails");
         const gd = result.grade_details;
