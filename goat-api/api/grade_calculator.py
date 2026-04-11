@@ -13,9 +13,11 @@ meet ALL THREE minimums (weight, CI, MDR) to qualify for a tier. Tiers are
 checked top-down from best to worst. If no tier is met, the animal receives
 "No Roll" (below market floor).
 
-These thresholds are preliminary — calibrated from facility operator knowledge
-and initial measurements. They will be refined as more graded animals with
-validated manual grades are collected.
+These thresholds are facility-specific live intake tiers calibrated from
+operator workflow, initial measurements, and broad market sanity checks.
+They are not yet intended to represent official USDA species-wide grade
+nomenclature. They will be refined as more graded animals with validated
+manual grades are collected.
 """
 
 from typing import Dict, Optional, List, Tuple
@@ -36,7 +38,6 @@ from .config import VALID_GRADES
 GRADE_TIERS: Dict[str, List[Tuple[str, float, float, float]]] = {
     # Goat: Meat
     'goat:meat': [
-        ('Reserve',    105, 0.60, 1.06),
         ('CAB Prime',  105, 0.60, 1.06),
         ('Prime',       90, 0.55, 1.02),
         ('CAB Choice',  82, 0.52, 1.00),
@@ -58,7 +59,6 @@ GRADE_TIERS: Dict[str, List[Tuple[str, float, float, float]]] = {
     ],
     # Lamb: Lamb
     'lamb:lamb': [
-        ('Reserve',    125, 0.62, 1.10),
         ('CAB Prime',  125, 0.62, 1.10),
         ('Prime',      110, 0.58, 1.05),
         ('Choice',      95, 0.52, 1.00),

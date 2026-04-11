@@ -6,6 +6,7 @@
       };
       const GRADE_OPTIONS = [
         "CAB Prime",
+        "Reserve",
         "Prime",
         "Choice",
         "Select",
@@ -65,6 +66,7 @@
       }
       const GRADE_ORDER = {
         "CAB Prime": 1,
+        Reserve: 1,
         Prime: 2,
         Choice: 3,
         Select: 4,
@@ -79,6 +81,7 @@
       function gradeClass(g) {
         if (!g) return "badge-ungraded";
         const l = g.toLowerCase().replace(/\s+/g, "");
+        if (l === "reserve") return "badge-cabprime";
         if (l === "cabprime") return "badge-cabprime";
         if (l === "prime") return "badge-prime";
         if (l === "choice") return "badge-choice";
