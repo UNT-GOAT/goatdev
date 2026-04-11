@@ -58,7 +58,14 @@ goatdev/
 │   ├── dashboard.html      # Main application (animals, grading, providers, logs)
 │   ├── signin.html         # Login page
 │   ├── setup.html          # Camera focus, heater, and capture setup
-│   ├── auth.js             # auth gates for dashboard and setup
+│   ├── auth.js             # shared auth gate + authenticated fetch helper
+│   ├── css/                # Shared base styles + page-specific stylesheets
+│   ├── js/
+│   │   ├── shared/         # Shared theme and UI helpers
+│   │   ├── dashboard/      # Split dashboard feature scripts
+│   │   ├── setup/          # Split setup feature scripts
+│   │   ├── signin/         # Sign-in page logic
+│   │   └── index/          # Landing page logic
 │   └── logos/              # Brand assets (dark/light variants)
 ├── pi/                     # Raspberry Pi services and system config
 │   ├── servers/            # camera_proxy, prod, training, heating, auth_verifier
