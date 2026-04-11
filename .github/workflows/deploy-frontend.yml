@@ -16,24 +16,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 2
-      - name: Check for changes
-        id: check
-        run: |
-          if git diff --name-only HEAD~1 | grep -Eq "^(frontend/auth\.js|frontend/css/|frontend/js/)"; then
-            echo "changed=true" >> $GITHUB_OUTPUT
-          else
-            echo "changed=false" >> $GITHUB_OUTPUT
-          fi
       - name: Deploy to S3
-        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         run: |
           aws s3 cp frontend/auth.js ${{ env.S3_BUCKET }}/auth.js
           aws s3 sync frontend/css/ ${{ env.S3_BUCKET }}/css/
           aws s3 sync frontend/js/ ${{ env.S3_BUCKET }}/js/
       - name: Invalidate CloudFront
-        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         run: aws cloudfront create-invalidation --distribution-id ${{ env.CF_DISTRIBUTION }} --paths "/auth.js" "/css/*" "/js/*"
 
   deploy-setup:
@@ -41,51 +29,27 @@ jobs:
     needs: deploy-shared-assets
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 2
-      - name: Check for changes
-        id: check
-        run: |
-          git diff --name-only HEAD~1 | grep -q "^frontend/setup.html" && echo "changed=true" >> $GITHUB_OUTPUT || echo "changed=false" >> $GITHUB_OUTPUT
       - name: Deploy to S3
-        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         run: aws s3 cp frontend/setup.html ${{ env.S3_BUCKET }}/setup.html
       - name: Invalidate CloudFront
-        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         run: aws cloudfront create-invalidation --distribution-id ${{ env.CF_DISTRIBUTION }} --paths "/setup.html"
 
   deploy-landing:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 2
-      - name: Check for changes
-        id: check
-        run: |
-          git diff --name-only HEAD~1 | grep -q "^frontend/index.html" && echo "changed=true" >> $GITHUB_OUTPUT || echo "changed=false" >> $GITHUB_OUTPUT
       - name: Deploy to S3
-        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         run: aws s3 cp frontend/index.html ${{ env.S3_BUCKET }}/index.html
       - name: Invalidate CloudFront
-        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         run: aws cloudfront create-invalidation --distribution-id ${{ env.CF_DISTRIBUTION }} --paths "/index.html"
 
   deploy-signin:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 2
-      - name: Check for changes
-        id: check
-        run: |
-          git diff --name-only HEAD~1 | grep -q "^frontend/signin.html" && echo "changed=true" >> $GITHUB_OUTPUT || echo "changed=false" >> $GITHUB_OUTPUT
       - name: Deploy to S3
-        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         run: aws s3 cp frontend/signin.html ${{ env.S3_BUCKET }}/signin.html
       - name: Invalidate CloudFront
-        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         run: aws cloudfront create-invalidation --distribution-id ${{ env.CF_DISTRIBUTION }} --paths "/signin.html"
 
   deploy-dashboard:
@@ -93,51 +57,27 @@ jobs:
     needs: deploy-shared-assets
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 2
-      - name: Check for changes
-        id: check
-        run: |
-          git diff --name-only HEAD~1 | grep -q "^frontend/dashboard.html" && echo "changed=true" >> $GITHUB_OUTPUT || echo "changed=false" >> $GITHUB_OUTPUT
       - name: Deploy to S3
-        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         run: aws s3 cp frontend/dashboard.html ${{ env.S3_BUCKET }}/dashboard.html
       - name: Invalidate CloudFront
-        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         run: aws cloudfront create-invalidation --distribution-id ${{ env.CF_DISTRIBUTION }} --paths "/dashboard.html"
 
   deploy-logos:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 2
-      - name: Check for changes
-        id: check
-        run: |
-          git diff --name-only HEAD~1 | grep -q "^frontend/logos/" && echo "changed=true" >> $GITHUB_OUTPUT || echo "changed=false" >> $GITHUB_OUTPUT
       - name: Deploy to S3
-        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         run: aws s3 sync frontend/logos/ ${{ env.S3_BUCKET }}/logos/
       - name: Invalidate CloudFront
-        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         run: aws cloudfront create-invalidation --distribution-id ${{ env.CF_DISTRIBUTION }} --paths "/logos/*"
 
   deploy-diagrams:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 2
-      - name: Check for changes
-        id: check
-        run: |
-          git diff --name-only HEAD~1 | grep -q "^readme_assets/arch_diagrams/" && echo "changed=true" >> $GITHUB_OUTPUT || echo "changed=false" >> $GITHUB_OUTPUT
       - name: Deploy to S3
-        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         run: |
           aws s3 cp readme_assets/arch_diagrams/herdsync_architecture.png ${{ env.S3_BUCKET }}/diagrams/
           aws s3 cp readme_assets/arch_diagrams/herdsync_architecture_dark.png ${{ env.S3_BUCKET }}/diagrams/
       - name: Invalidate CloudFront
-        if: steps.check.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
         run: aws cloudfront create-invalidation --distribution-id ${{ env.CF_DISTRIBUTION }} --paths "/diagrams/*"
