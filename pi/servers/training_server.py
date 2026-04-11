@@ -2,13 +2,10 @@
 Training Data Collection Server
 Captures still images from 3 cameras via camera proxy burst endpoint, uploads to S3.
 
-Previous approach: 60 individual HTTP requests (20 frames × 3 cameras),
-  batched 2 cameras at a time, ~20s per camera sequentially.
-
-Current approach: 3 HTTP requests (one burst per camera), all concurrent.
-  The proxy collects frames server-side and returns tar.gz directly.
-  Total capture time ≈ (NUM_IMAGES × CAPTURE_INTERVAL_MS/1000) ≈ 30s,
-  all 3 cameras in parallel. Tar.gz uploads directly to S3 (no re-tarring).
+The proxy performs server-side full-resolution burst capture and returns tar.gz
+archives directly. Because the camera hardware worker can only service one
+full-resolution capture at a time, training captures side/top/front
+sequentially and then uploads each tarball to S3 without re-tarring.
 """
 
 from flask import Flask, jsonify, request
@@ -35,6 +32,7 @@ CAMERAS = {
     'top': '/dev/camera_top',
     'front': '/dev/camera_front'
 }
+CAMERA_ORDER = ['side', 'top', 'front']
 
 S3_TRAINING_BUCKET = os.environ.get('S3_TRAINING_BUCKET')
 
@@ -76,6 +74,7 @@ recording_state = {
     'goat_id': None,
     'started_at': None,
     'progress': None,
+    'current_camera': None,
     'last_error': None,
     'last_result': None
 }
@@ -94,7 +93,8 @@ def reset_state():
             'active': False,
             'goat_id': None,
             'started_at': None,
-            'progress': None
+            'progress': None,
+            'current_camera': None
         })
 
 # ============================================================
@@ -203,6 +203,11 @@ def cleanup_temp_files(goat_id: str):
         log.warn('cleanup', 'Temp file cleanup failed', error=str(e))
 
 
+def estimate_capture_duration_sec(camera_count: int) -> int:
+    """Estimate end-to-end time for serialized full-res bursts."""
+    return round(max(camera_count, 1) * NUM_IMAGES * CAPTURE_INTERVAL_MS / 1000)
+
+
 # ============================================================
 # CAPTURE LOGIC
 # ============================================================
@@ -211,9 +216,8 @@ def capture_camera_burst(name: str, goat_id: str) -> dict:
     """
     Capture images from a single camera via the proxy's burst endpoint.
 
-    One HTTP request replaces the previous 20-request loop. The proxy
-    collects NUM_IMAGES frames at CAPTURE_INTERVAL_MS spacing, deduplicates
-    by timestamp, and returns a tar.gz. We save it to /tmp for S3 upload.
+    The proxy collects NUM_IMAGES full-res frames at CAPTURE_INTERVAL_MS
+    spacing and returns a tar.gz, which we save to /tmp for S3 upload.
     """
     result = {
         'name': name,
@@ -226,7 +230,8 @@ def capture_camera_burst(name: str, goat_id: str) -> dict:
     }
 
     log.info(f'camera:{name}', 'Starting burst capture via proxy',
-             num_images=NUM_IMAGES, interval_ms=CAPTURE_INTERVAL_MS)
+             num_images=NUM_IMAGES, interval_ms=CAPTURE_INTERVAL_MS,
+             full_res=True)
 
     try:
         resp = http_requests.post(
@@ -235,6 +240,7 @@ def capture_camera_burst(name: str, goat_id: str) -> dict:
                 'count': NUM_IMAGES,
                 'interval_ms': CAPTURE_INTERVAL_MS,
                 'prefix': goat_id,
+                'full_res': True,
             },
             timeout=BURST_TIMEOUT_SEC,
         )
@@ -300,56 +306,29 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
     """
     Main capture workflow. Runs in background thread.
 
-    All 3 cameras capture concurrently — the proxy handles USB controller
-    contention internally via pair rotation. No batching needed here.
-
     REAL: all cameras must succeed and upload to S3.
     TEST: capture what is available, S3 capability check only (no upload).
     """
     start_time = time.time()
     results = {}
-    results_lock = threading.Lock()
 
     try:
-        set_state(progress='capturing')
+        set_state(progress='capturing', current_camera=None)
 
-        # === CAPTURE ALL 3 CAMERAS CONCURRENTLY ===
-        # No batching needed — proxy handles USB pair rotation internally.
-        # Each burst call is a single HTTP request that blocks for ~30s while
-        # the proxy collects frames. 3 concurrent threads, 3 HTTP connections.
-        threads = {}
-        for name in CAMERAS:
-            def _capture(n=name):
-                result = capture_camera_burst(n, goat_id)
-                with results_lock:
-                    results[n] = result
+        # The proxy has one hardware worker for full-res capture, so take each
+        # camera burst in a fixed order rather than contending in parallel.
+        for name in CAMERA_ORDER:
+            set_state(progress='capturing', current_camera=name)
+            results[name] = capture_camera_burst(name, goat_id)
 
-            t = threading.Thread(target=_capture, name=f'burst-{name}')
-            threads[name] = t
-            t.start()
-
-        # Wait for all threads (burst timeout + margin for tar packaging)
-        for name, t in threads.items():
-            t.join(timeout=BURST_TIMEOUT_SEC + 10)
-            if t.is_alive():
-                log.error(f'camera:{name}', 'Burst thread did not complete in time')
-                with results_lock:
-                    if name not in results:
-                        results[name] = {
-                            'name': name,
-                            'success': False,
-                            'tar_path': None,
-                            'image_count': 0,
-                            'error': 'Capture thread hung',
-                            'fix': 'Restart camera-proxy: sudo systemctl restart camera-proxy'
-                        }
+        set_state(current_camera=None)
 
         # === EVALUATE RESULTS ===
         successful = [r for r in results.values() if r.get('success')]
         failed = [r for r in results.values() if not r.get('success')]
 
         camera_status = {}
-        for cam in CAMERAS.keys():
+        for cam in CAMERA_ORDER:
             r = results.get(cam)
             if not r:
                 camera_status[cam] = "missing"
@@ -412,7 +391,7 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
 
         # === TEST MODE: S3 capability check only (no upload) ===
         if is_test:
-            set_state(progress='checking_s3')
+            set_state(progress='checking_s3', current_camera=None)
 
             would_upload = []
             for r in successful:
@@ -478,7 +457,7 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
         # === UPLOAD TO S3 (REAL) ===
         # Tar.gz files come directly from the proxy — no re-tarring needed.
         # One S3 PUT per camera instead of the old tar-then-upload cycle.
-        set_state(progress='uploading')
+        set_state(progress='uploading', current_camera=None)
         uploaded = []
         upload_errors = []
 
@@ -820,13 +799,14 @@ def record():
         goat_id=goat_id,
         started_at=datetime.now().isoformat(),
         progress='starting',
+        current_camera=None,
         last_error=None
     )
 
     thread = threading.Thread(target=do_capture, args=(goat_id, goat_data, is_test))
     thread.start()
 
-    estimated_sec = round(NUM_IMAGES * CAPTURE_INTERVAL_MS / 1000)
+    estimated_sec = estimate_capture_duration_sec(len(CAMERA_ORDER))
 
     log.info('capture', 'Capture started',
             goat_id=goat_id, num_images=NUM_IMAGES,
@@ -842,7 +822,7 @@ def record():
         'resolution': f'{IMAGE_WIDTH}x{IMAGE_HEIGHT}',
         'is_test': bool(is_test),
         'require_all_cameras': bool(require_all_cameras),
-        'cameras_expected': list(CAMERAS.keys()),
+        'cameras_expected': CAMERA_ORDER,
         'cameras_available': list(connected.keys()),
         'cameras_missing': list(missing.keys()),
         'warning': None if not missing else f"Missing cameras: {', '.join(missing.keys())}"

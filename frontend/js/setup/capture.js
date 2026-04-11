@@ -231,7 +231,16 @@
               "ok",
             );
           if (startData.warning) captureLog(startData.warning, "warn");
-          captureLog("Capturing images (~20s)...", "info");
+          if (startData.estimated_duration_sec) {
+            captureLog(
+              "Capturing full-res images (~" +
+                startData.estimated_duration_sec +
+                "s)...",
+              "info",
+            );
+          } else {
+            captureLog("Capturing full-res images...", "info");
+          }
           await pollCaptureStatus();
           if (isMock) {
             captureLog("Test complete", "ok");
@@ -265,7 +274,8 @@
 
       async function pollCaptureStatus() {
         let lastProgress = null;
-        for (let i = 0; i < 240; i++) {
+        let lastCamera = null;
+        for (let i = 0; i < 480; i++) {
           await new Promise((r) => setTimeout(r, 500));
           let data;
           try {
@@ -284,6 +294,17 @@
               uploading: "Uploading to cloud...",
             };
             captureLog(msgs[data.progress] || data.progress, "info");
+          }
+          if (data.progress === "capturing" && data.current_camera) {
+            if (data.current_camera !== lastCamera) {
+              lastCamera = data.current_camera;
+              captureLog(
+                "Capturing " + data.current_camera + " camera at full res...",
+                "info",
+              );
+            }
+          } else if (data.current_camera == null) {
+            lastCamera = null;
           }
           if (!data.active) {
             if (data.last_error) throw new Error(data.last_error);

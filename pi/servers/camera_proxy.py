@@ -578,6 +578,14 @@ def _signal_capture(camera_names):
     return False, 'Capture timed out (8s)'
 
 
+def _get_valid_raw_frame(camera):
+    """Return the latest JPEG for a camera when it looks like a real image."""
+    raw = PROXIES[camera].get_raw_frame()
+    if not raw or len(raw) < MIN_IMAGE_BYTES:
+        return None
+    return raw
+
+
 def heartbeat_loop():
     """CLOUDWATCH HEARTBEAT: Detailed health telemetry."""
     while True:
@@ -657,9 +665,8 @@ def capture(camera):
     if not success:
         return jsonify({'error': error}), 503
 
-    proxy = PROXIES[camera]
-    raw = proxy.get_raw_frame()
-    if not raw or len(raw) < MIN_IMAGE_BYTES:
+    raw = _get_valid_raw_frame(camera)
+    if not raw:
         return jsonify({'error': 'Frame too small or missing for {}'.format(camera)}), 503
 
     return Response(raw, mimetype='image/jpeg', headers={
@@ -684,8 +691,8 @@ def capture_all():
 
     frames = {}
     for name in CAMERA_ORDER:
-        raw = PROXIES[name].get_raw_frame()
-        if raw and len(raw) >= MIN_IMAGE_BYTES:
+        raw = _get_valid_raw_frame(name)
+        if raw:
             frames[name] = raw
         else:
             return jsonify({
@@ -730,8 +737,8 @@ def capture_all_individual():
 
     result = {'success': True, 'cameras': {}}
     for name in CAMERA_ORDER:
-        raw = PROXIES[name].get_raw_frame()
-        if raw and len(raw) >= MIN_IMAGE_BYTES:
+        raw = _get_valid_raw_frame(name)
+        if raw:
             result['cameras'][name] = {
                 'size_bytes': len(raw),
                 'ready': True
@@ -758,8 +765,8 @@ def capture_frame(camera):
     if blocked:
         return blocked
 
-    raw = PROXIES[camera].get_raw_frame()
-    if not raw or len(raw) < MIN_IMAGE_BYTES:
+    raw = _get_valid_raw_frame(camera)
+    if not raw:
         return jsonify({'error': 'No valid frame for {}'.format(camera)}), 503
 
     return Response(raw, mimetype='image/jpeg', headers={
@@ -769,22 +776,39 @@ def capture_frame(camera):
 
 @app.route('/capture/burst/<camera>', methods=['POST'])
 def capture_burst(camera):
-    """Burst capture at current streaming resolution. NOT full-res."""
+    """Burst capture at streaming resolution by default, optionally full-res."""
     if camera not in CAMERAS:
         return jsonify({'error': 'Unknown camera: {}'.format(camera)}), 404
 
     data = request.get_json(silent=True) or {}
     count = min(int(data.get('count', 20)), 100)
     interval = max(int(data.get('interval_ms', 1000)), 100) / 1000.0
+    full_res = bool(data.get('full_res', False))
 
-    proxy = PROXIES[camera]
+    if full_res:
+        blocked = require_safe_temperature()
+        if blocked:
+            return blocked
+
     frames = []
 
     for _ in range(count):
-        raw = proxy.get_raw_frame()
+        capture_started = time.time()
+
+        if full_res:
+            success, error = _signal_capture([camera])
+            if not success:
+                return jsonify({'error': error}), 503
+            raw = _get_valid_raw_frame(camera)
+        else:
+            raw = PROXIES[camera].get_raw_frame()
+
         if raw:
             frames.append((raw, time.time()))
-        time.sleep(interval)
+
+        sleep_for = interval - (time.time() - capture_started)
+        if sleep_for > 0:
+            time.sleep(sleep_for)
 
     tar_buf = io.BytesIO()
     with tarfile.open(fileobj=tar_buf, mode='w:gz') as tar:
@@ -797,7 +821,10 @@ def capture_burst(camera):
     return Response(
         tar_buf.getvalue(),
         mimetype='application/gzip',
-        headers={'X-Frame-Count': str(len(frames))}
+        headers={
+            'X-Frame-Count': str(len(frames)),
+            'X-Capture-Resolution': 'full' if full_res else 'stream'
+        }
     )
 
 @app.route('/autofocus/<camera>', methods=['POST'])
