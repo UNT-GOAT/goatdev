@@ -13,6 +13,7 @@ docker rm -f db || true
 docker run -d \
   --name db \
   --restart unless-stopped \
+  --network herdsync-net \
   -p 8002:8002 \
   --env-file /home/ubuntu/db.env \
   $IMAGE
