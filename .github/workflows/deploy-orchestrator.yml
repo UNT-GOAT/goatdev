@@ -59,12 +59,12 @@ jobs:
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
-      auth: ${{ steps.filter.outputs.auth }}
-      db: ${{ steps.filter.outputs.db }}
-      db_proxy: ${{ steps.filter.outputs.db_proxy }}
-      api: ${{ steps.filter.outputs.api }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      pi: ${{ steps.filter.outputs.pi }}
+      auth: ${{ steps.effective.outputs.auth }}
+      db: ${{ steps.effective.outputs.db }}
+      db_proxy: ${{ steps.effective.outputs.db_proxy }}
+      api: ${{ steps.effective.outputs.api }}
+      frontend: ${{ steps.effective.outputs.frontend }}
+      pi: ${{ steps.effective.outputs.pi }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -101,38 +101,83 @@ jobs:
               - '.github/workflows/deploy-pi.yml'
               - '.github/workflows/deploy-orchestrator.yml'
 
+      - name: Resolve effective deploy targets
+        id: effective
+        run: |
+          auth_changed='${{ steps.filter.outputs.auth }}'
+          db_changed='${{ steps.filter.outputs.db }}'
+          db_proxy_changed='${{ steps.filter.outputs.db_proxy }}'
+          api_changed='${{ steps.filter.outputs.api }}'
+          frontend_changed='${{ steps.filter.outputs.frontend }}'
+          pi_changed='${{ steps.filter.outputs.pi }}'
+
+          if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
+            deploy_all='${{ inputs.deploy_all }}'
+            manual_auth='${{ inputs.auth }}'
+            manual_db='${{ inputs.db }}'
+            manual_db_proxy='${{ inputs.db_proxy }}'
+            manual_api='${{ inputs.api }}'
+            manual_frontend='${{ inputs.frontend }}'
+            manual_pi='${{ inputs.pi }}'
+          else
+            deploy_all='false'
+            manual_auth='false'
+            manual_db='false'
+            manual_db_proxy='false'
+            manual_api='false'
+            manual_frontend='false'
+            manual_pi='false'
+          fi
+
+          resolve() {
+            local changed="$1"
+            local manual="$2"
+            if [ "$changed" = 'true' ] || [ "$deploy_all" = 'true' ] || [ "$manual" = 'true' ]; then
+              echo 'true'
+            else
+              echo 'false'
+            fi
+          }
+
+          echo "auth=$(resolve "$auth_changed" "$manual_auth")" >> "$GITHUB_OUTPUT"
+          echo "db=$(resolve "$db_changed" "$manual_db")" >> "$GITHUB_OUTPUT"
+          echo "db_proxy=$(resolve "$db_proxy_changed" "$manual_db_proxy")" >> "$GITHUB_OUTPUT"
+          echo "api=$(resolve "$api_changed" "$manual_api")" >> "$GITHUB_OUTPUT"
+          echo "frontend=$(resolve "$frontend_changed" "$manual_frontend")" >> "$GITHUB_OUTPUT"
+          echo "pi=$(resolve "$pi_changed" "$manual_pi")" >> "$GITHUB_OUTPUT"
+
   deploy-auth:
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.auth == 'true' || github.event.inputs.deploy_all == 'true' || github.event.inputs.auth == 'true' }}
+    if: ${{ needs.detect-changes.outputs.auth == 'true' }}
     uses: ./.github/workflows/deploy-auth.yml
     secrets: inherit
 
   deploy-db:
     needs: [detect-changes, deploy-auth]
-    if: ${{ (needs.detect-changes.outputs.db == 'true' || github.event.inputs.deploy_all == 'true' || github.event.inputs.db == 'true') && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') }}
+    if: ${{ needs.detect-changes.outputs.db == 'true' && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') }}
     uses: ./.github/workflows/deploy-db.yml
     secrets: inherit
 
   deploy-db-proxy:
     needs: [detect-changes, deploy-auth, deploy-db]
-    if: ${{ (needs.detect-changes.outputs.db_proxy == 'true' || github.event.inputs.deploy_all == 'true' || github.event.inputs.db_proxy == 'true') && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') && (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') }}
+    if: ${{ needs.detect-changes.outputs.db_proxy == 'true' && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') && (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') }}
     uses: ./.github/workflows/deploy-db-proxy.yml
     secrets: inherit
 
   deploy-goat-api:
     needs: [detect-changes, deploy-auth, deploy-db, deploy-db-proxy]
-    if: ${{ (needs.detect-changes.outputs.api == 'true' || github.event.inputs.deploy_all == 'true' || github.event.inputs.api == 'true') && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') && (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') && (needs.deploy-db-proxy.result == 'success' || needs.deploy-db-proxy.result == 'skipped') }}
+    if: ${{ needs.detect-changes.outputs.api == 'true' && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') && (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') && (needs.deploy-db-proxy.result == 'success' || needs.deploy-db-proxy.result == 'skipped') }}
     uses: ./.github/workflows/deploy-goat-api.yml
     secrets: inherit
 
   deploy-frontend:
     needs: [detect-changes, deploy-auth, deploy-db, deploy-db-proxy, deploy-goat-api]
-    if: ${{ (needs.detect-changes.outputs.frontend == 'true' || github.event.inputs.deploy_all == 'true' || github.event.inputs.frontend == 'true') && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') && (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') && (needs.deploy-db-proxy.result == 'success' || needs.deploy-db-proxy.result == 'skipped') && (needs.deploy-goat-api.result == 'success' || needs.deploy-goat-api.result == 'skipped') }}
+    if: ${{ needs.detect-changes.outputs.frontend == 'true' && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') && (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') && (needs.deploy-db-proxy.result == 'success' || needs.deploy-db-proxy.result == 'skipped') && (needs.deploy-goat-api.result == 'success' || needs.deploy-goat-api.result == 'skipped') }}
     uses: ./.github/workflows/deploy-frontend.yml
     secrets: inherit
 
   deploy-pi:
     needs: [detect-changes, deploy-auth, deploy-db, deploy-db-proxy, deploy-goat-api, deploy-frontend]
-    if: ${{ (needs.detect-changes.outputs.pi == 'true' || github.event.inputs.deploy_all == 'true' || github.event.inputs.pi == 'true') && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') && (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') && (needs.deploy-db-proxy.result == 'success' || needs.deploy-db-proxy.result == 'skipped') && (needs.deploy-goat-api.result == 'success' || needs.deploy-goat-api.result == 'skipped') && (needs.deploy-frontend.result == 'success' || needs.deploy-frontend.result == 'skipped') }}
+    if: ${{ needs.detect-changes.outputs.pi == 'true' && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') && (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') && (needs.deploy-db-proxy.result == 'success' || needs.deploy-db-proxy.result == 'skipped') && (needs.deploy-goat-api.result == 'success' || needs.deploy-goat-api.result == 'skipped') && (needs.deploy-frontend.result == 'success' || needs.deploy-frontend.result == 'skipped') }}
     uses: ./.github/workflows/deploy-pi.yml
     secrets: inherit
