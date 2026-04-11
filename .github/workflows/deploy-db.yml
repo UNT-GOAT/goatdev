@@ -1,15 +1,7 @@
 name: Build and Deploy DB Service
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "db/routes/**"
-      - "db/Dockerfile"
-      - "db/main.py"
-      - "db/schema.sql"
-      - "db/requirements.txt"
-      - ".github/workflows/deploy-db.yml"
+  workflow_call:
   workflow_dispatch:
 
 env:

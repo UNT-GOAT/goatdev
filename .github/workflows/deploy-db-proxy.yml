@@ -1,13 +1,7 @@
 name: Build and Deploy DB Proxy Service
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "db-proxy/main.py"
-      - "db-proxy/Dockerfile"
-      - "db-proxy/routes/**"
-      - ".github/workflows/deploy-db-proxy.yml"
+  workflow_call:
   workflow_dispatch:
 
 env:

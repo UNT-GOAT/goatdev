@@ -1,14 +1,6 @@
 name: Deploy to Raspberry Pi
 on:
-  push:
-    branches: [main]
-    paths:
-      - "pi/servers/**"
-      - "pi/display/**"
-      - "pi/logger/**"
-      - "pi/system/**"
-      - "pi/requirements.txt"
-      - ".github/workflows/deploy-pi.yml"
+  workflow_call:
   workflow_dispatch:
 jobs:
   deploy:

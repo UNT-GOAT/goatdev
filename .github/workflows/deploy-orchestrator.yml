@@ -1,0 +1,102 @@
+name: Orchestrated Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "auth/**"
+      - "db/**"
+      - "db-proxy/**"
+      - "frontend/**"
+      - "goat-api/**"
+      - "model/**"
+      - "pi/**"
+      - "readme_assets/arch_diagrams/**"
+      - ".github/workflows/deploy-*.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: orchestrated-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      auth: ${{ steps.filter.outputs.auth }}
+      db: ${{ steps.filter.outputs.db }}
+      db_proxy: ${{ steps.filter.outputs.db_proxy }}
+      api: ${{ steps.filter.outputs.api }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      pi: ${{ steps.filter.outputs.pi }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            auth:
+              - 'auth/**'
+              - '.github/workflows/deploy-auth.yml'
+              - '.github/workflows/deploy-orchestrator.yml'
+            db:
+              - 'db/**'
+              - '.github/workflows/deploy-db.yml'
+              - '.github/workflows/deploy-orchestrator.yml'
+            db_proxy:
+              - 'db-proxy/**'
+              - '.github/workflows/deploy-db-proxy.yml'
+              - '.github/workflows/deploy-orchestrator.yml'
+            api:
+              - 'goat-api/**'
+              - 'model/**'
+              - '.github/workflows/deploy-goat-api.yml'
+              - '.github/workflows/deploy-orchestrator.yml'
+            frontend:
+              - 'frontend/**'
+              - 'readme_assets/arch_diagrams/**'
+              - '.github/workflows/deploy-frontend.yml'
+              - '.github/workflows/deploy-orchestrator.yml'
+            pi:
+              - 'pi/**'
+              - '.github/workflows/deploy-pi.yml'
+              - '.github/workflows/deploy-orchestrator.yml'
+
+  deploy-auth:
+    needs: detect-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.auth == 'true' }}
+    uses: ./.github/workflows/deploy-auth.yml
+    secrets: inherit
+
+  deploy-db:
+    needs: [detect-changes, deploy-auth]
+    if: ${{ (github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.db == 'true') && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') }}
+    uses: ./.github/workflows/deploy-db.yml
+    secrets: inherit
+
+  deploy-db-proxy:
+    needs: [detect-changes, deploy-auth, deploy-db]
+    if: ${{ (github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.db_proxy == 'true') && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') && (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') }}
+    uses: ./.github/workflows/deploy-db-proxy.yml
+    secrets: inherit
+
+  deploy-goat-api:
+    needs: [detect-changes, deploy-auth, deploy-db, deploy-db-proxy]
+    if: ${{ (github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.api == 'true') && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') && (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') && (needs.deploy-db-proxy.result == 'success' || needs.deploy-db-proxy.result == 'skipped') }}
+    uses: ./.github/workflows/deploy-goat-api.yml
+    secrets: inherit
+
+  deploy-frontend:
+    needs: [detect-changes, deploy-auth, deploy-db, deploy-db-proxy, deploy-goat-api]
+    if: ${{ (github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.frontend == 'true') && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') && (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') && (needs.deploy-db-proxy.result == 'success' || needs.deploy-db-proxy.result == 'skipped') && (needs.deploy-goat-api.result == 'success' || needs.deploy-goat-api.result == 'skipped') }}
+    uses: ./.github/workflows/deploy-frontend.yml
+    secrets: inherit
+
+  deploy-pi:
+    needs: [detect-changes, deploy-auth, deploy-db, deploy-db-proxy, deploy-goat-api, deploy-frontend]
+    if: ${{ (github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.pi == 'true') && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') && (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') && (needs.deploy-db-proxy.result == 'success' || needs.deploy-db-proxy.result == 'skipped') && (needs.deploy-goat-api.result == 'success' || needs.deploy-goat-api.result == 'skipped') && (needs.deploy-frontend.result == 'success' || needs.deploy-frontend.result == 'skipped') }}
+    uses: ./.github/workflows/deploy-pi.yml
+    secrets: inherit

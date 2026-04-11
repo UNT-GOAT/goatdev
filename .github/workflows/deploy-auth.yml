@@ -1,13 +1,7 @@
 # .github/workflows/deploy-auth.yml
 name: Build and Deploy Auth Service
 on:
-  push:
-    branches: [main]
-    paths:
-      - "auth/auth/**"
-      - "auth/Dockerfile"
-      - "auth/requirements.txt"
-      - ".github/workflows/deploy-auth.yml"
+  workflow_call:
   workflow_dispatch:
 
 env:

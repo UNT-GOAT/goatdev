@@ -1,12 +1,7 @@
 name: Deploy Frontend
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "frontend/**"
-      - "readme_assets/arch_diagrams/**"
-      - ".github/workflows/deploy-frontend.yml"
+  workflow_call:
   workflow_dispatch:
 
 env:

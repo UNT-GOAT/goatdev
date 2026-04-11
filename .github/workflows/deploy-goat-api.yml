@@ -1,13 +1,7 @@
 # .github/workflows/deploy-api.yml
 name: Build and Deploy API
 on:
-  push:
-    branches: [main]
-    paths:
-      - "goat-api/api/**"
-      - "goat-api/Dockerfile"
-      - "model/**"
-      - ".github/workflows/deploy-goat-api.yml"
+  workflow_call:
   workflow_dispatch:
 
 env:
