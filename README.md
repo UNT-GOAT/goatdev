@@ -20,6 +20,8 @@ A hybrid cloud + edge system that replaces subjective grading with camera-based 
 
 The platform also manages the facility's day-to-day operations: animal records, provider tracking, and training data collection for model improvement.
 
+Current facility grading criteria and rationale live in [`goat-api/README.md`](goat-api/README.md#facility-grading-specification).
+
 ## Architecture
 
 ![Architecture](readme_assets/arch_diagrams/herdsync_architecture_dark.png)
