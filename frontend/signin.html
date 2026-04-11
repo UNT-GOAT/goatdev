@@ -224,7 +224,7 @@
           sessionStorage.getItem(KEYS.expiresAt) || "0",
         );
         if (token && Date.now() < expiresAt) {
-          window.location.href = "/dashboard/";
+          window.location.href = "dashboard.html";
           return;
         }
         // Try refresh token
@@ -249,7 +249,7 @@
                 localStorage.setItem(KEYS.refreshToken, data.refresh_token);
               if (data.user)
                 localStorage.setItem(KEYS.user, JSON.stringify(data.user));
-              window.location.href = "/dashboard/";
+              window.location.href = "dashboard.html";
             })
             .catch(() => {
               localStorage.removeItem(KEYS.refreshToken);
@@ -301,7 +301,7 @@
           localStorage.setItem(KEYS.user, JSON.stringify(data.user));
 
           // Navigate to dashboard — full page load, clean state
-          window.location.href = "/dashboard/";
+          window.location.href = "dashboard.html";
         } catch (err) {
           errorEl.textContent = err.message;
           btn.disabled = false;

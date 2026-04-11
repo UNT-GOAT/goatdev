@@ -55,9 +55,9 @@ goatdev/
 ├── model/                  # YOLO weights (.pt) and calibration files
 ├── frontend/               # Web application
 │   ├── index.html          # Landing page
-│   ├── dashboard/          # Main application (animals, grading, providers, logs)
-│   ├── signin/             # Login page
-│   ├── setup/              # Camera focus, heater, and capture setup
+│   ├── dashboard.html      # Main application (animals, grading, providers, logs)
+│   ├── signin.html         # Login page
+│   ├── setup.html          # Camera focus, heater, and capture setup
 │   ├── js/                 # auth.js
 │   └── logos/              # Brand assets (dark/light variants)
 ├── pi/                     # Raspberry Pi services and system config

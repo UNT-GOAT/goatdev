@@ -20,8 +20,8 @@
  *     HerdAuth.logout();
  *   </script>
  *
- * Login is handled by /signin/index.html — this module does not
- * render any UI. All auth failures redirect to /signin/.
+ * Login is handled by signin.html — this module does not
+ * render any UI. All auth failures redirect to signin.html.
  */
 
 const HerdAuth = (() => {
@@ -144,7 +144,7 @@ const HerdAuth = (() => {
     }
 
     function _redirectToSignin() {
-        window.location.href = '/signin/';
+        window.location.href = 'signin.html';
     }
 
     async function logout() {
