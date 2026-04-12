@@ -43,7 +43,6 @@
       }
       function startCameraStreams() {
         const container = document.getElementById("gradeCams");
-        const token = HerdAuth.getAccessToken();
         const cams = ["side", "top", "front"];
         const slots = container.querySelectorAll(".cam-slot");
         slots.forEach((slot, i) => {
@@ -88,16 +87,16 @@
           }
 
           // Try WebSocket first, fall back to MJPEG
-          _connectCameraWS(img, cam, token, offline);
+          _connectCameraWS(img, cam, offline);
         });
       }
 
-      function _connectCameraWS(img, cam, token, offlineEl) {
+      function _connectCameraWS(img, cam, offlineEl) {
         // WS disabled — go straight to MJPEG
-        _fallbackToMJPEG(img, cam, token, offlineEl);
+        _fallbackToMJPEG(img, cam, offlineEl);
       }
 
-      function _fallbackToMJPEG(img, cam, token, offlineEl) {
+      function _fallbackToMJPEG(img, cam, offlineEl) {
         // Clean up WS state
         if (img._ws) {
           try { img._ws.close(); } catch(e) {}
@@ -107,8 +106,12 @@
         clearTimeout(img._wsRetryTimer);
 
         // Standard MJPEG stream
-        img.src = "/api/viewfocus/stream/" + cam
-          + "?token=" + token;
+        HerdAuth.setPiImageSource(img, {
+          kind: "stream",
+          view: cam,
+        }).catch(() => {
+          if (typeof img.onerror === "function") img.onerror.call(img);
+        });
 
         img.onerror = function () {
           this.style.display = "none";
@@ -124,27 +127,13 @@
           clearTimeout(this._retryTimer);
           this._retryTimer = setTimeout(() => {
             if (currentPage === "grading" && piConnected) {
-              _connectCameraWS(this, cam, HerdAuth.getAccessToken(), offlineEl);
+              _connectCameraWS(this, cam, offlineEl);
             }
           }, 10000);
         };
       }
       function refreshCameraTokens() {
         if (!camerasActive || currentPage !== "grading") return;
-        const t = HerdAuth.getAccessToken();
-        document.querySelectorAll("img[data-cam]").forEach((img) => {
-          // If using WebSocket, reconnect with new token
-          if (img._ws && img._ws.readyState === WebSocket.OPEN) {
-            img._ws.close();
-            // onclose handler will reconnect with fresh token
-            return;
-          }
-          // MJPEG fallback: update src
-          if (img.src && img.src.includes("token=")) {
-            const base = img.src.split("?")[0];
-            img.src = base + "?token=" + t + "&t=" + Date.now();
-          }
-        });
       }
       setInterval(refreshCameraTokens, 10 * 60 * 1000);
 

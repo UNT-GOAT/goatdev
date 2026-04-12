@@ -7,7 +7,6 @@
         const container = document.getElementById("captureCams");
         const cams = ["side", "top", "front"];
         const slots = container.querySelectorAll(".cam-slot");
-        const token = HerdAuth.getAccessToken();
 
         slots.forEach((slot, i) => {
           const cam = cams[i];
@@ -42,18 +41,22 @@
                 captureCamsActive
               ) {
                 this.style.display = "";
-                this.src =
-                  "/api/viewfocus/stream/" +
-                  cam +
-                  "?token=" +
-                  HerdAuth.getAccessToken() +
-                  "&t=" +
-                  Date.now();
+                HerdAuth.setPiImageSource(this, {
+                  kind: "stream",
+                  view: cam,
+                }).catch(() => {
+                  if (typeof this.onerror === "function") this.onerror.call(this);
+                });
               }
             }, 10000);
           };
           slot.insertBefore(img, slot.firstChild);
-          img.src = "/api/viewfocus/stream/" + cam + "?token=" + token;
+          HerdAuth.setPiImageSource(img, {
+            kind: "stream",
+            view: cam,
+          }).catch(() => {
+            if (typeof img.onerror === "function") img.onerror.call(img);
+          });
         });
       }
 
@@ -76,15 +79,6 @@
       // Refresh capture cam tokens periodically
       function refreshCaptureCamTokens() {
         if (!captureCamsActive || currentPage !== "capture") return;
-        const t = HerdAuth.getAccessToken();
-        document
-          .querySelectorAll("#captureCams img[data-cam]")
-          .forEach((img) => {
-            if (img.src && img.src.includes("token=")) {
-              const base = img.src.split("?")[0];
-              img.src = base + "?token=" + t + "&t=" + Date.now();
-            }
-          });
       }
       setInterval(refreshCaptureCamTokens, 10 * 60 * 1000);
 

@@ -129,6 +129,26 @@
           return _cachedNextId;
         }
       }
+      async function allocateNextGlobalId() {
+        const response = await HerdAuth.fetch("/db/animals/allocate", {
+          method: "POST",
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(
+            error.detail ||
+              error.message ||
+              "Could not reserve the next serial ID",
+          );
+        }
+        const data = await response.json();
+        const serialId =
+          data.serial_id || data.next_serial_id || data.next_id || data;
+        if (Number.isFinite(Number(serialId))) {
+          _cachedNextId = Number(serialId) + 1;
+        }
+        return serialId;
+      }
       function nextGlobalId() {
         return (
           _cachedNextId ||

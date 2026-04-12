@@ -9,6 +9,7 @@
         pendingGradeResult = null;
         _gradeAnimalCreated = false;
         _gradeExistingId = null;
+        _gradeReservedId = null;
         _reviewGradeId = null;
         _currentUser = user;
         document.getElementById("app").style.display = "block";
@@ -81,8 +82,8 @@
       }
 
       // DATA LOADING
-      async function dbFetch(path) {
-        const r = await HerdAuth.fetch("/db" + path);
+      async function dbFetch(path, opts = {}) {
+        const r = await HerdAuth.fetch("/db" + path, opts);
         if (!r.ok) throw new Error(r.status + " on " + path);
         return r.json();
       }

@@ -130,16 +130,6 @@ const HerdAuth = (() => {
 
         const data = await resp.json();
         saveTokens(data.access_token, data.refresh_token, data.expires_in, getUser());
-
-        // Refresh MJPEG streams with new token
-        document.querySelectorAll('img[src*="token="]').forEach(img => {
-            try {
-                const url = new URL(img.src);
-                url.searchParams.set('token', data.access_token);
-                img.src = url.toString();
-            } catch {}
-        });
-
         return data.access_token;
     }
 
@@ -196,7 +186,11 @@ const HerdAuth = (() => {
         if (resp.status === 401) {
             try {
                 token = await refreshAccessToken();
-                opts.headers['Authorization'] = `Bearer ${token}`;
+                if (opts.headers instanceof Headers) {
+                    opts.headers.set('Authorization', `Bearer ${token}`);
+                } else {
+                    opts.headers['Authorization'] = `Bearer ${token}`;
+                }
                 return await fetch(url, opts);
             } catch {
                 _redirectToSignin();
@@ -205,6 +199,56 @@ const HerdAuth = (() => {
         }
 
         return resp;
+    }
+
+    async function createPiTicket(kind, view, serialId) {
+        const body = { kind, view };
+        if (serialId != null) body.serial_id = String(serialId);
+
+        const resp = await authFetch('/api/auth/tickets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+
+        if (!resp.ok) {
+            const error = await resp.json().catch(() => ({}));
+            throw new Error(
+                error.error ||
+                error.detail ||
+                `Ticket request failed (${resp.status})`
+            );
+        }
+
+        return resp.json();
+    }
+
+    async function getPiImageUrl(config) {
+        const ticket = await createPiTicket(config.kind, config.view, config.serialId);
+        const url = new URL(ticket.resource, window.location.origin);
+        url.searchParams.set('ticket', ticket.ticket);
+        if (config.cacheBust !== false) {
+            url.searchParams.set('t', Date.now().toString());
+        }
+        return {
+            url: url.pathname + url.search,
+            expiresIn: ticket.expires_in,
+            resource: ticket.resource,
+        };
+    }
+
+    async function setPiImageSource(img, config) {
+        if (!img) return null;
+        img._piTicketConfig = { ...config };
+        const next = await getPiImageUrl(img._piTicketConfig);
+        img._piTicketExpiresAt = Date.now() + ((next.expiresIn || 120) * 1000);
+        img.src = next.url;
+        return next.url;
+    }
+
+    async function refreshPiImageSource(img) {
+        if (!img || !img._piTicketConfig) return null;
+        return setPiImageSource(img, img._piTicketConfig);
     }
 
     // ======================================================================
@@ -240,8 +284,11 @@ const HerdAuth = (() => {
         requireAuth,
         logout,
         fetch: authFetch,
+        createPiTicket,
         getUser,
         getAccessToken,
         isAuthenticated: isAccessTokenValid,
+        setPiImageSource,
+        refreshPiImageSource,
     };
 })();

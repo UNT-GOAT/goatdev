@@ -138,9 +138,13 @@
       }
 
       function _connectFocusStream(img, cam, offlineEl) {
-        const token = HerdAuth.getAccessToken();
         img.style.display = "";
-        img.src = "/api/viewfocus/stream/" + cam + "?token=" + token;
+        HerdAuth.setPiImageSource(img, {
+          kind: "stream",
+          view: cam,
+        }).catch(() => {
+          if (typeof img.onerror === "function") img.onerror.call(img);
+        });
       }
 
       function stopFocusStreams() {
@@ -175,13 +179,6 @@
       // Refresh MJPEG tokens periodically (mirrors dashboard refreshCameraTokens)
       function refreshFocusTokens() {
         if (!focusStreamsActive || currentPage !== "viewfocus") return;
-        const t = HerdAuth.getAccessToken();
-        document.querySelectorAll("#focusCams img[data-cam]").forEach((img) => {
-          if (img.src && img.src.includes("token=")) {
-            const base = img.src.split("?")[0];
-            img.src = base + "?token=" + t + "&t=" + Date.now();
-          }
-        });
       }
       setInterval(refreshFocusTokens, 10 * 60 * 1000);
 

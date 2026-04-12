@@ -262,6 +262,7 @@
               "info",
             );
             const createBody = {
+              serial_id: pendingGradeResult.serial_id,
               live_weight: pendingGradeResult.live_weight,
               grade: pendingGradeResult.grade || null,
               description: pendingGradeResult.description || null,
@@ -308,6 +309,7 @@
           }
           _gradeAnimalCreated = false;
           _gradeExistingId = null;
+          _gradeReservedId = null;
           closeModal("modalGradeReview");
           _reviewCurrentResult = null;
           showToast(
@@ -361,6 +363,7 @@
       }
       async function computeNextGradeId() {
         _gradeExistingId = null;
+        _gradeReservedId = null;
         const hint = document.getElementById("gradeSerialHint");
         const input = document.getElementById("gradeSerial");
         const btn = document.getElementById("gradeBtn");
@@ -377,6 +380,29 @@
         if (!document.getElementById("gradeKillDate").value)
           document.getElementById("gradeKillDate").value = todayISO();
       }
+      async function resolveGradeSerialId() {
+        if (_gradeExistingId) return _gradeExistingId;
+        if (_gradeReservedId) {
+          nextGradeId = _gradeReservedId;
+          document.getElementById("gradeSerial").value = _gradeReservedId;
+          document.getElementById("gradeSerialHint").textContent =
+            "Reserved for this grading session";
+          document.getElementById("gradeSerialHint").className =
+            "field-hint valid";
+          return _gradeReservedId;
+        }
+
+        const hint = document.getElementById("gradeSerialHint");
+        hint.textContent = "Reserving serial ID...";
+        hint.className = "field-hint";
+        const reservedId = await allocateNextGlobalId();
+        _gradeReservedId = reservedId;
+        nextGradeId = reservedId;
+        document.getElementById("gradeSerial").value = reservedId;
+        hint.textContent = "Reserved for this grading session";
+        hint.className = "field-hint valid";
+        return reservedId;
+      }
       function gradeLog(msg, type) {
         const el = document.getElementById("gradeLog");
         el.style.display = "";
@@ -392,11 +418,7 @@
           gradeLog("Grader is offline.", "err");
           return;
         }
-        const serialId = _gradeExistingId || nextGradeId;
-        if (!serialId) {
-          showToast("error", "No serial ID");
-          return;
-        }
+        let serialId = _gradeExistingId || nextGradeId;
         const species = document.getElementById("gradeSpecies").value;
         const desc = document.getElementById("gradeDesc").value;
         const lw = parseFloat(document.getElementById("gradeWeight").value);
@@ -413,19 +435,28 @@
         document.getElementById("gradeLog").innerHTML = "";
         document.getElementById("gradeLog").style.display = "none";
         const isExisting = !!_gradeExistingId;
-        gradeLog(
-          "Starting grade for " +
-            (isExisting ? "existing " : "new ") +
-            species +
-            " (serial " +
-            serialId +
-            ", " +
-            desc +
-            ") @ " +
-            lw +
-            " lbs",
-        );
         try {
+          serialId = await resolveGradeSerialId();
+          if (!serialId) {
+            showToast("error", "No serial ID");
+            btn.disabled = false;
+            return;
+          }
+          if (!isExisting) {
+            gradeLog("Reserved serial #" + serialId, "ok");
+          }
+          gradeLog(
+            "Starting grade for " +
+              (isExisting ? "existing " : "new ") +
+              species +
+              " (serial " +
+              serialId +
+              ", " +
+              desc +
+              ") @ " +
+              lw +
+              " lbs",
+          );
           gradeLog("Verifying grader connection...", "info");
           let pingOk = false;
           try {
@@ -607,7 +638,6 @@
         document.getElementById("reviewTime").textContent = result.total_sec
           ? parseFloat(result.total_sec).toFixed(1) + "s"
           : "—";
-        const token = HerdAuth.getAccessToken();
         ["side", "top", "front"].forEach((view) => {
           const slot = document.getElementById(
             "review" + view.charAt(0).toUpperCase() + view.slice(1),
@@ -615,18 +645,18 @@
           const existing = slot.querySelector("img");
           if (existing) existing.remove();
           const img = document.createElement("img");
-          img.src =
-            "/api/prod/debug/" +
-            serialId +
-            "/" +
-            view +
-            "?token=" +
-            token;
           img.alt = view + " debug";
           img.onerror = function () {
             this.style.opacity = ".2";
           };
           slot.insertBefore(img, slot.firstChild);
+          HerdAuth.setPiImageSource(img, {
+            kind: "debug",
+            view,
+            serialId: String(serialId),
+          }).catch(() => {
+            img.style.opacity = ".2";
+          });
         });
         document.getElementById("reviewMeasurements").textContent =
           result.measurements
@@ -764,6 +794,7 @@
         _reviewCurrentResult = null;
         _gradeAnimalCreated = false;
         _gradeExistingId = null;
+        _gradeReservedId = null;
         gradeLog("Discarded by operator", "warn");
         showToast("success", "Grade discarded");
         document.getElementById("gradeWeight").value = "";
@@ -822,11 +853,7 @@
         document.getElementById("devGradeBtn").disabled = count < 3;
       }
       async function startDevGrade() {
-        const serialId = _gradeExistingId || nextGradeId;
-        if (!serialId) {
-          showToast("error", "No serial ID");
-          return;
-        }
+        let serialId = _gradeExistingId || nextGradeId;
         const lw = parseFloat(document.getElementById("gradeWeight").value);
         if (!lw || lw <= 0) {
           showToast("error", "Enter a valid live weight");
@@ -843,18 +870,27 @@
         document.getElementById("gradeLog").innerHTML = "";
         document.getElementById("gradeLog").style.display = "none";
         const isExisting = !!_gradeExistingId;
-        gradeLog(
-          "DEV: Upload grade for " +
-            species +
-            " #" +
-            serialId +
-            " @ " +
-            lw +
-            " lbs",
-          "warn",
-        );
-        gradeLog("Uploading 3 images directly to Pi → EC2...", "info");
         try {
+          serialId = await resolveGradeSerialId();
+          if (!serialId) {
+            showToast("error", "No serial ID");
+            btn.disabled = false;
+            return;
+          }
+          if (!isExisting) {
+            gradeLog("Reserved serial #" + serialId, "ok");
+          }
+          gradeLog(
+            "DEV: Upload grade for " +
+              species +
+              " #" +
+              serialId +
+              " @ " +
+              lw +
+              " lbs",
+            "warn",
+          );
+          gradeLog("Uploading 3 images directly to Pi → EC2...", "info");
           const formData = new FormData();
           formData.append("serial_id", String(serialId));
           formData.append("live_weight", lw);
