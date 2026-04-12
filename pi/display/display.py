@@ -216,17 +216,6 @@ def get_temp_status(heater_state):
     return GREEN, 'READY'
 
 
-def get_temp_value_color(temp_f):
-    """Return per-camera temp color by readiness band."""
-    if temp_f is None:
-        return RED
-    if temp_f <= MIN_SAFE_CAMERA_TEMP_F:
-        return RED
-    if temp_f < FULLY_WARM_CAMERA_TEMP_F:
-        return ORANGE
-    return GREEN
-
-
 def check_network():
     try:
         result = subprocess.run(
@@ -541,10 +530,9 @@ def draw_status(disp, font_big, font_med, font_sm, font_xs):
                 y = temp_y + i * 28
                 t = temps.get(key)
                 t_str = f"{t}°F" if t is not None else "--°F"
-                t_color = get_temp_value_color(t)
                 draw.text((16, y), label, font=font_med, fill=WHITE)
                 tw = draw.textlength(t_str, font=font_med)
-                draw.text((SCREEN_W - tw - 14, y), t_str, font=font_med, fill=t_color)
+                draw.text((SCREEN_W - tw - 14, y), t_str, font=font_med, fill=WHITE)
 
             # Push to display
             disp.image(img)
