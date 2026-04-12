@@ -30,7 +30,7 @@ Tailscale VPN → Caddy (:443, Tailscale TLS)
                   └── (same routing as above)
 ```
 
-Every request through Caddy (except OPTIONS preflight and WebSocket upgrades) goes through `forward_auth` to the auth verifier, which validates the JWT against the cached public key from EC2's JWKS endpoint.
+Every request through Caddy (except OPTIONS preflight and WebSocket upgrades) goes through `forward_auth` to the auth verifier, which validates the JWT against the cached public key from EC2's JWKS endpoint. The verifier also issues short-lived opaque tickets for browser stream and debug-image requests so JWTs do not need to ride in query strings.
 
 ## Directory Structure
 
@@ -146,7 +146,9 @@ Stored in `/home/pi/goatdev/pi/.env`:
 | `EC2_GOAT_API`       | Full URL to goat-api over Tailscale                               |
 | `API_KEY`            | API key matching goat-api's `API_KEY` (sent via X-API-Key header) |
 | `S3_TRAINING_BUCKET` | S3 bucket for training data uploads                               |
-| `AUTH_JWKS_URL`      | JWKS endpoint over Tailscale                                      |
+| `AUTH_JWKS_URL`      | Legacy single JWKS endpoint (fallback if `AUTH_JWKS_URLS` unset)  |
+| `AUTH_JWKS_URLS`     | Ordered JWKS endpoints, private/Tailscale first and public second |
+| `ALLOW_LEGACY_QUERY_BEARER` | Temporary rollout flag for `?token=` query bearer support |
 | `SITE_DOMAIN`        | Caddy domain for Tailscale TLS cert                               |
 
 ## Deployment

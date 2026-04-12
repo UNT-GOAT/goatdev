@@ -61,6 +61,12 @@ MAX_GOAT_ID_LEN = 50        # Prevent path traversal
 import sys
 sys.path.insert(0, '/home/pi/goatdev/pi')
 from logger.pi_cloudwatch import Logger
+from servers.capture_lock import (
+    acquire_capture_lock,
+    read_capture_owner,
+    release_capture_lock,
+    update_capture_lock_metadata,
+)
 
 log = Logger('pi/training')
 
@@ -69,6 +75,9 @@ log = Logger('pi/training')
 # ============================================================
 
 _state_lock = threading.Lock()
+SERVICE_NAME = 'training'
+_capture_lock_handle = None
+_cancel_event = threading.Event()
 recording_state = {
     'active': False,
     'goat_id': None,
@@ -79,15 +88,32 @@ recording_state = {
     'last_result': None
 }
 
+def _sync_capture_lock_metadata(state_snapshot: dict):
+    if _capture_lock_handle is None:
+        return
+    update_capture_lock_metadata(
+        _capture_lock_handle,
+        SERVICE_NAME,
+        goat_id=state_snapshot.get('goat_id'),
+        started_at=state_snapshot.get('started_at'),
+        progress=state_snapshot.get('progress'),
+        current_camera=state_snapshot.get('current_camera'),
+    )
+
+
 def set_state(**kwargs):
+    snapshot = None
     with _state_lock:
         recording_state.update(kwargs)
+        snapshot = recording_state.copy()
+    _sync_capture_lock_metadata(snapshot)
 
 def get_state():
     with _state_lock:
         return recording_state.copy()
 
 def reset_state():
+    snapshot = None
     with _state_lock:
         recording_state.update({
             'active': False,
@@ -96,6 +122,55 @@ def reset_state():
             'progress': None,
             'current_camera': None
         })
+        snapshot = recording_state.copy()
+    _sync_capture_lock_metadata(snapshot)
+
+
+def cancel_requested() -> bool:
+    return _cancel_event.is_set()
+
+
+def _set_cancel_requested():
+    _cancel_event.set()
+    set_state(progress='cancelling')
+
+
+def _clear_cancel_requested():
+    _cancel_event.clear()
+
+
+def _release_shared_capture_lock():
+    global _capture_lock_handle
+    release_capture_lock(_capture_lock_handle)
+    _capture_lock_handle = None
+
+
+def _build_camera_status(results: dict) -> dict:
+    camera_status = {}
+    for cam in CAMERA_ORDER:
+        result = results.get(cam)
+        if not result:
+            camera_status[cam] = 'missing'
+        elif result.get('success'):
+            camera_status[cam] = f"captured ({result.get('image_count', 0)} images)"
+        else:
+            camera_status[cam] = f"failed: {result.get('error', 'unknown')}"
+    return camera_status
+
+
+def _cancel_result(goat_id: str, start_time: float, stage: str, **extra):
+    total_time = round(time.time() - start_time, 2)
+    result = {
+        'goat_id': goat_id,
+        'success': False,
+        'cancelled': True,
+        'stage': stage,
+        'error': 'Cancelled by user',
+        'duration_sec': total_time,
+    }
+    result.update(extra)
+    set_state(last_error='Cancelled by user', last_result=result)
+    log.warn('cancel', 'Cancellation acknowledged', goat_id=goat_id, stage=stage)
 
 # ============================================================
 # HELPERS
@@ -313,11 +388,30 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
     results = {}
 
     try:
+        if cancel_requested():
+            _cancel_result(goat_id, start_time, 'starting')
+            return
+
         set_state(progress='capturing', current_camera=None)
 
         # The proxy has one hardware worker for full-res capture, so take each
         # camera burst in a fixed order rather than contending in parallel.
         for name in CAMERA_ORDER:
+            if cancel_requested():
+                cleanup_temp_files(goat_id)
+                _cancel_result(
+                    goat_id,
+                    start_time,
+                    'capturing',
+                    camera_status=_build_camera_status(results),
+                    total_images=sum(
+                        result.get('image_count', 0)
+                        for result in results.values()
+                        if result.get('success')
+                    ),
+                    uploaded=[],
+                )
+                return
             set_state(progress='capturing', current_camera=name)
             results[name] = capture_camera_burst(name, goat_id)
 
@@ -327,15 +421,7 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
         successful = [r for r in results.values() if r.get('success')]
         failed = [r for r in results.values() if not r.get('success')]
 
-        camera_status = {}
-        for cam in CAMERA_ORDER:
-            r = results.get(cam)
-            if not r:
-                camera_status[cam] = "missing"
-            elif r.get("success"):
-                camera_status[cam] = f"captured ({r.get('image_count', 0)} images)"
-            else:
-                camera_status[cam] = f"failed: {r.get('error', 'unknown')}"
+        camera_status = _build_camera_status(results)
 
         total_images = sum(r.get('image_count', 0) for r in successful)
 
@@ -391,6 +477,18 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
 
         # === TEST MODE: S3 capability check only (no upload) ===
         if is_test:
+            if cancel_requested():
+                cleanup_temp_files(goat_id)
+                _cancel_result(
+                    goat_id,
+                    start_time,
+                    'checking_s3',
+                    test=True,
+                    uploaded=[],
+                    total_images=total_images,
+                    camera_status=camera_status,
+                )
+                return
             set_state(progress='checking_s3', current_camera=None)
 
             would_upload = []
@@ -406,6 +504,19 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
             t = threading.Thread(target=_s3_check)
             t.start()
             t.join(timeout=10)  # generous but bounded
+
+            if cancel_requested():
+                cleanup_temp_files(goat_id)
+                _cancel_result(
+                    goat_id,
+                    start_time,
+                    'checking_s3',
+                    test=True,
+                    uploaded=[],
+                    total_images=total_images,
+                    camera_status=camera_status,
+                )
+                return
 
             s3_check = s3_result[0] or {"ok": False, "error": "S3 check timed out"}
 
@@ -462,6 +573,17 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
         upload_errors = []
 
         for r in successful:
+            if cancel_requested():
+                cleanup_temp_files(goat_id)
+                _cancel_result(
+                    goat_id,
+                    start_time,
+                    'uploading',
+                    uploaded=uploaded,
+                    total_images=total_images,
+                    camera_status=camera_status,
+                )
+                return
             cam_name = r['name']
             tar_path = r.get('tar_path')
 
@@ -507,6 +629,17 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
 
         # Upload goat_data.json
         if goat_data and uploaded:
+            if cancel_requested():
+                cleanup_temp_files(goat_id)
+                _cancel_result(
+                    goat_id,
+                    start_time,
+                    'uploading',
+                    uploaded=uploaded,
+                    total_images=total_images,
+                    camera_status=camera_status,
+                )
+                return
             try:
                 json_data = {
                     'goat_id': goat_id,
@@ -584,6 +717,8 @@ def do_capture(goat_id: str, goat_data: dict, is_test: bool):
 
     finally:
         reset_state()
+        _clear_cancel_requested()
+        _release_shared_capture_lock()
 
 
 # ============================================================
@@ -699,23 +834,6 @@ def record():
     cameras only, does S3 capability check without uploading.
     """
 
-    # Check if already capturing
-    state = get_state()
-    if state['active']:
-        log.warn('capture', 'Capture already in progress',
-                current_goat_id=state['goat_id'],
-                started_at=state['started_at'])
-        return jsonify({
-            'status': 'error',
-            'error_code': 'CAPTURE_IN_PROGRESS',
-            'message': f'Capture already in progress for goat {state["goat_id"]}. Please wait.',
-            'current_capture': {
-                'goat_id': state['goat_id'],
-                'started_at': state['started_at'],
-                'progress': state['progress']
-            }
-        }), 409
-
     # Parse and validate input
     try:
         data = request.get_json(force=True, silent=True) or {}
@@ -793,18 +911,42 @@ def record():
             'message': 'No cameras connected'
         }), 503
 
-    # Start capture
+    started_at = datetime.now().isoformat()
+    global _capture_lock_handle
+    _capture_lock_handle, owner = acquire_capture_lock(
+        SERVICE_NAME,
+        'goat_id',
+        goat_id,
+        started_at=started_at,
+        progress='starting',
+    )
+    if _capture_lock_handle is None:
+        owner = owner or read_capture_owner() or {}
+        log.warn('capture', 'Capture lock already held', goat_id=goat_id, owner=owner)
+        return jsonify({
+            'status': 'error',
+            'error_code': 'CAPTURE_IN_PROGRESS',
+            'message': 'Another capture is already in progress. Please wait.',
+            'current_capture': owner,
+        }), 409
+
+    _clear_cancel_requested()
     set_state(
         active=True,
         goat_id=goat_id,
-        started_at=datetime.now().isoformat(),
+        started_at=started_at,
         progress='starting',
         current_camera=None,
         last_error=None
     )
 
-    thread = threading.Thread(target=do_capture, args=(goat_id, goat_data, is_test))
-    thread.start()
+    try:
+        thread = threading.Thread(target=do_capture, args=(goat_id, goat_data, is_test))
+        thread.start()
+    except Exception:
+        reset_state()
+        _release_shared_capture_lock()
+        raise
 
     estimated_sec = estimate_capture_duration_sec(len(CAMERA_ORDER))
 
@@ -837,19 +979,22 @@ def status():
 
 @app.route('/cancel', methods=['POST'])
 def cancel():
-    """Emergency cancel - reset state and clean up."""
-    log.warn('cancel', 'Emergency cancel requested')
+    """Request cooperative cancellation for the active training capture."""
+    owner = read_capture_owner()
+    if not owner:
+        return jsonify({'status': 'idle'}), 200
 
-    state = get_state()
-    if state['goat_id']:
-        cleanup_temp_files(state['goat_id'])
+    if owner.get('service') != SERVICE_NAME:
+        return jsonify({
+            'status': 'error',
+            'error_code': 'CAPTURE_OWNED_BY_OTHER_SERVICE',
+            'message': 'Another service owns the active capture lock',
+            'current': owner,
+        }), 409
 
-    reset_state()
-    set_state(last_error='Capture cancelled by user')
-
-    log.info('cancel', 'Capture cancelled and state reset')
-
-    return jsonify({'status': 'cancelled'})
+    log.warn('cancel', 'Cancel requested', owner=owner)
+    _set_cancel_requested()
+    return jsonify({'status': 'cancel_requested', 'current': owner}), 202
 
 
 # ============================================================

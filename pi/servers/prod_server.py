@@ -68,6 +68,12 @@ MAX_SERIAL_ID_LEN = 50
 import sys
 sys.path.insert(0, '/home/pi/goatdev/pi')
 from logger.pi_cloudwatch import Logger
+from servers.capture_lock import (
+    acquire_capture_lock,
+    read_capture_owner,
+    release_capture_lock,
+    update_capture_lock_metadata,
+)
 
 log = Logger('pi/prod')
 
@@ -76,6 +82,9 @@ log = Logger('pi/prod')
 # ============================================================
 
 _state_lock = threading.Lock()
+SERVICE_NAME = 'prod'
+_capture_lock_handle = None
+_cancel_event = threading.Event()
 capture_state = {
     'active': False,
     'serial_id': None,
@@ -85,15 +94,31 @@ capture_state = {
     'last_result': None
 }
 
+def _sync_capture_lock_metadata(state_snapshot: dict):
+    if _capture_lock_handle is None:
+        return
+    update_capture_lock_metadata(
+        _capture_lock_handle,
+        SERVICE_NAME,
+        serial_id=state_snapshot.get('serial_id'),
+        started_at=state_snapshot.get('started_at'),
+        progress=state_snapshot.get('progress'),
+    )
+
+
 def set_state(**kwargs):
+    snapshot = None
     with _state_lock:
         capture_state.update(kwargs)
+        snapshot = capture_state.copy()
+    _sync_capture_lock_metadata(snapshot)
 
 def get_state():
     with _state_lock:
         return capture_state.copy()
 
 def reset_state():
+    snapshot = None
     with _state_lock:
         capture_state.update({
             'active': False,
@@ -101,6 +126,44 @@ def reset_state():
             'started_at': None,
             'progress': None
         })
+        snapshot = capture_state.copy()
+    _sync_capture_lock_metadata(snapshot)
+
+
+def cancel_requested() -> bool:
+    return _cancel_event.is_set()
+
+
+def _set_cancel_requested():
+    _cancel_event.set()
+    set_state(progress='cancelling')
+
+
+def _clear_cancel_requested():
+    _cancel_event.clear()
+
+
+def _release_shared_capture_lock():
+    global _capture_lock_handle
+    release_capture_lock(_capture_lock_handle)
+    _capture_lock_handle = None
+
+
+def _cancel_result(serial_id: str, start_time: float, stage: str):
+    total_time = round(time.time() - start_time, 2)
+    message = 'Cancelled by user'
+    set_state(
+        last_error=message,
+        last_result={
+            'serial_id': serial_id,
+            'success': False,
+            'cancelled': True,
+            'stage': stage,
+            'error': message,
+            'duration_sec': total_time,
+        }
+    )
+    log.warn('cancel', 'Cancellation acknowledged', serial_id=serial_id, stage=stage)
 
 # ============================================================
 # CAMERA HELPERS
@@ -348,6 +411,10 @@ def do_grade(serial_id: str, live_weight: float, description: str = 'meat'):
     start_time = time.time()
 
     try:
+        if cancel_requested():
+            _cancel_result(serial_id, start_time, 'starting')
+            return
+
         # Phase 1: Capture all cameras
         set_state(progress='capturing')
 
@@ -393,6 +460,14 @@ def do_grade(serial_id: str, live_weight: float, description: str = 'meat'):
         capture_time = capture['capture_time_sec']
         total_size = sum(r.get('file_size_bytes', 0) for r in results.values())
 
+        if cancel_requested():
+            for r in results.values():
+                fp = r.get('filepath')
+                if fp and os.path.exists(fp):
+                    os.remove(fp)
+            _cancel_result(serial_id, start_time, 'capturing')
+            return
+
         # Phase 2: Send to EC2
         set_state(progress='grading')
         log.info('grade', 'Sending to EC2',
@@ -400,6 +475,14 @@ def do_grade(serial_id: str, live_weight: float, description: str = 'meat'):
                  total_size_bytes=total_size)
 
         try:
+            if cancel_requested():
+                for r in results.values():
+                    fp = r.get('filepath')
+                    if fp and os.path.exists(fp):
+                        os.remove(fp)
+                _cancel_result(serial_id, start_time, 'grading')
+                return
+
             files = {
                 'side_image': (
                     f'{serial_id}_side.jpg',
@@ -546,6 +629,8 @@ def do_grade(serial_id: str, live_weight: float, description: str = 'meat'):
 
     finally:
         reset_state()
+        _clear_cancel_requested()
+        _release_shared_capture_lock()
 
 
 # ============================================================
@@ -735,21 +820,6 @@ def grade():
     Checks EC2 reachability BEFORE starting the capture.
     EC2 handles all S3 archival on successful grades.
     """
-    state = get_state()
-    if state['active']:
-        log.warn('grade', 'Grade already in progress',
-                 current_serial=state['serial_id'])
-        return jsonify({
-            'status': 'error',
-            'error_code': 'GRADE_IN_PROGRESS',
-            'message': f'Grade in progress for {state["serial_id"]}. Please wait.',
-            'current': {
-                'serial_id': state['serial_id'],
-                'started_at': state['started_at'],
-                'progress': state['progress']
-            }
-        }), 409
-
     try:
         data = request.get_json(force=True, silent=True) or {}
     except Exception:
@@ -877,16 +947,41 @@ def grade():
         }), 503
 
     # Start grading
+    started_at = datetime.now().isoformat()
+    global _capture_lock_handle
+    _capture_lock_handle, owner = acquire_capture_lock(
+        SERVICE_NAME,
+        'serial_id',
+        sanitized,
+        started_at=started_at,
+        progress='starting',
+    )
+    if _capture_lock_handle is None:
+        owner = owner or read_capture_owner() or {}
+        log.warn('grade', 'Capture lock already held', serial_id=sanitized, owner=owner)
+        return jsonify({
+            'status': 'error',
+            'error_code': 'GRADE_IN_PROGRESS',
+            'message': 'Another capture is already in progress. Please wait.',
+            'current': owner,
+        }), 409
+
+    _clear_cancel_requested()
     set_state(
         active=True,
         serial_id=sanitized,
-        started_at=datetime.now().isoformat(),
+        started_at=started_at,
         progress='starting',
         last_error=None
     )
 
-    thread = threading.Thread(target=do_grade, args=(sanitized, live_weight, description))
-    thread.start()
+    try:
+        thread = threading.Thread(target=do_grade, args=(sanitized, live_weight, description))
+        thread.start()
+    except Exception:
+        reset_state()
+        _release_shared_capture_lock()
+        raise
 
     log.info('grade', 'Grade started',
              serial_id=sanitized, live_weight=live_weight)
@@ -1054,20 +1149,22 @@ def grade_test():
 
 @app.route('/cancel', methods=['POST'])
 def cancel():
-    """Emergency cancel - reset state and clean up."""
-    log.warn('cancel', 'Cancel requested')
+    """Request cooperative cancellation for the active prod capture."""
+    owner = read_capture_owner()
+    if not owner:
+        return jsonify({'status': 'idle'}), 200
 
-    state = get_state()
-    if state['serial_id']:
-        for name in CAMERAS:
-            fp = f'/tmp/{state["serial_id"]}_{name}.jpg'
-            if os.path.exists(fp):
-                os.remove(fp)
+    if owner.get('service') != SERVICE_NAME:
+        return jsonify({
+            'status': 'error',
+            'error_code': 'CAPTURE_OWNED_BY_OTHER_SERVICE',
+            'message': 'Another service owns the active capture lock',
+            'current': owner,
+        }), 409
 
-    reset_state()
-    set_state(last_error='Cancelled by user')
-
-    return jsonify({'status': 'cancelled'})
+    log.warn('cancel', 'Cancel requested', owner=owner)
+    _set_cancel_requested()
+    return jsonify({'status': 'cancel_requested', 'current': owner}), 202
 
 
 @app.route('/test')
