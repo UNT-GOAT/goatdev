@@ -40,6 +40,7 @@ pi/
 ├── README.md
 ├── servers/
 │   ├── camera_proxy.py             # Camera ownership: multiprocess (HardwareWorker + Flask/gevent)
+│   ├── capture_lock.py             # Shared capture ownership helper for prod + training
 │   ├── prod_server.py              # Grading workflow: shared capture lock → send to EC2 /analyze
 │   ├── training_server.py          # Training capture: sequential burst → S3 upload
 │   ├── camera_heating.py           # Thermostat: DS18B20 sensors, GPIO heater control, failsafe
@@ -89,7 +90,7 @@ Production grading workflow:
 5. EC2 runs YOLO inference, returns grade + measurements
 6. EC2 handles S3 archival (Pi does not write to S3 for grading)
 
-Prod capture now acquires a shared cross-process lock before work begins, so training and grading cannot both talk to the capture path at once. `/cancel` is cooperative: it sets a cancel flag, lets the worker clean up, and then releases the shared lock.
+Prod capture now acquires a shared cross-process lock before work begins through `servers/capture_lock.py`, so training and grading cannot both talk to the capture path at once. `/cancel` is cooperative: it sets a cancel flag, lets the worker clean up, and then releases the shared lock.
 
 Also provides `/grade/test` for uploading images directly (bypasses cameras).
 
@@ -102,7 +103,7 @@ Training data collection:
 3. Uploads tar.gz files directly to S3 training bucket
 4. Supports test mode (capture + S3 capability check, no upload)
 
-Training capture uses the same shared lock as production grading, so only one capture workflow can own the proxy at a time. `/cancel` is also cooperative here and returns `409` if a different service owns the active lock.
+Training capture uses the same shared lock helper as production grading, so only one capture workflow can own the proxy at a time. `/cancel` is also cooperative here and returns `409` if a different service owns the active lock.
 
 ### camera_heating.py
 
