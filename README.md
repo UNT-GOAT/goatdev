@@ -28,7 +28,7 @@ Current facility grading criteria and rationale live in [`goat-api/README.md`](g
 
 | Component           | Technology                           | Purpose                                           |
 | ------------------- | ------------------------------------ | ------------------------------------------------- |
-| **Frontend**        | Vanilla JS, CloudFront, S3           | Dashboard, grading UI, animal/provider management |
+| **Frontend**        | Vanilla JS, CloudFront, S3           | Dashboard, grading UI, ticketed stream/debug access |
 | **Auth Service**    | FastAPI, RS256 JWT, PostgreSQL       | Authentication, user management, JWKS             |
 | **DB Service**      | FastAPI, asyncpg, PostgreSQL         | Animal, provider, grade, and audit data           |
 | **DB Proxy**        | FastAPI, httpx                       | Auth-gated reverse proxy with audit logging       |
@@ -90,16 +90,17 @@ Each service directory has its own README with detailed documentation:
 ## Grading Pipeline
 
 1. Operator fills in species, weight, provider on the grading page
-2. Pi prod server pre-checks EC2 reachability and camera health
-3. Camera proxy does in-place resolution switching (640x480 → 4656x3496) per camera
-4. Three full-res JPEG images sent to EC2 as multipart form
-5. EC2 runs YOLO instance segmentation on each view, extracts body mask
-6. Measurements computed from mask contours using calibrated pixels-per-cm values
-7. Grade calculated from measurements + live weight
-8. Debug overlay images generated with measurement annotations
-9. Raw images → `goat-captures` S3 bucket, debug images → `goat-processed` bucket
-10. Operator reviews grade, measurements, and debug overlays in a modal
-11. On accept: animal record created/updated in PostgreSQL, grade result stored
+2. For new animals, the dashboard reserves a real serial ID from the DB service before capture
+3. Pi prod server pre-checks EC2 reachability and camera health
+4. Camera proxy does in-place resolution switching (640x480 → 4656x3496) per camera
+5. Three full-res JPEG images sent to EC2 as multipart form
+6. EC2 runs YOLO instance segmentation on each view, extracts body mask
+7. Measurements computed from mask contours using calibrated pixels-per-cm values
+8. Grade calculated from measurements + live weight
+9. Debug overlay images generated with measurement annotations
+10. Raw images → `goat-captures` S3 bucket, debug images → `goat-processed` bucket
+11. Operator reviews grade, measurements, and debug overlays in a modal
+12. On accept: animal record created/updated in PostgreSQL with the reserved serial ID, then the grade result is upserted
 
 ## Training Data Collection Pipeline
 
@@ -107,7 +108,7 @@ Each service directory has its own README with detailed documentation:
 Setup Page → Pi Training Server → Camera Proxy (burst) → S3 Training Bucket
 ```
 
-Separate from grading. Captures 20 frames per camera at 1.5-second intervals for pose variation. All 3 cameras capture concurrently. Images uploaded as tar.gz directly to S3. Metadata (goat data, timestamps) saved as JSON alongside the images. These photos are then used in future training to improve our grading models.
+Separate from grading. Captures 20 frames per camera at 1.5-second intervals for pose variation. The training server walks side/top/front sequentially through the shared camera proxy so it does not contend with production capture. Images upload as tar.gz directly to S3. Metadata (goat data, timestamps) is saved as JSON alongside the images. These photos are then used in future training to improve our grading models.
 
 ## Security
 
@@ -115,7 +116,9 @@ Separate from grading. Captures 20 frames per camera at 1.5-second intervals for
 - **Token rotation** - refresh tokens are single-use; each refresh issues a new pair and revokes the old one. Stored as SHA-256 hashes.
 - **Rate limiting** - login attempts tracked by IP and username independently. 5 attempts per 5-minute window, 15-minute lockout.
 - **S3 private buckets** - frontend bucket uses CloudFront OAC (no public access). Capture/training buckets are private with IAM policies.
-- **Pi auth gating** - every API request through Caddy goes through `forward_auth` to a local JWT verifier. The verifier caches the public key from JWKS.
+- **Pi auth gating** - every API request through Pi Caddy goes through `forward_auth` to a local JWT verifier. Browser-loaded stream and debug images use short-lived opaque tickets instead of bearer tokens in query strings.
+- **Sequence-backed serial IDs** - new animal grading sessions reserve serial IDs from PostgreSQL before capture, so retries and concurrent operators do not reuse previewed IDs.
+- **One grade row per animal** - `grade_results.serial_id` is unique, and grade saves are true DB-backed upserts.
 - **API key for Pi→EC2** - service-to-service grading calls use a shared API key in `X-API-Key` header over Tailscale. Simpler than JWT for machine-to-machine.
 
 ## Tech Stack

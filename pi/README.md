@@ -40,8 +40,8 @@ pi/
 ├── README.md
 ├── servers/
 │   ├── camera_proxy.py             # Camera ownership: multiprocess (HardwareWorker + Flask/gevent)
-│   ├── prod_server.py              # Grading workflow: capture all → send to EC2 /analyze
-│   ├── training_server.py          # Training capture: concurrent burst → S3 upload
+│   ├── prod_server.py              # Grading workflow: shared capture lock → send to EC2 /analyze
+│   ├── training_server.py          # Training capture: sequential burst → S3 upload
 │   ├── camera_heating.py           # Thermostat: DS18B20 sensors, GPIO heater control, failsafe
 │   └── auth_verifier.py            # JWT verifier: JWKS fetch + cache, Caddy forward_auth
 ├── display/
@@ -89,16 +89,20 @@ Production grading workflow:
 5. EC2 runs YOLO inference, returns grade + measurements
 6. EC2 handles S3 archival (Pi does not write to S3 for grading)
 
+Prod capture now acquires a shared cross-process lock before work begins, so training and grading cannot both talk to the capture path at once. `/cancel` is cooperative: it sets a cancel flag, lets the worker clean up, and then releases the shared lock.
+
 Also provides `/grade/test` for uploading images directly (bypasses cameras).
 
 ### training_server.py
 
 Training data collection:
 
-1. Triggers concurrent burst captures on all 3 cameras via proxy
+1. Triggers burst captures on side/top/front sequentially via the shared camera proxy
 2. Each burst: 20 frames at 1.5s intervals, returned as tar.gz
 3. Uploads tar.gz files directly to S3 training bucket
 4. Supports test mode (capture + S3 capability check, no upload)
+
+Training capture uses the same shared lock as production grading, so only one capture workflow can own the proxy at a time. `/cancel` is also cooperative here and returns `409` if a different service owns the active lock.
 
 ### camera_heating.py
 
@@ -115,9 +119,11 @@ Thermostat for camera enclosure heaters:
 
 Lightweight JWT verifier for Caddy's `forward_auth`:
 
-- Fetches RSA public key from EC2's JWKS endpoint via Tailscale on startup
+- Fetches RSA public key from an ordered `AUTH_JWKS_URLS` list on startup
 - Caches key, refreshes hourly
-- Validates JWT from `Authorization: Bearer` header or `?token=` query param (for MJPEG streams loaded via `<img>` tags)
+- Validates JWT from `Authorization: Bearer` for normal API traffic
+- Issues short-lived opaque tickets for stream and debug image requests loaded by the browser
+- Supports temporary legacy `?token=` query bearer only behind `ALLOW_LEGACY_QUERY_BEARER`
 - Returns 200 (allow) or 401 (deny) - Caddy only checks the status code
 
 ### display.py
@@ -146,9 +152,9 @@ Stored in `/home/pi/goatdev/pi/.env`:
 | `EC2_GOAT_API`       | Full URL to goat-api over Tailscale                               |
 | `API_KEY`            | API key matching goat-api's `API_KEY` (sent via X-API-Key header) |
 | `S3_TRAINING_BUCKET` | S3 bucket for training data uploads                               |
-| `AUTH_JWKS_URL`      | Legacy single JWKS endpoint (fallback if `AUTH_JWKS_URLS` unset)  |
+| `AUTH_JWKS_URL`      | Legacy single JWKS endpoint (fallback if `AUTH_JWKS_URLS` unset) |
 | `AUTH_JWKS_URLS`     | Ordered JWKS endpoints, private/Tailscale first and public second |
-| `ALLOW_LEGACY_QUERY_BEARER` | Temporary rollout flag for `?token=` query bearer support |
+| `ALLOW_LEGACY_QUERY_BEARER` | Rollout compatibility flag for `?token=` query bearer support |
 | `SITE_DOMAIN`        | Caddy domain for Tailscale TLS cert                               |
 
 ## Deployment
