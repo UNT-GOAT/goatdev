@@ -12,7 +12,8 @@ import boto3
 import os
 import threading
 
-from fastapi import APIRouter, HTTPException, Request
+from decimal import Decimal
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, create_model
 from typing import Optional
 from datetime import date
@@ -82,7 +83,41 @@ def _s3_cleanup(serial_id: int):
         print(f"[s3] Cleanup failed for {serial_id}: {e}")
 
 
-def build_animal_router(table: str) -> APIRouter:
+def _normalize_compare_value(value):
+    if isinstance(value, Decimal):
+        return value.normalize()
+    if isinstance(value, float):
+        return Decimal(str(value)).normalize()
+    if isinstance(value, date):
+        return value.isoformat()
+    return value
+
+
+def _matches_non_null_fields(existing_row, incoming: dict) -> bool:
+    for key, value in incoming.items():
+        if value is None:
+            continue
+        if _normalize_compare_value(existing_row.get(key)) != _normalize_compare_value(value):
+            return False
+    return True
+
+
+async def _sync_animals_sequence(conn):
+    await conn.execute(
+        """
+        SELECT setval(
+            pg_get_serial_sequence('animals', 'serial_id'),
+            GREATEST(
+                (SELECT COALESCE(MAX(serial_id), 0) FROM animals),
+                (SELECT last_value FROM animals_serial_id_seq)
+            ),
+            true
+        )
+        """
+    )
+
+
+def build_animal_router(table: str, *, allow_explicit_serial: bool = False) -> APIRouter:
     """Build a full CRUD router for an animal table."""
     router = APIRouter()
     fields = TABLE_FIELDS[table]
@@ -92,11 +127,11 @@ def build_animal_router(table: str) -> APIRouter:
     # Build pydantic models dynamically based on table fields
     field_defs = {f: ANIMAL_FIELDS[f] for f in fields}
 
-    # No serial_id on create — always auto-assigned
-    CreateModel = create_model(
-        f"{singular.title()}Create",
-        **field_defs,
-    )
+    create_defs = dict(field_defs)
+    if allow_explicit_serial:
+        create_defs = {"serial_id": (Optional[int], None), **create_defs}
+
+    CreateModel = create_model(f"{singular.title()}Create", **create_defs)
 
     UpdateModel = create_model(
         f"{singular.title()}Update",
@@ -127,33 +162,81 @@ def build_animal_router(table: str) -> APIRouter:
             return dict(row)
 
     @router.post("", status_code=201)
-    async def create_animal(request: Request, body: CreateModel):
+    async def create_animal(request: Request, body: CreateModel, response: Response):
         pool = await get_conn(request)
         data = body.model_dump()
+        explicit_serial_id = data.pop("serial_id", None) if allow_explicit_serial else None
+
+        if explicit_serial_id is not None and explicit_serial_id <= 0:
+            raise HTTPException(400, "serial_id must be a positive integer")
 
         async with pool.acquire() as conn:
             async with conn.transaction():
-                # Auto-assign serial_id from animals table using MAX+1
-                row = await conn.fetchrow(
-                    """INSERT INTO animals (serial_id, species)
-                       VALUES ((SELECT COALESCE(MAX(serial_id), 0) + 1 FROM animals), $1)
-                       RETURNING serial_id""",
-                    species,
-                )
-                serial_id = row["serial_id"]
+                if explicit_serial_id is None:
+                    animal_row = await conn.fetchrow(
+                        """INSERT INTO animals (species)
+                           VALUES ($1)
+                           RETURNING serial_id""",
+                        species,
+                    )
+                    serial_id = animal_row["serial_id"]
+                else:
+                    serial_id = explicit_serial_id
+                    animal_row = await conn.fetchrow(
+                        """
+                        INSERT INTO animals (serial_id, species)
+                        VALUES ($1, $2)
+                        ON CONFLICT (serial_id) DO NOTHING
+                        RETURNING serial_id, species
+                        """,
+                        serial_id,
+                        species,
+                    )
+                    if animal_row is None:
+                        animal_row = await conn.fetchrow(
+                            "SELECT serial_id, species FROM animals WHERE serial_id = $1",
+                            serial_id,
+                        )
+                        if not animal_row:
+                            raise HTTPException(500, "Failed to reserve requested serial_id")
+                        if animal_row["species"] != species:
+                            raise HTTPException(
+                                409,
+                                f"serial_id {serial_id} already belongs to {animal_row['species']}",
+                            )
+                    else:
+                        await _sync_animals_sequence(conn)
 
-                # Build species-specific insert
-                data["serial_id"] = serial_id
-                cols = [k for k, v in data.items() if v is not None]
-                vals = [data[k] for k in cols]
+                insert_data = {"serial_id": serial_id, **data}
+                cols = [k for k, v in insert_data.items() if v is not None]
+                vals = [insert_data[k] for k in cols]
                 placeholders = ", ".join(f"${i+1}" for i in range(len(cols)))
                 col_names = ", ".join(cols)
 
                 row = await conn.fetchrow(
-                    f"INSERT INTO {table} ({col_names}) VALUES ({placeholders}) RETURNING *",
+                    f"""
+                    INSERT INTO {table} ({col_names})
+                    VALUES ({placeholders})
+                    ON CONFLICT (serial_id) DO NOTHING
+                    RETURNING *
+                    """,
                     *vals,
                 )
-                return dict(row)
+                if row:
+                    return dict(row)
+
+                existing = await conn.fetchrow(
+                    f"SELECT * FROM {table} WHERE serial_id = $1",
+                    serial_id,
+                )
+                if existing and _matches_non_null_fields(dict(existing), data):
+                    response.status_code = 200
+                    return dict(existing)
+
+                raise HTTPException(
+                    409,
+                    f"{singular.title()} #{serial_id} already exists with conflicting data",
+                )
 
     @router.put("/{serial_id}")
     async def update_animal(request: Request, serial_id: int, body: UpdateModel):

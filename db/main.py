@@ -32,6 +32,38 @@ async def get_pool() -> asyncpg.Pool:
     return pool
 
 
+async def _abort_on_duplicate_grade_results(conn: asyncpg.Connection):
+    table_exists = await conn.fetchval("SELECT to_regclass('public.grade_results') IS NOT NULL")
+    if not table_exists:
+        return
+
+    duplicates = await conn.fetch(
+        """
+        SELECT
+            serial_id,
+            COUNT(*) AS row_count,
+            ARRAY_AGG(id ORDER BY graded_at DESC NULLS LAST, id DESC) AS row_ids
+        FROM grade_results
+        GROUP BY serial_id
+        HAVING COUNT(*) > 1
+        ORDER BY serial_id
+        """
+    )
+    if not duplicates:
+        return
+
+    print("[herdsync-db] Duplicate grade_results detected — refusing startup")
+    for row in duplicates:
+        print(
+            f"[herdsync-db] serial_id={row['serial_id']} "
+            f"count={row['row_count']} row_ids={row['row_ids']}"
+        )
+    raise RuntimeError(
+        "Duplicate grade_results rows exist. Resolve duplicates before enabling "
+        "the grade_results(serial_id) unique index."
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global pool
@@ -44,6 +76,7 @@ async def lifespan(app: FastAPI):
 
     # Apply schema on startup (idempotent)
     async with pool.acquire() as conn:
+        await _abort_on_duplicate_grade_results(conn)
         schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
         if os.path.exists(schema_path):
             with open(schema_path, "r") as f:

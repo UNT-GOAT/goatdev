@@ -1,8 +1,12 @@
 """
 Animals route — unified serial_id assignment across all species.
 
-POST /animals with {"species": "goat"} assigns the next serial_id.
-The frontend calls this first, then creates the species-specific record.
+POST /animals with {"species": "goat"} creates an animals row using the
+database-owned sequence.
+
+POST /animals/allocate reserves the next sequence value without creating a row.
+The grading flow uses that value as a durable serial_id for the subsequent
+species-specific create.
 """
 
 from fastapi import APIRouter, HTTPException, Request
@@ -21,27 +25,47 @@ class AnimalCreate(BaseModel):
 
 @router.post("", status_code=201)
 async def create_animal(request: Request, body: AnimalCreate):
-    """Assign the next serial_id for a new animal."""
+    """Create a new animal row using the database-owned sequence."""
     if body.species not in VALID_SPECIES:
         raise HTTPException(400, f"Invalid species. Must be one of: {', '.join(VALID_SPECIES)}")
 
     pool = await get_conn(request)
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            """INSERT INTO animals (serial_id, species)
-               VALUES ((SELECT COALESCE(MAX(serial_id), 0) + 1 FROM animals), $1)
+            """INSERT INTO animals (species)
+               VALUES ($1)
                RETURNING serial_id, species, created_at""",
             body.species,
         )
         return dict(row)
 
 
-@router.get("/next")
-async def peek_next_id(request: Request):
-    """Preview what the next serial_id will be (without assigning it)."""
+@router.post("/allocate", status_code=201)
+async def allocate_serial_id(request: Request):
+    """Reserve the next serial_id from the animals sequence without inserting."""
     pool = await get_conn(request)
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT COALESCE(MAX(serial_id), 0) + 1 AS next_id FROM animals")
+        row = await conn.fetchrow(
+            """SELECT nextval(pg_get_serial_sequence('animals', 'serial_id')) AS serial_id"""
+        )
+        return {"serial_id": row["serial_id"]}
+
+
+@router.get("/next")
+async def peek_next_id(request: Request):
+    """Preview the next serial_id in the animals sequence (display-only)."""
+    pool = await get_conn(request)
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT
+                CASE
+                    WHEN is_called THEN last_value + 1
+                    ELSE last_value
+                END AS next_id
+            FROM animals_serial_id_seq
+            """
+        )
         return {"next_serial_id": row["next_id"]}
 
 

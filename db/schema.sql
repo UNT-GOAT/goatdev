@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS grade_results (
 );
 
 CREATE INDEX IF NOT EXISTS idx_grade_results_serial ON grade_results(serial_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_grade_results_serial_unique ON grade_results(serial_id);
 CREATE INDEX IF NOT EXISTS idx_grade_results_date ON grade_results(graded_at);
 
 ALTER TABLE grade_results

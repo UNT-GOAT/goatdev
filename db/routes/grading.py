@@ -217,8 +217,8 @@ async def update_grade_result(request: Request, result_id: int):
 @router.post("", status_code=201)
 async def create_grade_result(request: Request, body: GradeResultIn):
     """
-    Record a grading result. One result per animal — if a result already
-    exists for this serial_id, it is replaced (upsert).
+    Record a grading result. One result per animal — enforced by a unique
+    index on grade_results(serial_id) and persisted via a single upsert.
     Called by frontend after operator confirms.
     """
     pool = await get_conn(request)
@@ -256,43 +256,39 @@ async def create_grade_result(request: Request, body: GradeResultIn):
             manual_override_history = existing_history
         manual_override_history_json = json.dumps(manual_override_history)
 
-        if existing:
-            # Re-grade: replace existing result
-            row = await conn.fetchrow(
-                """UPDATE grade_results SET
-                    grade = $2, live_weight = $3, all_views_ok = $4, measurements = $5,
-                    grade_details = $6, manual_override_history = $7,
-                    side_raw_s3_key = $8, top_raw_s3_key = $9, front_raw_s3_key = $10,
-                    side_debug_s3_key = $11, top_debug_s3_key = $12, front_debug_s3_key = $13,
-                    capture_sec = $14, ec2_sec = $15, total_sec = $16, warnings = $17,
-                    graded_at = NOW()
-                   WHERE serial_id = $1
-                   RETURNING *""",
-                body.serial_id, body.grade, body.live_weight, body.all_views_ok,
-                measurements_json,
-                grade_details_json, manual_override_history_json,
-                body.side_raw_s3_key, body.top_raw_s3_key, body.front_raw_s3_key,
-                body.side_debug_s3_key, body.top_debug_s3_key, body.front_debug_s3_key,
-                body.capture_sec, body.ec2_sec, body.total_sec,
-                body.warnings,
-            )
-        else:
-            # First grade
-            row = await conn.fetchrow(
-                """INSERT INTO grade_results
-                   (serial_id, grade, live_weight, all_views_ok, measurements, grade_details, manual_override_history,
-                    side_raw_s3_key, top_raw_s3_key, front_raw_s3_key,
-                    side_debug_s3_key, top_debug_s3_key, front_debug_s3_key,
-                    capture_sec, ec2_sec, total_sec, warnings)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-                   RETURNING *""",
-                body.serial_id, body.grade, body.live_weight, body.all_views_ok,
-                measurements_json, grade_details_json, manual_override_history_json,
-                body.side_raw_s3_key, body.top_raw_s3_key, body.front_raw_s3_key,
-                body.side_debug_s3_key, body.top_debug_s3_key, body.front_debug_s3_key,
-                body.capture_sec, body.ec2_sec, body.total_sec,
-                body.warnings,
-            )
+        row = await conn.fetchrow(
+            """INSERT INTO grade_results
+               (serial_id, grade, live_weight, all_views_ok, measurements, grade_details, manual_override_history,
+                side_raw_s3_key, top_raw_s3_key, front_raw_s3_key,
+                side_debug_s3_key, top_debug_s3_key, front_debug_s3_key,
+                capture_sec, ec2_sec, total_sec, warnings)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+               ON CONFLICT (serial_id) DO UPDATE SET
+                   grade = EXCLUDED.grade,
+                   live_weight = EXCLUDED.live_weight,
+                   all_views_ok = EXCLUDED.all_views_ok,
+                   measurements = EXCLUDED.measurements,
+                   grade_details = EXCLUDED.grade_details,
+                   manual_override_history = EXCLUDED.manual_override_history,
+                   side_raw_s3_key = EXCLUDED.side_raw_s3_key,
+                   top_raw_s3_key = EXCLUDED.top_raw_s3_key,
+                   front_raw_s3_key = EXCLUDED.front_raw_s3_key,
+                   side_debug_s3_key = EXCLUDED.side_debug_s3_key,
+                   top_debug_s3_key = EXCLUDED.top_debug_s3_key,
+                   front_debug_s3_key = EXCLUDED.front_debug_s3_key,
+                   capture_sec = EXCLUDED.capture_sec,
+                   ec2_sec = EXCLUDED.ec2_sec,
+                   total_sec = EXCLUDED.total_sec,
+                   warnings = EXCLUDED.warnings,
+                   graded_at = NOW()
+               RETURNING *""",
+            body.serial_id, body.grade, body.live_weight, body.all_views_ok,
+            measurements_json, grade_details_json, manual_override_history_json,
+            body.side_raw_s3_key, body.top_raw_s3_key, body.front_raw_s3_key,
+            body.side_debug_s3_key, body.top_debug_s3_key, body.front_debug_s3_key,
+            body.capture_sec, body.ec2_sec, body.total_sec,
+            body.warnings,
+        )
 
         # Sync grade to species table
         if body.grade:
