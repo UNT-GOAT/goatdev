@@ -1,6 +1,17 @@
 #!/bin/bash
 set -e
-docker image prune -af --filter "until=24h"
+
+prune_output=""
+if ! prune_output=$(docker image prune -af --filter "until=24h" 2>&1); then
+  if grep -qi "a prune operation is already running" <<< "$prune_output"; then
+    echo "Skipping docker image prune: another prune operation is already running"
+  else
+    echo "$prune_output"
+    exit 1
+  fi
+elif [ -n "$prune_output" ]; then
+  echo "$prune_output"
+fi
 
 aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 937249941844.dkr.ecr.us-east-2.amazonaws.com
 
