@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+LOCK_FILE="/tmp/herdsync-ec2-deploy.lock"
+exec 9>"$LOCK_FILE"
+echo "Waiting for EC2 deploy lock..."
+flock 9
+echo "Acquired EC2 deploy lock"
+
 prune_output=""
 if ! prune_output=$(docker image prune -af --filter "until=24h" 2>&1); then
   if grep -qi "a prune operation is already running" <<< "$prune_output"; then
