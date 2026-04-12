@@ -153,11 +153,13 @@ jobs:
     secrets: inherit
 
   deploy-db:
-    needs: [detect-changes, deploy-auth]
-    if: ${{ always() && needs.detect-changes.outputs.db == 'true' && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') }}
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.db == 'true' }}
     uses: ./.github/workflows/deploy-db.yml
     secrets: inherit
 
+  # db-proxy is the only EC2 service with real runtime dependencies on both
+  # auth and db, so keep it serialized behind those two deploys.
   deploy-db-proxy:
     needs: [detect-changes, deploy-auth, deploy-db]
     if: ${{ always() && needs.detect-changes.outputs.db_proxy == 'true' && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') && (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') }}
@@ -165,19 +167,21 @@ jobs:
     secrets: inherit
 
   deploy-goat-api:
-    needs: [detect-changes, deploy-auth, deploy-db, deploy-db-proxy]
-    if: ${{ always() && needs.detect-changes.outputs.api == 'true' && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') && (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') && (needs.deploy-db-proxy.result == 'success' || needs.deploy-db-proxy.result == 'skipped') }}
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.api == 'true' }}
     uses: ./.github/workflows/deploy-goat-api.yml
     secrets: inherit
 
   deploy-frontend:
-    needs: [detect-changes, deploy-auth, deploy-db, deploy-db-proxy, deploy-goat-api]
-    if: ${{ always() && needs.detect-changes.outputs.frontend == 'true' && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') && (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') && (needs.deploy-db-proxy.result == 'success' || needs.deploy-db-proxy.result == 'skipped') && (needs.deploy-goat-api.result == 'success' || needs.deploy-goat-api.result == 'skipped') }}
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.frontend == 'true' }}
     uses: ./.github/workflows/deploy-frontend.yml
     secrets: inherit
 
+  # Pi talks to auth (JWKS) and goat-api at runtime, but it does not need to
+  # wait for db, db-proxy, or frontend deploys.
   deploy-pi:
-    needs: [detect-changes, deploy-auth, deploy-db, deploy-db-proxy, deploy-goat-api, deploy-frontend]
-    if: ${{ always() && needs.detect-changes.outputs.pi == 'true' && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') && (needs.deploy-db.result == 'success' || needs.deploy-db.result == 'skipped') && (needs.deploy-db-proxy.result == 'success' || needs.deploy-db-proxy.result == 'skipped') && (needs.deploy-goat-api.result == 'success' || needs.deploy-goat-api.result == 'skipped') && (needs.deploy-frontend.result == 'success' || needs.deploy-frontend.result == 'skipped') }}
+    needs: [detect-changes, deploy-auth, deploy-goat-api]
+    if: ${{ always() && needs.detect-changes.outputs.pi == 'true' && (needs.deploy-auth.result == 'success' || needs.deploy-auth.result == 'skipped') && (needs.deploy-goat-api.result == 'success' || needs.deploy-goat-api.result == 'skipped') }}
     uses: ./.github/workflows/deploy-pi.yml
     secrets: inherit
