@@ -72,6 +72,7 @@ jobs:
 
       - uses: dorny/paths-filter@v3
         id: filter
+        if: ${{ github.event_name == 'push' }}
         with:
           filters: |
             auth:
@@ -104,12 +105,20 @@ jobs:
       - name: Resolve effective deploy targets
         id: effective
         run: |
-          auth_changed='${{ steps.filter.outputs.auth }}'
-          db_changed='${{ steps.filter.outputs.db }}'
-          db_proxy_changed='${{ steps.filter.outputs.db_proxy }}'
-          api_changed='${{ steps.filter.outputs.api }}'
-          frontend_changed='${{ steps.filter.outputs.frontend }}'
-          pi_changed='${{ steps.filter.outputs.pi }}'
+          normalize_bool() {
+            if [ "$1" = 'true' ]; then
+              echo 'true'
+            else
+              echo 'false'
+            fi
+          }
+
+          auth_changed=$(normalize_bool '${{ steps.filter.outputs.auth }}')
+          db_changed=$(normalize_bool '${{ steps.filter.outputs.db }}')
+          db_proxy_changed=$(normalize_bool '${{ steps.filter.outputs.db_proxy }}')
+          api_changed=$(normalize_bool '${{ steps.filter.outputs.api }}')
+          frontend_changed=$(normalize_bool '${{ steps.filter.outputs.frontend }}')
+          pi_changed=$(normalize_bool '${{ steps.filter.outputs.pi }}')
 
           if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
             deploy_all='${{ inputs.deploy_all }}'
