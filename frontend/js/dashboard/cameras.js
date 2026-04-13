@@ -105,6 +105,15 @@
         clearTimeout(img._wsTimeout);
         clearTimeout(img._wsRetryTimer);
 
+        if (!piConnected) {
+          img.removeAttribute("src");
+          if (offlineEl) {
+            offlineEl.textContent = "Waiting for grader...";
+            offlineEl.style.display = "";
+          }
+          return;
+        }
+
         // Standard MJPEG stream
         HerdAuth.setPiImageSource(img, {
           kind: "stream",

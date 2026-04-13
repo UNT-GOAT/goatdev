@@ -138,6 +138,16 @@
       }
 
       function _connectFocusStream(img, cam, offlineEl) {
+        if (!piConnected) {
+          img.removeAttribute("src");
+          img.style.display = "none";
+          if (offlineEl) {
+            offlineEl.textContent = "Waiting for grader...";
+            offlineEl.style.display = "";
+          }
+          updateCamStatus(cam, "Offline", true);
+          return;
+        }
         img.style.display = "";
         HerdAuth.setPiImageSource(img, {
           kind: "stream",

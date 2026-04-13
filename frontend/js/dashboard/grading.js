@@ -367,13 +367,9 @@
         const hint = document.getElementById("gradeSerialHint");
         const input = document.getElementById("gradeSerial");
         const btn = document.getElementById("gradeBtn");
-        hint.textContent = "Fetching next ID...";
-        hint.className = "field-hint";
-        input.value = "";
-        btn.disabled = true;
-        nextGradeId = await fetchNextGlobalId();
-        input.value = nextGradeId;
-        hint.textContent = "";
+        nextGradeId = null;
+        input.value = "Assigned when grading starts";
+        hint.textContent = "Auto-assigned for new animals";
         hint.className = "field-hint valid";
         btn.disabled = !piConnected;
         populateProviderSelect(document.getElementById("gradeProv"));
@@ -418,7 +414,7 @@
           gradeLog("Grader is offline.", "err");
           return;
         }
-        let serialId = _gradeExistingId || nextGradeId;
+        let serialId = _gradeExistingId || _gradeReservedId || null;
         const species = document.getElementById("gradeSpecies").value;
         const desc = document.getElementById("gradeDesc").value;
         const lw = parseFloat(document.getElementById("gradeWeight").value);
@@ -853,7 +849,7 @@
         document.getElementById("devGradeBtn").disabled = count < 3;
       }
       async function startDevGrade() {
-        let serialId = _gradeExistingId || nextGradeId;
+        let serialId = _gradeExistingId || _gradeReservedId || null;
         const lw = parseFloat(document.getElementById("gradeWeight").value);
         if (!lw || lw <= 0) {
           showToast("error", "Enter a valid live weight");
