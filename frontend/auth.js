@@ -223,10 +223,31 @@ const HerdAuth = (() => {
         return resp.json();
     }
 
+    function buildPiResourceKey(config) {
+        const view = String(config.view || '').trim().toLowerCase();
+        if (!view) return null;
+        if (config.kind === 'stream') {
+            return `stream:${view}`;
+        }
+        if (config.kind === 'debug' && config.serialId != null) {
+            return `debug:${String(config.serialId)}:${view}`;
+        }
+        return null;
+    }
+
     async function getPiImageUrl(config) {
         const ticket = await createPiTicket(config.kind, config.view, config.serialId);
         const url = new URL(ticket.resource, window.location.origin);
         url.searchParams.set('ticket', ticket.ticket);
+        const resourceKey = ticket.resource_key || buildPiResourceKey(config);
+        if (resourceKey) {
+            url.searchParams.set('rk', resourceKey);
+        }
+        url.searchParams.set('kind', config.kind);
+        url.searchParams.set('view', config.view);
+        if (config.serialId != null) {
+            url.searchParams.set('serial_id', String(config.serialId));
+        }
         if (config.cacheBust !== false) {
             url.searchParams.set('t', Date.now().toString());
         }

@@ -10,6 +10,7 @@ from urllib.parse import urlparse, parse_qs
 from flask import Flask, request, jsonify
 import base64
 import os
+import re
 import secrets
 import sys
 import threading
@@ -130,15 +131,36 @@ def _issue_ticket(resource: str) -> dict:
     }
 
 
-def _validate_ticket(ticket: str, requested_resource: str):
+def _validate_ticket(
+    ticket: str,
+    *,
+    requested_resource: Optional[str] = None,
+    requested_key: Optional[str] = None,
+):
     _cleanup_expired_tickets()
     with _ticket_lock:
         entry = _tickets.get(ticket)
     if not entry:
         return False, "Invalid or expired ticket"
-    if _resource_key(entry["resource"]) != _resource_key(requested_resource):
+    effective_requested_key = requested_key or _resource_key(requested_resource or "")
+    if not effective_requested_key:
+        return False, "Ticket is not valid for this resource"
+    if _resource_key(entry["resource"]) != effective_requested_key:
         return False, "Ticket is not valid for this resource"
     return True, None
+
+
+def _validate_resource_key(value: str) -> Optional[str]:
+    value = (value or "").strip()
+    if not value:
+        return None
+    if re.fullmatch(r"stream:(side|top|front)", value):
+        return value
+    match = re.fullmatch(r"debug:([A-Za-z0-9_-]{1,50}):(side|top|front)", value)
+    if match:
+        serial_id = _sanitize_serial_id(match.group(1))
+        return f"debug:{serial_id}:{match.group(2)}"
+    return None
 
 
 def _resource_key(path: str) -> Optional[str]:
@@ -178,6 +200,30 @@ def _requested_resource_from_forwarded_uri():
         return None
     parsed = urlparse(forwarded_uri)
     return parsed.path or ""
+
+
+def _requested_resource_key(forwarded_uri: str, params: dict[str, list[str]]) -> Optional[str]:
+    parsed_key = _resource_key(urlparse(forwarded_uri).path or "")
+    if parsed_key:
+        return parsed_key
+
+    explicit_values = params.get("rk")
+    if explicit_values:
+        return _validate_resource_key(explicit_values[0])
+
+    kind = (params.get("kind") or [""])[0].strip().lower()
+    view = (params.get("view") or [""])[0].strip().lower()
+    if view not in VALID_VIEWS:
+        return None
+    if kind == "stream":
+        return f"stream:{view}"
+    if kind == "debug":
+        serial_id = (params.get("serial_id") or [""])[0]
+        try:
+            return f"debug:{_sanitize_serial_id(serial_id)}:{view}"
+        except ValueError:
+            return None
+    return None
 
 
 def fetch_public_key():
@@ -285,17 +331,22 @@ def verify():
     forwarded_uri = request.headers.get("X-Forwarded-Uri", "")
     params = parse_qs(urlparse(forwarded_uri).query) if "?" in forwarded_uri else {}
     requested_resource = _requested_resource_from_forwarded_uri()
+    requested_key = _requested_resource_key(forwarded_uri, params)
 
     ticket_values = params.get("ticket")
     if ticket_values:
-        if not requested_resource:
+        if not requested_resource and not requested_key:
             log.warn(
                 "ticket",
                 "Missing requested resource for ticket validation",
                 forwarded_uri=forwarded_uri,
             )
             return jsonify({"error": "Ticket is not valid for this resource"}), 401
-        ok, detail = _validate_ticket(ticket_values[0], requested_resource)
+        ok, detail = _validate_ticket(
+            ticket_values[0],
+            requested_resource=requested_resource,
+            requested_key=requested_key,
+        )
         if not ok:
             with _ticket_lock:
                 ticket_entry = _tickets.get(ticket_values[0])
@@ -304,7 +355,7 @@ def verify():
                 "Ticket validation failed",
                 forwarded_uri=forwarded_uri,
                 requested_resource=requested_resource,
-                requested_key=_resource_key(requested_resource),
+                requested_key=requested_key,
                 ticket_resource=(ticket_entry or {}).get("resource"),
                 ticket_key=_resource_key((ticket_entry or {}).get("resource", "")),
                 detail=detail,
@@ -352,6 +403,7 @@ def issue_ticket():
         return jsonify({"error": str(ex)}), 400
 
     ticket = _issue_ticket(resource)
+    ticket["resource_key"] = _resource_key(resource)
     ticket["user"] = payload.get("username")
     return jsonify(ticket), 201
 
