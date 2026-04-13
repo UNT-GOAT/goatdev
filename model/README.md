@@ -1,217 +1,71 @@
-# Model Portion of Goat Grading System
+# HerdSync Model System
 
-AI-powered body measurement system for automatic goat grading at Becky's slaughter facility. Captures measurements from three camera angles (side, top, front).
+This is the computer-vision measurement subsystem for HerdSync, built for goat grading at Becky's facility. It uses three camera views, YOLO segmentation, and per-view calibration to turn raw animal photos into repeatable body measurements that feed the grading workflow.
 
-## What Each Model Measures
+The goal of this part of the project is not just to detect a goat in an image. It is to produce measurements that a person can inspect, question, and trust. That is why each view has its own measurement logic, and why the system saves debug overlays showing exactly what the model measured.
 
-| View      | Measurements                             | Model Type                 |
-| --------- | ---------------------------------------- | -------------------------- |
-| **Side**  | Head height, Withers height, Rump height | Single-class (entire goat) |
-| **Top**   | Body width (torso, excludes head)        | Two-class (body + head)    |
-| **Front** | Chest/shoulder width                     | Two-class (body + head)    |
+## What Each View Measures
 
-## Project Structure
+| View | Measurements | Why this angle matters |
+| --- | --- | --- |
+| **Side** | Head height, withers height, rump height | Side view is the only angle that reliably shows vertical body landmarks from top of body to ground. |
+| **Top** | Shoulder width, waist width, rump width | Top view is best for comparing body widths along the animal's length without leg occlusion. |
+| **Front** | Chest/shoulder width | Front view captures chest spread and shoulder width that the top view cannot represent on its own. |
 
-```
-goatdev/
-└── model/                              # All ML/measurement code
-    ├── front/                          # Front view (chest width)
-    │   ├── best.pt                     # Trained model weights
-    │   ├── front_calibration_tool.py   # Manual calibration tool
-    │   ├── front_calibration.json      # Calibration results
-    │   └── front_yolo_measurements.py  # Measurement script
-    │
-    ├── side/                           # Side view (3 heights)
-    │   ├── best.pt
-    │   ├── side_calibration_tool.py
-    │   ├── side_calibration.json
-    │   └── side_yolo_measurements.py
-    │
-    ├── top/                            # Top view (body width)
-    │   ├── best.pt
-    │   ├── top_calibration_tool.py
-    │   ├── top_calibration.json
-    │   └── top_yolo_measurements.py
-    │
-    ├── images/                         # Raw images from Becky
-    │   ├── front/
-    │   ├── side/
-    │   ├── top/
-    │   ├── all_goats_grouped/          # Every image sorted by goat
-    │   │   ├── weights.json            # Weights associated with each goat by number
-    │   │   ├── 1/...
-    │   │   └── ...
-    │   ├── test_goats_groups/          # Used by mock_batch_process.py, only contains test pictures
-    │   │   ├── weights.json
-    │   │   ├── 1/...
-    │   │   └── ...
-    │   └── readme_example_pics/        # Example debug outputs for readme
-    │
-    ├── mock_batch_process.py           # Mocks processing of goats with all model combined
-    ├── augment.py                      # Script for train/ data augmentation
-    ├── venv/                           # Python env, set this up to run
-    ├── requirements.txt                # Python dependencies
-    ├── .gitignore
-    └── MODEL-README.md                 # This file
-```
+## How Measurement Works
 
-## How to Run
+Each image goes through the same high-level pipeline:
 
-### First Setup Your Environment
+1. A YOLO segmentation model isolates the goat from the background.
+2. Calibration converts pixel distances into centimeters for that camera view.
+3. View-specific geometry extracts measurements from the mask.
+4. The batch processor merges all three views into one goat record with measurements, confidence scores, and any per-view failures.
 
-```bash
-cd model/
+The three views are intentionally different. The side model looks for vertical distances at anatomical regions along the body. The production top-view pipeline extracts width measurements at anatomical positions such as shoulder, waist, and rump. The front model measures chest width from the front-facing silhouette.
 
-python3 -m venv venv
-source venv/bin/activate
-pip3 install -r requirements.txt
-```
+For the top and front models, separating body and head masks matters a lot. If the head gets included in the torso silhouette, width measurements can become misleading, especially when a goat turns its head sideways. Treating the head as a separate class reduces that problem and makes the measurement more anatomically meaningful.
 
-### **1. Full Batch Goat Processing (recommended)**
+## Why The Model Is Interpretable
 
-Runs **side/top/front** models for every goat in `images/grouped_by_goat/`, merges results, attaches weights, and outputs batch_results.json
-
-```bash
-cd model/
-
-python mock_batch_process.py \
-  --path images/grouped_by_goat \
-  --output batch_results.json \
-  --debug
-```
-
-### **2. Running Models Individually**
-
-Each angle can still be run and tested on its own. See the top of each \*\_yolo_measurements.py for angle-specific notes.
-
-**SIDE VIEW:**
-
-```bash
-cd model/side
-
-python side_yolo_measurements.py \
-  --model best.pt \
-  --calibration side_calibration.json \
-  --batch YOLO_MODEL/test/images/ \
-  --debug
-```
-
-**TOP VIEW:**
-
-```bash
-cd model/top
-
-python top_yolo_measurements.py \
-  --model best.pt \
-  --calibration top_calibration.json \
-  --batch YOLO_MODEL/test/images/ \
-  --debug
-```
-
-**FRONT VIEW:**
-
-```bash
-cd model/front
-
-python front_yolo_measurements.py \
-  --model best.pt \
-  --calibration front_calibration.json \
-  --batch YOLO_MODEL/test/images/ \
-  --debug
-```
-
-## Model Output Examples
+The system saves debug images because confidence alone is not enough. A high-confidence prediction is only useful if the measured line is actually drawn across the right part of the goat.
 
 ### Side View
 
 <img src="images/readme_example_pics/side_debug.jpg" alt="side debug image" width="800"/>
 
-**Masks:** Single-class segmentation (goat body only)
-
-**Measurements:**
-
-- **Head height** (red line at top)
-- **Withers height** (green line at mid-back)
-- **Rump height** (blue line at rear)
+The side overlay shows three vertical measurements taken from different horizontal sections of the body. This makes it easy to verify whether the model is actually measuring head height, withers height, and rump height rather than just drawing lines on a broad bounding box.
 
 ### Top View
 
 <img src="images/readme_example_pics/top_debug.jpg" alt="top debug image" width="800"/>
 
-A great example of why seperate head masking is needed:
-
 <img src="images/readme_example_pics/top_debug2.jpg" alt="top debug image2" width="800"/>
 
-**Masks:** Two-class segmentation (body + head separately)
-
-- **Purple overlay:** Body mask
-- **Green overlay:** Head mask
-
-**Measurements:**
-
-- **Body axis** (noted to help with width calculation, asserts 90°)
-- **Body width** (red horizontal line with caps)
-
-The magenta vertical lines show the detected torso region where measurements are taken. By separating head and body masks, the system avoids measuring head width when goats turn their heads sideways. Only the widest part of the torso is measured.
+The top overlay is useful because it shows how the model reasons about width along the body rather than treating the animal as a single undifferentiated shape. The separate body and head masks are important here because a turned head can easily distort a width measurement if the whole animal is treated as one blob.
 
 ### Front View
 
 <img src="images/readme_example_pics/front_debug.jpg" alt="front debug image" width="800"/>
 
-**Masks:** Two-class segmentation (body + head separately)
+The front overlay focuses on chest and shoulder width within the torso region. As with the top view, splitting head and body masks helps avoid measuring the head instead of the chest when the animal is not perfectly aligned.
 
-- **Purple overlay:** Body mask
-- **Green overlay:** Head mask
+## Example Combined Output
 
-**Measurements:**
-
-- **Chest/shoulder width** (red vertical line with caps)
-
-The magenta horizontal lines mark the torso scan region. Like top view, separating body and head masks ensures accurate chest measurements regardless of head position.
-
-## How It Was Built
-
-### Data Labeling
-
-For each angle, I took the full image set to Roboflow, a great platform for image segmentation masking and manually masked each image. I then exported each data set (angle) in about a 80/10/10 train/valid/test split.
-
-### Data Augmentation
-
-Since there's so little data, I then used my augment.py script to only augment the train split for each angle. This multiplied the training data by about 20 and VASTLY improved model confidence.
-
-**Augmentation techniques:**
-
-- Horizontal flip
-- Scale
-- Shift
-- Noise
-- Rotation (±3°)
-- Brightness adjustment (±20%)
-
-### Training
-
-I then exported each of these full data sets to their own Google Colab notebook. I signed up for pro to use their big papa A100 GPU runtime and trained each model for about 200 epochs. Took about 30mins each go. Almost blew up my mac before figuring out Colab is a great resource for this. Each of these notebooks then gave me a best.pt that I could then bring back to my IDE to run locally.
-
-### Measurement Calibration
-
-Uses manual calibrations from (top/side/front)\_calibration_tool.py in each respective folder, which measures various points of the images that the user is prompted to click on, and averages the distances. This is a temporary solution until we have permanent camera fixtures.
-
-**Known dimension:** Chute internal width: 40.64 cm (16 inches)
-
-## Output Format
-
-### Full Batch Processing (all models together)
+The combined output below reflects the live API response shape defined in [`goat-api/api/models.py`](/Users/ethantenclay/Desktop/goatdev/goat-api/api/models.py) and assembled in [`goat-api/api/main.py`](/Users/ethantenclay/Desktop/goatdev/goat-api/api/main.py). Individual per-view scripts still emit their own JSON, but the production system consumes and returns a combined analysis object.
 
 ```json
 {
-  "goat_id": "4",
+  "serial_id": "4",
   "timestamp": "2025-12-03T23:13:48.926722",
-  "weight_lbs": 55,
+  "live_weight_lbs": 55,
   "measurements": {
     "head_height_cm": 72.73,
     "withers_height_cm": 53.09,
     "rump_height_cm": 55.47,
-    "top_body_width_cm": 34.51,
+    "shoulder_width_cm": 34.51,
+    "waist_width_cm": 31.84,
+    "rump_width_cm": 35.02,
+    "top_body_width_cm": null,
     "front_body_width_cm": 32.31,
     "avg_body_width_cm": 33.41
   },
@@ -220,69 +74,48 @@ Uses manual calibrations from (top/side/front)\_calibration_tool.py in each resp
     "top": 0.969,
     "front": 0.959
   },
+  "grade": "Choice",
+  "grade_details": {
+    "category": "goat_meat"
+  },
+  "view_errors": null,
+  "warnings": null,
   "all_views_successful": true,
   "success": true
 }
 ```
 
-### Side View JSON
+This output is designed to be useful both to the grading pipeline and to a human reviewer. It keeps the raw measurements, per-view confidence scores, grading result, and enough status information to show whether one camera angle failed or a fallback path was used.
 
-```json
-{
-  "filename": "IMG_xxx.jpg",
-  "success": true,
-  "image_width": 4080,
-  "image_height": 3072,
-  "calibration_method": "manual",
-  "pixels_per_cm": 24.34,
-  "yolo_confidence": 0.951,
-  "body_length_cm": 97.42,
-  "length_to_height_ratio": 1.453,
-  "head_height_cm": 67.06,
-  "withers_height_cm": 52.31,
-  "rump_height_cm": 56.95,
-  "body_area_square_cm": 2674.53,
-  "debug_image": "debug/debug_IMG_xxx.jpg"
-}
-```
+## How I Built It
 
-### Top View JSON
+I built this from a relatively small real-world image set captured at the facility. For each angle, I uploaded the images to Roboflow and manually masked the animals for segmentation. After labeling, I exported each angle as its own dataset with roughly an 80/10/10 train, validation, and test split.
 
-```json
-{
-  "filename": "IMG_xxx.jpg",
-  "success": true,
-  "image_width": 4080,
-  "image_height": 3072,
-  "calibration_method": "manual",
-  "pixels_per_cm": 25.4,
-  "yolo_confidence": 0.45,
-  "body_width_cm": 32.1,
-  "body_length_cm": 95.3,
-  "body_area_square_cm": 2850.2,
-  "length_to_width_ratio": 2.97,
-  "debug_image": "debug/debug_IMG_xxx.jpg"
-}
-```
+Because the dataset was small, augmentation ended up being a major part of the process. I used [`augment.py`](/Users/ethantenclay/Desktop/goatdev/model/augment.py) to augment only the training split for each angle. That expanded the usable training set by roughly 20x and made a noticeable difference in model confidence and consistency.
 
-### Front View JSON
+Training locally stopped making sense pretty quickly, so I moved the actual model training to Google Colab. I used the paid A100 runtime, trained each view-specific model for roughly 200 epochs, and then brought the resulting `best.pt` weights back into this repo for local measurement and testing.
 
-```json
-{
-  "filename": "IMG_xxx.jpg",
-  "success": true,
-  "image_width": 4080,
-  "image_height": 3072,
-  "calibration_method": "manual",
-  "pixels_per_cm": 22.07,
-  "yolo_confidence": 0.916,
-  "max_width_pixels": 815,
-  "max_width_row": 1152,
-  "body_width_cm": 36.94,
-  "body_area_square_cm": 1608.07,
-  "debug_image": "debug/debug_IMG_xxx.jpg"
-}
-```
+Calibration is still handled manually for each view. The calibration tools ask the user to click known reference distances in the images, average those samples, and store a pixels-per-centimeter value in a JSON file. That is a practical workaround for the current deployment environment, where camera placement is not yet fixed enough to hardcode calibration once and forget it.
 
-These outputs a debug folder with images showing the segmentation mask and measurement lines drawn on the image for visual verification.
-mock_batch_process.py saves these debug images to model/batch_debug/
+## What I Learned
+
+- Small datasets can still work well for this kind of task, but only if augmentation is taken seriously.
+- Top and front width measurements needed explicit head-vs-body separation to stay believable.
+- Debug overlays became one of the most important validation tools because they show whether the model measured the right anatomy, not just whether it detected a goat.
+- Calibration is not just a software concern here. It reflects a real physical constraint in how the cameras are mounted and how consistent the chute setup is day to day.
+- The most useful output is not just a prediction. It is a measurement with enough visual evidence that someone at the facility could inspect it and understand why the system reached that number.
+
+## Current Limitations
+
+- Calibration is still manual and temporary.
+- Measurement quality depends on camera consistency and chute setup.
+- The training dataset is still relatively small.
+- Unusual pose or head position can still create width edge cases, especially when one view is noisier than the others.
+
+## Important Files
+
+- [`augment.py`](/Users/ethantenclay/Desktop/goatdev/model/augment.py): data augmentation script used to expand the training split.
+- [`side/side_yolo_measurements.py`](/Users/ethantenclay/Desktop/goatdev/model/side/side_yolo_measurements.py), [`top/top_yolo_measurements.py`](/Users/ethantenclay/Desktop/goatdev/model/top/top_yolo_measurements.py), [`front/front_yolo_measurements.py`](/Users/ethantenclay/Desktop/goatdev/model/front/front_yolo_measurements.py): view-specific measurement logic.
+- [`side/side_calibration_tool.py`](/Users/ethantenclay/Desktop/goatdev/model/side/side_calibration_tool.py), [`top/top_calibration_tool.py`](/Users/ethantenclay/Desktop/goatdev/model/top/top_calibration_tool.py), [`front/front_calibration_tool.py`](/Users/ethantenclay/Desktop/goatdev/model/front/front_calibration_tool.py): manual calibration utilities for each camera angle.
+- [`goat-api/api/grader.py`](/Users/ethantenclay/Desktop/goatdev/goat-api/api/grader.py) and [`goat-api/api/models.py`](/Users/ethantenclay/Desktop/goatdev/goat-api/api/models.py): production measurement extraction and response contract used by the live grading API.
+- `images/all_goats_grouped/` and `weights.json`: grouped image sets and associated weights used for combined evaluation.
