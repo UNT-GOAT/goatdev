@@ -367,9 +367,13 @@
         const hint = document.getElementById("gradeSerialHint");
         const input = document.getElementById("gradeSerial");
         const btn = document.getElementById("gradeBtn");
-        nextGradeId = null;
-        input.value = "Assigned when grading starts";
-        hint.textContent = "Auto-assigned for new animals";
+        hint.textContent = "Fetching next ID...";
+        hint.className = "field-hint";
+        input.value = "";
+        btn.disabled = true;
+        nextGradeId = await fetchNextGlobalId();
+        input.value = nextGradeId;
+        hint.textContent = "";
         hint.className = "field-hint valid";
         btn.disabled = !piConnected;
         populateProviderSelect(document.getElementById("gradeProv"));

@@ -145,31 +145,19 @@ def _resource_key(path: str) -> Optional[str]:
     path = (path or "").strip()
     if not path:
         return None
-    parts = path.strip("/").split("/")
+    parts = [part for part in path.strip("/").split("/") if part]
 
-    if len(parts) == 4 and parts[:3] == ["api", "viewfocus", "stream"] and parts[3] in VALID_VIEWS:
-        return f"stream:{parts[3]}"
+    for i in range(len(parts) - 1):
+        if parts[i] == "stream" and parts[i + 1] in VALID_VIEWS:
+            return f"stream:{parts[i + 1]}"
 
-    if len(parts) == 2 and parts[0] == "stream" and parts[1] in VALID_VIEWS:
-        return f"stream:{parts[1]}"
-
-    if (
-        len(parts) == 5
-        and parts[:3] == ["api", "prod", "debug"]
-        and parts[4] in VALID_VIEWS
-    ):
-        try:
-            serial_id = _sanitize_serial_id(parts[3])
-        except ValueError:
-            return None
-        return f"debug:{serial_id}:{parts[4]}"
-
-    if len(parts) == 3 and parts[0] == "debug" and parts[2] in VALID_VIEWS:
-        try:
-            serial_id = _sanitize_serial_id(parts[1])
-        except ValueError:
-            return None
-        return f"debug:{serial_id}:{parts[2]}"
+    for i in range(len(parts) - 2):
+        if parts[i] == "debug" and parts[i + 2] in VALID_VIEWS:
+            try:
+                serial_id = _sanitize_serial_id(parts[i + 1])
+            except ValueError:
+                return None
+            return f"debug:{serial_id}:{parts[i + 2]}"
 
     return None
 

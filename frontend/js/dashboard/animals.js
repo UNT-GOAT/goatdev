@@ -245,8 +245,10 @@
       async function onAddAnimalTypeChange() {
         const type = document.getElementById("addAnimalType").value;
         const hint = document.getElementById("addAnimalSerialHint");
-        document.getElementById("addAnimalSerial").value = "Assigned on save";
-        hint.textContent = "Reserved only when the record is saved";
+        hint.textContent = "Fetching next ID...";
+        const nextId = await fetchNextGlobalId();
+        document.getElementById("addAnimalSerial").value = nextId;
+        hint.textContent = "Auto-assigned";
         const wrap = document.getElementById("addAnimalDescWrap");
         const descSel = document.getElementById("addAnimalDesc");
         if (DESCRIPTION_OPTIONS[type]) {
