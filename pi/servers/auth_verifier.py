@@ -136,21 +136,22 @@ def _validate_ticket(ticket: str, requested_resource: str):
         entry = _tickets.get(ticket)
     if not entry:
         return False, "Invalid or expired ticket"
-    if entry["resource"] != requested_resource:
+    if _resource_key(entry["resource"]) != _resource_key(requested_resource):
         return False, "Ticket is not valid for this resource"
     return True, None
 
 
-def _requested_resource_from_forwarded_uri():
-    forwarded_uri = request.headers.get("X-Forwarded-Uri", "")
-    if not forwarded_uri:
+def _resource_key(path: str) -> Optional[str]:
+    path = (path or "").strip()
+    if not path:
         return None
-    parsed = urlparse(forwarded_uri)
-    path = parsed.path or ""
     parts = path.strip("/").split("/")
 
     if len(parts) == 4 and parts[:3] == ["api", "viewfocus", "stream"] and parts[3] in VALID_VIEWS:
-        return f"/api/viewfocus/stream/{parts[3]}"
+        return f"stream:{parts[3]}"
+
+    if len(parts) == 2 and parts[0] == "stream" and parts[1] in VALID_VIEWS:
+        return f"stream:{parts[1]}"
 
     if (
         len(parts) == 5
@@ -161,9 +162,24 @@ def _requested_resource_from_forwarded_uri():
             serial_id = _sanitize_serial_id(parts[3])
         except ValueError:
             return None
-        return f"/api/prod/debug/{serial_id}/{parts[4]}"
+        return f"debug:{serial_id}:{parts[4]}"
+
+    if len(parts) == 3 and parts[0] == "debug" and parts[2] in VALID_VIEWS:
+        try:
+            serial_id = _sanitize_serial_id(parts[1])
+        except ValueError:
+            return None
+        return f"debug:{serial_id}:{parts[2]}"
 
     return None
+
+
+def _requested_resource_from_forwarded_uri():
+    forwarded_uri = request.headers.get("X-Forwarded-Uri", "")
+    if not forwarded_uri:
+        return None
+    parsed = urlparse(forwarded_uri)
+    return parsed.path or ""
 
 
 def fetch_public_key():
