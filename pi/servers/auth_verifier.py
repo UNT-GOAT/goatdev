@@ -147,9 +147,19 @@ def _resource_key(path: str) -> Optional[str]:
         return None
     parts = [part for part in path.strip("/").split("/") if part]
 
+    if len(parts) == 1 and parts[0] in VALID_VIEWS:
+        return f"stream:{parts[0]}"
+
     for i in range(len(parts) - 1):
         if parts[i] == "stream" and parts[i + 1] in VALID_VIEWS:
             return f"stream:{parts[i + 1]}"
+
+    if len(parts) == 2 and parts[1] in VALID_VIEWS:
+        try:
+            serial_id = _sanitize_serial_id(parts[0])
+        except ValueError:
+            return None
+        return f"debug:{serial_id}:{parts[1]}"
 
     for i in range(len(parts) - 2):
         if parts[i] == "debug" and parts[i + 2] in VALID_VIEWS:
@@ -279,9 +289,26 @@ def verify():
     ticket_values = params.get("ticket")
     if ticket_values:
         if not requested_resource:
+            log.warn(
+                "ticket",
+                "Missing requested resource for ticket validation",
+                forwarded_uri=forwarded_uri,
+            )
             return jsonify({"error": "Ticket is not valid for this resource"}), 401
         ok, detail = _validate_ticket(ticket_values[0], requested_resource)
         if not ok:
+            with _ticket_lock:
+                ticket_entry = _tickets.get(ticket_values[0])
+            log.warn(
+                "ticket",
+                "Ticket validation failed",
+                forwarded_uri=forwarded_uri,
+                requested_resource=requested_resource,
+                requested_key=_resource_key(requested_resource),
+                ticket_resource=(ticket_entry or {}).get("resource"),
+                ticket_key=_resource_key((ticket_entry or {}).get("resource", "")),
+                detail=detail,
+            )
             return jsonify({"error": detail}), 401
         return jsonify({"status": "ok", "resource": requested_resource}), 200
 
