@@ -118,6 +118,13 @@
         document.getElementById(id).classList.add("open");
       }
       async function fetchNextGlobalId() {
+        if (
+          _pendingNewAnimalSession &&
+          _pendingNewAnimalSession.next_serial_id != null
+        ) {
+          _cachedNextId = _pendingNewAnimalSession.next_serial_id;
+          return _cachedNextId;
+        }
         try {
           const data = await dbFetch("/animals/next");
           _cachedNextId = data.next_serial_id || data.next_id || data;
@@ -129,26 +136,6 @@
           return _cachedNextId;
         }
       }
-      async function allocateNextGlobalId() {
-        const response = await HerdAuth.fetch("/db/animals/allocate", {
-          method: "POST",
-        });
-        if (!response.ok) {
-          const error = await response.json().catch(() => ({}));
-          throw new Error(
-            error.detail ||
-              error.message ||
-              "Could not reserve the next serial ID",
-          );
-        }
-        const data = await response.json();
-        const serialId =
-          data.serial_id || data.next_serial_id || data.next_id || data;
-        if (Number.isFinite(Number(serialId))) {
-          _cachedNextId = Number(serialId) + 1;
-        }
-        return serialId;
-      }
       function nextGlobalId() {
         return (
           _cachedNextId ||
@@ -156,6 +143,97 @@
             ? Math.max(...allAnimals.map((a) => a.serial_id)) + 1
             : 1)
         );
+      }
+      function syncPendingNewAnimalSession(session) {
+        _pendingNewAnimalSession = session || null;
+        _gradeSessionId = session ? session.id : null;
+        _gradeAnalysisKey = session ? session.analysis_key : null;
+        if (session && session.next_serial_id != null) {
+          _cachedNextId = session.next_serial_id;
+          nextGradeId = session.next_serial_id;
+        }
+        return _pendingNewAnimalSession;
+      }
+      function hasPendingNewAnimalSession() {
+        return (
+          !!_pendingNewAnimalSession &&
+          ["capturing", "review_pending", "finalizing"].includes(
+            _pendingNewAnimalSession.status,
+          )
+        );
+      }
+      function pendingNewAnimalGateMessage() {
+        return (
+          "Finish or discard the pending new-animal grade before creating another animal."
+        );
+      }
+      async function loadPendingNewAnimalSession() {
+        try {
+          const session = await dbFetch("/grading/sessions/pending");
+          return syncPendingNewAnimalSession(session);
+        } catch (err) {
+          if (!String(err.message || "").startsWith("404")) {
+            throw err;
+          }
+          syncPendingNewAnimalSession(null);
+          return null;
+        }
+      }
+      async function createOrResumeNewAnimalSession(body) {
+        const resp = await HerdAuth.fetch("/db/grading/sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || err.message || "Could not start grading session");
+        }
+        const session = await resp.json();
+        return syncPendingNewAnimalSession(session);
+      }
+      async function updateNewAnimalSession(sessionId, body) {
+        const resp = await HerdAuth.fetch("/db/grading/sessions/" + sessionId, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || err.message || "Could not update grading session");
+        }
+        const session = await resp.json();
+        return syncPendingNewAnimalSession(session);
+      }
+      async function discardNewAnimalSession(sessionId) {
+        if (!sessionId) return null;
+        const resp = await HerdAuth.fetch(
+          "/db/grading/sessions/" + sessionId + "/discard",
+          { method: "POST" },
+        );
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || err.message || "Could not discard grading session");
+        }
+        const session = await resp.json();
+        syncPendingNewAnimalSession(null);
+        return session;
+      }
+      async function finalizeNewAnimalSession(sessionId, body) {
+        const resp = await HerdAuth.fetch(
+          "/db/grading/sessions/" + sessionId + "/finalize",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body || {}),
+          },
+        );
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || err.message || "Could not save new animal grade");
+        }
+        syncPendingNewAnimalSession(null);
+        return resp.json();
       }
       function populateProviderSelect(el, selectedId) {
         el.innerHTML =

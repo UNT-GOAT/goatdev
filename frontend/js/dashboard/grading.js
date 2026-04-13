@@ -209,6 +209,109 @@
         }
       }
 
+      function _gradeAssetKey(result, explicitKey) {
+        return explicitKey || result?.analysis_key || result?.serial_id || _gradeAnalysisKey;
+      }
+
+      function _canResumePendingNewAnimalCapture() {
+        return (
+          !!_pendingNewAnimalSession &&
+          _pendingNewAnimalSession.status === "capturing"
+        );
+      }
+
+      function updateNewAnimalCreationGateUI() {
+        const gateActive = hasPendingNewAnimalSession();
+        const gateMessage = pendingNewAnimalGateMessage();
+        const addBtn = document.getElementById("addAnimalOpenBtn");
+        if (addBtn) {
+          addBtn.disabled = gateActive;
+          addBtn.title = gateActive ? gateMessage : "";
+        }
+        const addSaveBtn = document.getElementById("addAnimalSaveBtn");
+        if (addSaveBtn) {
+          addSaveBtn.title = gateActive ? gateMessage : "";
+        }
+        const gradeBtn = document.getElementById("gradeBtn");
+        if (gradeBtn && !_gradeExistingId) {
+          gradeBtn.title =
+            gateActive && !_canResumePendingNewAnimalCapture() ? gateMessage : "";
+          gradeBtn.disabled =
+            (gateActive && !_canResumePendingNewAnimalCapture()) || !piConnected;
+        }
+      }
+
+      function restorePendingNewAnimalReview() {
+        if (
+          !_pendingNewAnimalSession ||
+          _pendingNewAnimalSession.status !== "review_pending" ||
+          !_pendingNewAnimalSession.result_payload ||
+          pendingGradeResult
+        ) {
+          updateNewAnimalCreationGateUI();
+          return;
+        }
+
+        const session = _pendingNewAnimalSession;
+        _gradeSessionId = session.id;
+        _gradeAnalysisKey = session.analysis_key;
+        nextGradeId = session.next_serial_id;
+        document
+          .querySelectorAll(".nav-btn")
+          .forEach((b) => b.classList.remove("active"));
+        document.querySelector('[data-page="grading"]').classList.add("active");
+        document
+          .querySelectorAll(".page")
+          .forEach((p) => p.classList.remove("active"));
+        document.getElementById("page-grading").classList.add("active");
+        document.getElementById("pageTitle").textContent = "Grading";
+        currentPage = "grading";
+        setCamerasForPage("grading");
+        document.getElementById("gradeSpecies").value = session.species || "goat";
+        onGradeSpeciesChange();
+        if (session.description) {
+          document.getElementById("gradeDesc").value = session.description;
+        }
+        if (session.live_weight) {
+          document.getElementById("gradeWeight").value = session.live_weight;
+        }
+        document.getElementById("gradeSerial").value = session.next_serial_id || "";
+        document.getElementById("gradeSerialHint").textContent =
+          "Pending new-animal review is holding this next ID";
+        document.getElementById("gradeSerialHint").className =
+          "field-hint invalid";
+
+        pendingGradeResult = {
+          ...session.result_payload,
+          analysis_key: session.analysis_key,
+          serial_id: session.result_payload.serial_id || null,
+          species: session.species || session.result_payload.species,
+          description:
+            session.description != null
+              ? session.description
+              : session.result_payload.description || null,
+          live_weight:
+            session.live_weight != null
+              ? session.live_weight
+              : session.result_payload.live_weight || null,
+          manual_override_history:
+            session.result_payload.manual_override_history || [],
+          _isExisting: false,
+          _sessionId: session.id,
+        };
+        openGradeReview(pendingGradeResult, session.analysis_key);
+        updateNewAnimalCreationGateUI();
+      }
+
+      async function _discardPendingNewAnimalReview() {
+        if (_gradeSessionId) {
+          await discardNewAnimalSession(_gradeSessionId);
+        }
+        _gradeSessionId = null;
+        _gradeAnalysisKey = null;
+        _pendingNewAnimalSession = null;
+      }
+
       async function _savePendingGradeResult() {
         const btn = document.getElementById("acceptGradeBtn");
         const species = pendingGradeResult.species;
@@ -244,72 +347,55 @@
             );
             if (!putResp.ok) {
               const err = await putResp.json().catch(() => ({}));
-              throw new Error(
-                "Update failed: " + (err.detail || putResp.status),
-              );
+              throw new Error("Update failed: " + (err.detail || putResp.status));
+            }
+
+            gradeLog("Saving grade result...", "info");
+            const gradePayload = { ...pendingGradeResult };
+            delete gradePayload.species;
+            delete gradePayload.description;
+            delete gradePayload._isExisting;
+            delete gradePayload._sessionId;
+            delete gradePayload.view_errors;
+            delete gradePayload._aiGrade;
+            const gradeResp = await HerdAuth.fetch("/db/grading", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(gradePayload),
+            });
+            if (!gradeResp.ok) {
+              const err = await gradeResp.json().catch(() => ({}));
+              gradeLog("Grade save failed — click Retry.", "err");
+              showToast("error", err.detail || "Grade save failed — retry or discard");
+              btn.disabled = false;
+              btn.textContent = "Retry Save";
+              return;
+            }
+          } else {
+            if (!_gradeSessionId) {
+              throw new Error("No pending grading session to save");
             }
             gradeLog(
-              label + " #" + pendingGradeResult.serial_id + " updated",
-              "ok",
-            );
-          } else if (!_gradeAnimalCreated) {
-            gradeLog(
-              "Creating " +
+              "Saving " +
                 species +
                 " #" +
-                pendingGradeResult.serial_id +
+                nextGradeId +
                 "...",
               "info",
             );
-            const createBody = {
-              serial_id: pendingGradeResult.serial_id,
-              live_weight: pendingGradeResult.live_weight,
-              grade: pendingGradeResult.grade || null,
-              description: pendingGradeResult.description || null,
-            };
-            if (gradeProv) createBody.prov_id = parseInt(gradeProv);
-            if (gradeKillDate) createBody.kill_date = gradeKillDate;
-            const animalResp = await HerdAuth.fetch("/db" + endpoint, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(createBody),
+            const finalized = await finalizeNewAnimalSession(_gradeSessionId, {
+              prov_id: gradeProv ? parseInt(gradeProv) : null,
+              kill_date: gradeKillDate || null,
             });
-            if (!animalResp.ok) {
-              const err = await animalResp.json().catch(() => ({}));
-              throw new Error(
-                label +
-                  " creation failed: " +
-                  (err.detail || animalResp.status),
-              );
-            }
-            const created = await animalResp.json();
-            pendingGradeResult.serial_id = created.serial_id;
+            pendingGradeResult.serial_id = finalized.serial_id;
             _gradeAnimalCreated = true;
-            gradeLog(label + " #" + created.serial_id + " created", "ok");
+            gradeLog(label + " #" + finalized.serial_id + " created", "ok");
           }
-          gradeLog("Saving grade result...", "info");
-          const gradePayload = { ...pendingGradeResult };
-          delete gradePayload.species;
-          delete gradePayload.description;
-          delete gradePayload._isExisting;
-          delete gradePayload.view_errors;
-          delete gradePayload._aiGrade;
-          const gradeResp = await HerdAuth.fetch("/db/grading", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(gradePayload),
-          });
-          if (!gradeResp.ok) {
-            const err = await gradeResp.json().catch(() => ({}));
-            gradeLog("Grade save failed — click Retry.", "err");
-            showToast("error", err.detail || "Grade save failed — retry or discard");
-            btn.disabled = false;
-            btn.textContent = "Retry Save";
-            return;
-          }
+
           _gradeAnimalCreated = false;
           _gradeExistingId = null;
-          _gradeReservedId = null;
+          _gradeSessionId = null;
+          _gradeAnalysisKey = null;
           closeModal("modalGradeReview");
           _reviewCurrentResult = null;
           showToast(
@@ -329,9 +415,11 @@
           _editAnimalGradeState = null;
           _reviewEditGradeState = null;
           await reloadGradeDataAndUI();
+          await loadPendingNewAnimalSession();
           computeNextGradeId();
+          updateNewAnimalCreationGateUI();
           if (_savedSerial && _savedSpecies) {
-              selectAnimal(Number(_savedSerial), _savedSpecies);
+            selectAnimal(Number(_savedSerial), _savedSpecies);
           }
         } catch (err) {
           showToast("error", err.message);
@@ -363,7 +451,6 @@
       }
       async function computeNextGradeId() {
         _gradeExistingId = null;
-        _gradeReservedId = null;
         const hint = document.getElementById("gradeSerialHint");
         const input = document.getElementById("gradeSerial");
         const btn = document.getElementById("gradeBtn");
@@ -373,35 +460,23 @@
         btn.disabled = true;
         nextGradeId = await fetchNextGlobalId();
         input.value = nextGradeId;
-        hint.textContent = "";
-        hint.className = "field-hint valid";
-        btn.disabled = !piConnected;
+        if (_canResumePendingNewAnimalCapture()) {
+          hint.textContent = "Pending new-animal capture will keep this next ID";
+          hint.className = "field-hint valid";
+        } else if (hasPendingNewAnimalSession()) {
+          hint.textContent = "Pending new-animal review is holding this next ID";
+          hint.className = "field-hint invalid";
+        } else {
+          hint.textContent = "Auto-assigned";
+          hint.className = "field-hint valid";
+        }
+        btn.disabled =
+          (hasPendingNewAnimalSession() && !_canResumePendingNewAnimalCapture()) ||
+          !piConnected;
         populateProviderSelect(document.getElementById("gradeProv"));
         if (!document.getElementById("gradeKillDate").value)
           document.getElementById("gradeKillDate").value = todayISO();
-      }
-      async function resolveGradeSerialId() {
-        if (_gradeExistingId) return _gradeExistingId;
-        if (_gradeReservedId) {
-          nextGradeId = _gradeReservedId;
-          document.getElementById("gradeSerial").value = _gradeReservedId;
-          document.getElementById("gradeSerialHint").textContent =
-            "Reserved for this grading session";
-          document.getElementById("gradeSerialHint").className =
-            "field-hint valid";
-          return _gradeReservedId;
-        }
-
-        const hint = document.getElementById("gradeSerialHint");
-        hint.textContent = "Reserving serial ID...";
-        hint.className = "field-hint";
-        const reservedId = await allocateNextGlobalId();
-        _gradeReservedId = reservedId;
-        nextGradeId = reservedId;
-        document.getElementById("gradeSerial").value = reservedId;
-        hint.textContent = "Reserved for this grading session";
-        hint.className = "field-hint valid";
-        return reservedId;
+        updateNewAnimalCreationGateUI();
       }
       function gradeLog(msg, type) {
         const el = document.getElementById("gradeLog");
@@ -418,17 +493,21 @@
           gradeLog("Grader is offline.", "err");
           return;
         }
-        let serialId = _gradeExistingId || _gradeReservedId || null;
-        const species = document.getElementById("gradeSpecies").value;
-        const desc = document.getElementById("gradeDesc").value;
-        const lw = parseFloat(document.getElementById("gradeWeight").value);
-        if (!desc) {
-          showToast("error", "Select a description");
-          return;
-        }
-        if (!lw || lw <= 0) {
-          showToast("error", "Enter a valid live weight");
-          return;
+        let serialId = _gradeExistingId ? String(_gradeExistingId) : null;
+        let species = document.getElementById("gradeSpecies").value;
+        let desc = document.getElementById("gradeDesc").value;
+        let lw = parseFloat(document.getElementById("gradeWeight").value);
+        const allowResumeWithoutForm =
+          !_gradeExistingId && _canResumePendingNewAnimalCapture();
+        if (!allowResumeWithoutForm) {
+          if (!desc) {
+            showToast("error", "Select a description");
+            return;
+          }
+          if (!lw || lw <= 0) {
+            showToast("error", "Enter a valid live weight");
+            return;
+          }
         }
         const btn = document.getElementById("gradeBtn");
         btn.disabled = true;
@@ -436,20 +515,56 @@
         document.getElementById("gradeLog").style.display = "none";
         const isExisting = !!_gradeExistingId;
         try {
-          serialId = await resolveGradeSerialId();
-          if (!serialId) {
-            showToast("error", "No serial ID");
-            btn.disabled = false;
-            return;
-          }
           if (!isExisting) {
-            gradeLog("Reserved serial #" + serialId, "ok");
+            const session = await createOrResumeNewAnimalSession({
+              species,
+              description: desc,
+              live_weight: lw,
+            });
+            if (
+              !session.created &&
+              session.status === "review_pending" &&
+              session.result_payload
+            ) {
+              restorePendingNewAnimalReview();
+              showToast("error", pendingNewAnimalGateMessage());
+              btn.disabled = false;
+              return;
+            }
+            if (session.status !== "capturing") {
+              throw new Error(pendingNewAnimalGateMessage());
+            }
+            species = session.species || species;
+            desc = session.description || desc;
+            lw =
+              session.live_weight != null ? Number(session.live_weight) : lw;
+            document.getElementById("gradeSpecies").value = species;
+            onGradeSpeciesChange();
+            document.getElementById("gradeDesc").value = desc || "";
+            document.getElementById("gradeWeight").value =
+              lw != null && !Number.isNaN(lw) ? lw : "";
+            serialId = session.analysis_key;
+            nextGradeId = session.next_serial_id;
+            document.getElementById("gradeSerial").value = session.next_serial_id;
+            document.getElementById("gradeSerialHint").textContent = "Auto-assigned";
+            document.getElementById("gradeSerialHint").className =
+              "field-hint valid";
+            gradeLog(
+              (session.created ? "Next" : "Resuming") +
+                " serial #" +
+                session.next_serial_id,
+              session.created ? "ok" : "warn",
+            );
+          }
+          if (!serialId) {
+            throw new Error("No grading key");
           }
           gradeLog(
             "Starting grade for " +
               (isExisting ? "existing " : "new ") +
               species +
-              " (serial " +
+              " (" +
+              (isExisting ? "serial " : "draft ") +
               serialId +
               ", " +
               desc +
@@ -473,6 +588,9 @@
             piConnected = false;
             document.getElementById("piStatus").innerHTML =
               '<span class="dot red"></span><span>Grader offline</span>';
+            if (!isExisting && _gradeSessionId) {
+              await _discardPendingNewAnimalReview();
+            }
             showToast("error", "Grader unreachable");
             btn.disabled = false;
             return;
@@ -505,6 +623,9 @@
               };
               gradeLog("Rejected: " + waitMsg, "err");
               showToast("error", waitMsg);
+              if (!isExisting && _gradeSessionId) {
+                await _discardPendingNewAnimalReview();
+              }
               if (currentPage === "grading" && camerasActive) startCameraStreams();
               btn.disabled = false;
               return;
@@ -518,6 +639,9 @@
               "err",
             );
             if (body.fix) gradeLog("Fix: " + body.fix, "warn");
+            if (!isExisting && _gradeSessionId) {
+              await _discardPendingNewAnimalReview();
+            }
             btn.disabled = false;
             return;
           }
@@ -526,7 +650,8 @@
           if (result && result.success !== false && !result.error) {
             gradeLog("Complete — opening review...", "ok");
             pendingGradeResult = {
-              serial_id: serialId,
+              serial_id: isExisting ? Number(serialId) : null,
+              analysis_key: isExisting ? null : serialId,
               species,
               description: desc,
               grade: result.grade || null,
@@ -546,19 +671,39 @@
                   allGrades.find((g) => String(g.serial_id) === String(serialId)) || {}
                 ).manual_override_history || [],
               _isExisting: isExisting,
+              _sessionId: _gradeSessionId,
             };
-            openGradeReview(pendingGradeResult, serialId);
+            if (!isExisting && _gradeSessionId) {
+              await updateNewAnimalSession(_gradeSessionId, {
+                status: "review_pending",
+                description: desc,
+                live_weight: lw,
+                result_payload: pendingGradeResult,
+              });
+            }
+            openGradeReview(
+              pendingGradeResult,
+              _gradeAssetKey(pendingGradeResult, serialId),
+            );
+            updateNewAnimalCreationGateUI();
           } else {
             gradeLog("Failed: " + (result?.error || "unknown"), "err");
             if (result?.fix) gradeLog("Fix: " + result.fix, "warn");
+            if (!isExisting && _gradeSessionId) {
+              await _discardPendingNewAnimalReview();
+            }
           }
         } catch (err) {
           gradeLog("Network error: " + err.message, "err");
           piConnected = false;
           document.getElementById("piStatus").innerHTML =
             '<span class="dot red"></span><span>Grader offline</span>';
+          if (!isExisting && _gradeSessionId) {
+            await _discardPendingNewAnimalReview().catch(() => {});
+          }
         } finally {
           btn.disabled = false;
+          updateNewAnimalCreationGateUI();
         }
       }
       async function pollGradeStatus() {
@@ -594,7 +739,7 @@
       }
 
       // GRADE REVIEW — with failure/retry
-      function openGradeReview(result, serialId) {
+      function openGradeReview(result, serialKey) {
         openModal("modalGradeReview");
         document.getElementById("reviewSubtitle").textContent =
           "Review before saving";
@@ -653,7 +798,7 @@
           HerdAuth.setPiImageSource(img, {
             kind: "debug",
             view,
-            serialId: String(serialId),
+            serialId: String(_gradeAssetKey(result, serialKey)),
           }).catch(() => {
             img.style.opacity = ".2";
           });
@@ -779,30 +924,48 @@
         }
         _renderOverrideHistory(result.manual_override_history || []);
       }
-      function retryGrade() {
+      async function retryGrade() {
+        try {
+          if (_gradeSessionId) {
+            await _discardPendingNewAnimalReview();
+          }
+        } catch (err) {
+          showToast("error", err.message);
+          return;
+        }
         closeModal("modalGradeReview");
         pendingGradeResult = null;
         _reviewCurrentResult = null;
         _gradeAnimalCreated = false;
         gradeLog("Retrying — previous attempt had view failures", "warn");
         document.getElementById("gradeWeight").focus();
-      }
-      function confirmDiscard() {
-        closeModal("modalDiscard");
-        closeModal("modalGradeReview");
-        pendingGradeResult = null;
-        _reviewCurrentResult = null;
-        _gradeAnimalCreated = false;
-        _gradeExistingId = null;
-        _gradeReservedId = null;
-        gradeLog("Discarded by operator", "warn");
-        showToast("success", "Grade discarded");
-        document.getElementById("gradeWeight").value = "";
-        document.getElementById("gradeProv").value = "";
-        document.getElementById("gradeKillDate").value = "";
-        document.getElementById("gradeLog").innerHTML = "";
-        document.getElementById("gradeLog").style.display = "none";
         computeNextGradeId();
+        updateNewAnimalCreationGateUI();
+      }
+      async function confirmDiscard() {
+        try {
+          if (_gradeSessionId) {
+            await _discardPendingNewAnimalReview();
+          }
+          closeModal("modalDiscard");
+          closeModal("modalGradeReview");
+          pendingGradeResult = null;
+          _reviewCurrentResult = null;
+          _gradeAnimalCreated = false;
+          _gradeExistingId = null;
+          gradeLog("Discarded by operator", "warn");
+          showToast("success", "Grade discarded");
+          document.getElementById("gradeWeight").value = "";
+          document.getElementById("gradeProv").value = "";
+          document.getElementById("gradeKillDate").value = "";
+          document.getElementById("gradeLog").innerHTML = "";
+          document.getElementById("gradeLog").style.display = "none";
+          await loadPendingNewAnimalSession();
+          computeNextGradeId();
+          updateNewAnimalCreationGateUI();
+        } catch (err) {
+          showToast("error", err.message);
+        }
       }
       function rejectGrade() {
         openModal("modalDiscard");
@@ -853,37 +1016,76 @@
         document.getElementById("devGradeBtn").disabled = count < 3;
       }
       async function startDevGrade() {
-        let serialId = _gradeExistingId || _gradeReservedId || null;
-        const lw = parseFloat(document.getElementById("gradeWeight").value);
-        if (!lw || lw <= 0) {
-          showToast("error", "Enter a valid live weight");
-          return;
+        let serialId = _gradeExistingId ? String(_gradeExistingId) : null;
+        let lw = parseFloat(document.getElementById("gradeWeight").value);
+        let desc = document.getElementById("gradeDesc").value;
+        let species = document.getElementById("gradeSpecies").value;
+        const allowResumeWithoutForm =
+          !_gradeExistingId && _canResumePendingNewAnimalCapture();
+        if (!allowResumeWithoutForm) {
+          if (!lw || lw <= 0) {
+            showToast("error", "Enter a valid live weight");
+            return;
+          }
+          if (!desc) {
+            showToast("error", "Select a description");
+            return;
+          }
         }
-        const desc = document.getElementById("gradeDesc").value;
-        if (!desc) {
-          showToast("error", "Select a description");
-          return;
-        }
-        const species = document.getElementById("gradeSpecies").value;
         const btn = document.getElementById("devGradeBtn");
         btn.disabled = true;
         document.getElementById("gradeLog").innerHTML = "";
         document.getElementById("gradeLog").style.display = "none";
         const isExisting = !!_gradeExistingId;
         try {
-          serialId = await resolveGradeSerialId();
-          if (!serialId) {
-            showToast("error", "No serial ID");
-            btn.disabled = false;
-            return;
-          }
           if (!isExisting) {
-            gradeLog("Reserved serial #" + serialId, "ok");
+            const session = await createOrResumeNewAnimalSession({
+              species,
+              description: desc,
+              live_weight: lw,
+            });
+            if (
+              !session.created &&
+              session.status === "review_pending" &&
+              session.result_payload
+            ) {
+              restorePendingNewAnimalReview();
+              showToast("error", pendingNewAnimalGateMessage());
+              btn.disabled = false;
+              return;
+            }
+            if (session.status !== "capturing") {
+              throw new Error(pendingNewAnimalGateMessage());
+            }
+            species = session.species || species;
+            desc = session.description || desc;
+            lw =
+              session.live_weight != null ? Number(session.live_weight) : lw;
+            document.getElementById("gradeSpecies").value = species;
+            onGradeSpeciesChange();
+            document.getElementById("gradeDesc").value = desc || "";
+            document.getElementById("gradeWeight").value =
+              lw != null && !Number.isNaN(lw) ? lw : "";
+            serialId = session.analysis_key;
+            nextGradeId = session.next_serial_id;
+            document.getElementById("gradeSerial").value = session.next_serial_id;
+            document.getElementById("gradeSerialHint").textContent = "Auto-assigned";
+            document.getElementById("gradeSerialHint").className =
+              "field-hint valid";
+            gradeLog(
+              (session.created ? "Next" : "Resuming") +
+                " serial #" +
+                session.next_serial_id,
+              session.created ? "ok" : "warn",
+            );
+          }
+          if (!serialId) {
+            throw new Error("No grading key");
           }
           gradeLog(
             "DEV: Upload grade for " +
               species +
-              " #" +
+              " " +
               serialId +
               " @ " +
               lw +
@@ -909,12 +1111,16 @@
               "err",
             );
             if (body.fix) gradeLog("Fix: " + body.fix, "warn");
+            if (!isExisting && _gradeSessionId) {
+              await _discardPendingNewAnimalReview();
+            }
             btn.disabled = false;
             return;
           }
           gradeLog("Grade returned — opening review...", "ok");
           pendingGradeResult = {
-            serial_id: serialId,
+            serial_id: isExisting ? Number(serialId) : null,
+            analysis_key: isExisting ? null : serialId,
             species,
             description: desc,
             grade: body.grade || null,
@@ -928,13 +1134,31 @@
             warnings: body.warnings || [],
             view_errors: body.view_errors || [],
             grade_details: body.grade_details || null,
+            manual_override_history: [],
             _isExisting: isExisting,
+            _sessionId: _gradeSessionId,
           };
-          openGradeReview(pendingGradeResult, serialId);
+          if (!isExisting && _gradeSessionId) {
+            await updateNewAnimalSession(_gradeSessionId, {
+              status: "review_pending",
+              description: desc,
+              live_weight: lw,
+              result_payload: pendingGradeResult,
+            });
+          }
+          openGradeReview(
+            pendingGradeResult,
+            _gradeAssetKey(pendingGradeResult, serialId),
+          );
+          updateNewAnimalCreationGateUI();
         } catch (err) {
           gradeLog("Network error: " + err.message, "err");
+          if (!isExisting && _gradeSessionId) {
+            await _discardPendingNewAnimalReview().catch(() => {});
+          }
         } finally {
           btn.disabled = false;
+          updateNewAnimalCreationGateUI();
         }
       }
 

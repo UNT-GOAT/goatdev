@@ -48,6 +48,7 @@
           openGradeReview(
             {
               grade: r.grade,
+              analysis_key: r.analysis_key || null,
               live_weight: r.live_weight,
               all_views_ok: r.all_views_ok,
               measurements: r.measurements,
@@ -59,7 +60,7 @@
               grade_details: r.grade_details || null,
               manual_override_history: r.manual_override_history || [],
             },
-            r.serial_id,
+            r.analysis_key || r.serial_id,
           );
           document.getElementById("reviewFooter").style.display = "none";
           document.getElementById("reviewRetryFooter").style.display = "none";

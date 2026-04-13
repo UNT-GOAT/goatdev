@@ -18,6 +18,12 @@ from pydantic import BaseModel, create_model
 from typing import Optional
 from datetime import date
 from routes import get_conn
+from routes.serials import (
+    allocate_next_committed_serial,
+    bump_serial_counter_to_at_least,
+    get_blocking_new_animal_session,
+    lock_new_animal_creation_gate,
+)
 
 S3_CAPTURES_BUCKET = os.environ.get("S3_CAPTURES_BUCKET", "")
 S3_PROCESSED_BUCKET = os.environ.get("S3_PROCESSED_BUCKET", "")
@@ -63,24 +69,25 @@ TABLE_TO_SPECIES = {
     "lambs": "lamb",
 }
 
-def _s3_cleanup(serial_id: int):
-    """Delete all S3 objects for a serial_id. Runs in background thread."""
+def _s3_cleanup(prefixes: list[str]):
+    """Delete all S3 objects for each prefix. Runs in background thread."""
     try:
         s3 = boto3.client("s3")
-        prefix = f"{serial_id}/"
         for bucket in (S3_CAPTURES_BUCKET, S3_PROCESSED_BUCKET):
             if not bucket:
                 continue
-            resp = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
-            keys = [obj["Key"] for obj in resp.get("Contents", [])]
-            if keys:
-                s3.delete_objects(
-                    Bucket=bucket,
-                    Delete={"Objects": [{"Key": k} for k in keys]},
-                )
-                print(f"[s3] Deleted {len(keys)} objects from {bucket}/{prefix}")
+            for raw_prefix in prefixes:
+                prefix = f"{raw_prefix}/"
+                resp = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+                keys = [obj["Key"] for obj in resp.get("Contents", [])]
+                if keys:
+                    s3.delete_objects(
+                        Bucket=bucket,
+                        Delete={"Objects": [{"Key": k} for k in keys]},
+                    )
+                    print(f"[s3] Deleted {len(keys)} objects from {bucket}/{prefix}")
     except Exception as e:
-        print(f"[s3] Cleanup failed for {serial_id}: {e}")
+        print(f"[s3] Cleanup failed for {prefixes}: {e}")
 
 
 def _normalize_compare_value(value):
@@ -102,18 +109,81 @@ def _matches_non_null_fields(existing_row, incoming: dict) -> bool:
     return True
 
 
-async def _sync_animals_sequence(conn):
-    await conn.execute(
-        """
-        SELECT setval(
-            pg_get_serial_sequence('animals', 'serial_id'),
-            GREATEST(
-                (SELECT COALESCE(MAX(serial_id), 0) FROM animals),
-                (SELECT last_value FROM animals_serial_id_seq)
-            ),
-            true
+async def _create_species_animal(
+    conn,
+    table: str,
+    data: dict,
+    *,
+    serial_id: Optional[int] = None,
+):
+    species = TABLE_TO_SPECIES[table]
+
+    if serial_id is None:
+        serial_id = await allocate_next_committed_serial(conn)
+        await conn.execute(
+            """
+            INSERT INTO animals (serial_id, species)
+            VALUES ($1, $2)
+            """,
+            serial_id,
+            species,
         )
+    else:
+        if serial_id <= 0:
+            raise HTTPException(400, "serial_id must be a positive integer")
+        animal_row = await conn.fetchrow(
+            """
+            INSERT INTO animals (serial_id, species)
+            VALUES ($1, $2)
+            ON CONFLICT (serial_id) DO NOTHING
+            RETURNING serial_id, species
+            """,
+            serial_id,
+            species,
+        )
+        if animal_row is None:
+            animal_row = await conn.fetchrow(
+                "SELECT serial_id, species FROM animals WHERE serial_id = $1",
+                serial_id,
+            )
+            if not animal_row:
+                raise HTTPException(500, "Failed to reserve requested serial_id")
+            if animal_row["species"] != species:
+                raise HTTPException(
+                    409,
+                    f"serial_id {serial_id} already belongs to {animal_row['species']}",
+                )
+        await bump_serial_counter_to_at_least(conn, serial_id)
+
+    insert_data = {"serial_id": serial_id, **data}
+    cols = [k for k, v in insert_data.items() if v is not None]
+    vals = [insert_data[k] for k in cols]
+    placeholders = ", ".join(f"${i+1}" for i in range(len(cols)))
+    col_names = ", ".join(cols)
+
+    row = await conn.fetchrow(
         """
+        INSERT INTO {table} ({col_names})
+        VALUES ({placeholders})
+        ON CONFLICT (serial_id) DO NOTHING
+        RETURNING *
+        """.format(table=table, col_names=col_names, placeholders=placeholders),
+        *vals,
+    )
+    if row:
+        return dict(row), True
+
+    existing = await conn.fetchrow(
+        f"SELECT * FROM {table} WHERE serial_id = $1",
+        serial_id,
+    )
+    if existing and _matches_non_null_fields(dict(existing), data):
+        return dict(existing), False
+
+    singular = table.rstrip("s")
+    raise HTTPException(
+        409,
+        f"{singular.title()} #{serial_id} already exists with conflicting data",
     )
 
 
@@ -167,76 +237,25 @@ def build_animal_router(table: str, *, allow_explicit_serial: bool = False) -> A
         data = body.model_dump()
         explicit_serial_id = data.pop("serial_id", None) if allow_explicit_serial else None
 
-        if explicit_serial_id is not None and explicit_serial_id <= 0:
-            raise HTTPException(400, "serial_id must be a positive integer")
-
         async with pool.acquire() as conn:
             async with conn.transaction():
-                if explicit_serial_id is None:
-                    animal_row = await conn.fetchrow(
-                        """INSERT INTO animals (species)
-                           VALUES ($1)
-                           RETURNING serial_id""",
-                        species,
+                await lock_new_animal_creation_gate(conn)
+                blocking_session = await get_blocking_new_animal_session(conn)
+                if blocking_session:
+                    raise HTTPException(
+                        409,
+                        "Finish or discard the pending new-animal grade before creating another animal",
                     )
-                    serial_id = animal_row["serial_id"]
-                else:
-                    serial_id = explicit_serial_id
-                    animal_row = await conn.fetchrow(
-                        """
-                        INSERT INTO animals (serial_id, species)
-                        VALUES ($1, $2)
-                        ON CONFLICT (serial_id) DO NOTHING
-                        RETURNING serial_id, species
-                        """,
-                        serial_id,
-                        species,
-                    )
-                    if animal_row is None:
-                        animal_row = await conn.fetchrow(
-                            "SELECT serial_id, species FROM animals WHERE serial_id = $1",
-                            serial_id,
-                        )
-                        if not animal_row:
-                            raise HTTPException(500, "Failed to reserve requested serial_id")
-                        if animal_row["species"] != species:
-                            raise HTTPException(
-                                409,
-                                f"serial_id {serial_id} already belongs to {animal_row['species']}",
-                            )
-                    else:
-                        await _sync_animals_sequence(conn)
 
-                insert_data = {"serial_id": serial_id, **data}
-                cols = [k for k, v in insert_data.items() if v is not None]
-                vals = [insert_data[k] for k in cols]
-                placeholders = ", ".join(f"${i+1}" for i in range(len(cols)))
-                col_names = ", ".join(cols)
-
-                row = await conn.fetchrow(
-                    f"""
-                    INSERT INTO {table} ({col_names})
-                    VALUES ({placeholders})
-                    ON CONFLICT (serial_id) DO NOTHING
-                    RETURNING *
-                    """,
-                    *vals,
+                row, created = await _create_species_animal(
+                    conn,
+                    table,
+                    data,
+                    serial_id=explicit_serial_id,
                 )
-                if row:
-                    return dict(row)
-
-                existing = await conn.fetchrow(
-                    f"SELECT * FROM {table} WHERE serial_id = $1",
-                    serial_id,
-                )
-                if existing and _matches_non_null_fields(dict(existing), data):
+                if not created:
                     response.status_code = 200
-                    return dict(existing)
-
-                raise HTTPException(
-                    409,
-                    f"{singular.title()} #{serial_id} already exists with conflicting data",
-                )
+                return row
 
     @router.put("/{serial_id}")
     async def update_animal(request: Request, serial_id: int, body: UpdateModel):
@@ -260,8 +279,20 @@ def build_animal_router(table: str, *, allow_explicit_serial: bool = False) -> A
     @router.delete("/{serial_id}")
     async def delete_animal(request: Request, serial_id: int):
         pool = await get_conn(request)
+        cleanup_prefixes = [str(serial_id)]
         async with pool.acquire() as conn:
             async with conn.transaction():
+                grade_row = await conn.fetchrow(
+                    "SELECT analysis_key FROM grade_results WHERE serial_id = $1",
+                    serial_id,
+                )
+                if grade_row and grade_row.get("analysis_key"):
+                    cleanup_prefixes.append(grade_row["analysis_key"])
+
+                await conn.execute(
+                    "DELETE FROM grade_results WHERE serial_id = $1",
+                    serial_id,
+                )
                 result = await conn.execute(
                     f"DELETE FROM {table} WHERE serial_id = $1", serial_id
                 )
@@ -275,7 +306,7 @@ def build_animal_router(table: str, *, allow_explicit_serial: bool = False) -> A
         # S3 cleanup in background — don't block the response
         if S3_CAPTURES_BUCKET or S3_PROCESSED_BUCKET:
             threading.Thread(
-                target=_s3_cleanup, args=(serial_id,), daemon=True
+                target=_s3_cleanup, args=(cleanup_prefixes,), daemon=True
             ).start()
 
         return {"deleted": serial_id}

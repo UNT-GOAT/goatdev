@@ -207,6 +207,10 @@
 
       // ADD ANIMAL
       function openAddAnimal() {
+        if (hasPendingNewAnimalSession()) {
+          showToast("error", pendingNewAnimalGateMessage());
+          return;
+        }
         openModal("modalAddAnimal");
         switchAddAnimalTab(
           "single",
@@ -280,6 +284,9 @@
         btn.disabled = true;
         btn.textContent = "Saving...";
         try {
+          if (hasPendingNewAnimalSession()) {
+            throw new Error(pendingNewAnimalGateMessage());
+          }
           if (isMultiple) await saveBatchAnimals();
           else await saveSingleAnimal();
           closeModal("modalAddAnimal");
@@ -359,9 +366,17 @@
               body: JSON.stringify(body),
             });
             if (r.ok) added++;
-            else failed++;
+            else {
+              const err = await r.json().catch(() => ({}));
+              throw new Error(err.detail || "Failed: " + r.status);
+            }
           } catch (e) {
             failed++;
+            if ((e.message || "").includes("pending new-animal grade")) {
+              status.textContent = e.message;
+              status.className = "field-hint invalid";
+              throw e;
+            }
           }
         }
         status.textContent =

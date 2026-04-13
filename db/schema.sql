@@ -25,6 +25,26 @@ CREATE TABLE IF NOT EXISTS animals (
 );
 CREATE INDEX IF NOT EXISTS idx_animals_species ON animals(species);
 
+-- Transactional counter for committed serial assignment
+CREATE TABLE IF NOT EXISTS serial_counters (
+    name            VARCHAR(50) PRIMARY KEY,
+    current_value   INTEGER NOT NULL DEFAULT 0 CHECK (current_value >= 0),
+    updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO serial_counters (name, current_value)
+SELECT 'animals', COALESCE(MAX(serial_id), 0)
+FROM animals
+ON CONFLICT (name) DO UPDATE
+SET current_value = EXCLUDED.current_value,
+    updated_at = NOW();
+
+SELECT setval(
+    pg_get_serial_sequence('animals', 'serial_id'),
+    GREATEST((SELECT current_value FROM serial_counters WHERE name = 'animals'), 1),
+    (SELECT current_value FROM serial_counters WHERE name = 'animals') > 0
+);
+
 -- Chickens
 CREATE TABLE IF NOT EXISTS chickens (
     serial_id       INTEGER PRIMARY KEY REFERENCES animals(serial_id),
@@ -82,6 +102,7 @@ CREATE TABLE IF NOT EXISTS lambs (
 CREATE TABLE IF NOT EXISTS grade_results (
     id                  SERIAL PRIMARY KEY,
     serial_id           INTEGER NOT NULL REFERENCES animals(serial_id),
+    analysis_key        TEXT,
     grade               VARCHAR(20),
     live_weight         NUMERIC(10,2),
     all_views_ok        BOOLEAN,
@@ -112,6 +133,9 @@ CREATE TABLE IF NOT EXISTS grade_results (
 
 CREATE INDEX IF NOT EXISTS idx_grade_results_serial ON grade_results(serial_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_grade_results_serial_unique ON grade_results(serial_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_grade_results_analysis_key_unique
+    ON grade_results(analysis_key)
+    WHERE analysis_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_grade_results_date ON grade_results(graded_at);
 
 ALTER TABLE grade_results
@@ -119,6 +143,32 @@ ALTER TABLE grade_results
 
 ALTER TABLE grade_results
     ADD COLUMN IF NOT EXISTS manual_override_history JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE grade_results
+    ADD COLUMN IF NOT EXISTS analysis_key TEXT;
+
+-- Persisted draft grading sessions for new-animal reviews
+CREATE TABLE IF NOT EXISTS grading_sessions (
+    id              TEXT PRIMARY KEY,
+    analysis_key    TEXT NOT NULL UNIQUE,
+    status          VARCHAR(20) NOT NULL CHECK (status IN ('capturing', 'review_pending', 'finalizing', 'saved', 'discarded', 'failed')),
+    species         VARCHAR(20) NOT NULL CHECK (species IN ('goat', 'lamb')),
+    description     TEXT,
+    live_weight     NUMERIC(10,2),
+    result_payload  JSONB,
+    created_by      TEXT,
+    updated_by      TEXT,
+    last_error      TEXT,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_grading_sessions_single_active
+    ON grading_sessions ((1))
+    WHERE status IN ('capturing', 'review_pending', 'finalizing');
+
+CREATE INDEX IF NOT EXISTS idx_grading_sessions_status ON grading_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_grading_sessions_created_at ON grading_sessions(created_at DESC);
 
 -- updated_at trigger
 CREATE OR REPLACE FUNCTION update_updated_at()
@@ -140,6 +190,9 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
     CREATE TRIGGER trg_lambs_updated BEFORE UPDATE ON lambs FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+    CREATE TRIGGER trg_grading_sessions_updated BEFORE UPDATE ON grading_sessions FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 

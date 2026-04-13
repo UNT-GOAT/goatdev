@@ -9,7 +9,9 @@
         pendingGradeResult = null;
         _gradeAnimalCreated = false;
         _gradeExistingId = null;
-        _gradeReservedId = null;
+        _gradeSessionId = null;
+        _gradeAnalysisKey = null;
+        _pendingNewAnimalSession = null;
         _reviewGradeId = null;
         _currentUser = user;
         document.getElementById("app").style.display = "block";
@@ -49,11 +51,19 @@
             loadErrors.push("Grades: " + err.message);
           }),
         ]);
+        try {
+          await loadPendingNewAnimalSession();
+        } catch (err) {
+          loadErrors.push("Pending grade session: " + err.message);
+        }
         updateDashboard();
         filterAnimals();
         filterProviders();
         renderGradeHistory();
         computeNextGradeId();
+        if (typeof restorePendingNewAnimalReview === "function") {
+          restorePendingNewAnimalReview();
+        }
         if (loadErrors.length === 0) setDbStatus("ok");
         else if (allAnimals.length > 0 || allProviders.length > 0) {
           setDbStatus("partial");

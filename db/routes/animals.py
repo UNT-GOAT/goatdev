@@ -2,17 +2,22 @@
 Animals route — unified serial_id assignment across all species.
 
 POST /animals with {"species": "goat"} creates an animals row using the
-database-owned sequence.
+committed serial counter.
 
-POST /animals/allocate reserves the next sequence value without creating a row.
-The grading flow uses that value as a durable serial_id for the subsequent
-species-specific create.
+GET /animals/next returns the authoritative next committed serial_id for UI
+display. Serial IDs are assigned only when a new animal record is committed.
 """
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 from routes import get_conn
+from routes.serials import (
+    allocate_next_committed_serial,
+    get_blocking_new_animal_session,
+    get_next_committed_serial,
+    lock_new_animal_creation_gate,
+)
 
 router = APIRouter()
 
@@ -31,42 +36,41 @@ async def create_animal(request: Request, body: AnimalCreate):
 
     pool = await get_conn(request)
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """INSERT INTO animals (species)
-               VALUES ($1)
-               RETURNING serial_id, species, created_at""",
-            body.species,
-        )
-        return dict(row)
+        async with conn.transaction():
+            await lock_new_animal_creation_gate(conn)
+            blocking_session = await get_blocking_new_animal_session(conn)
+            if blocking_session:
+                raise HTTPException(
+                    409,
+                    "Finish or discard the pending new-animal grade before creating another animal",
+                )
+            serial_id = await allocate_next_committed_serial(conn)
+            row = await conn.fetchrow(
+                """INSERT INTO animals (serial_id, species)
+                   VALUES ($1, $2)
+                   RETURNING serial_id, species, created_at""",
+                serial_id,
+                body.species,
+            )
+            return dict(row)
 
 
 @router.post("/allocate", status_code=201)
 async def allocate_serial_id(request: Request):
-    """Reserve the next serial_id from the animals sequence without inserting."""
-    pool = await get_conn(request)
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """SELECT nextval(pg_get_serial_sequence('animals', 'serial_id')) AS serial_id"""
-        )
-        return {"serial_id": row["serial_id"]}
+    """Deprecated — serial IDs are assigned only when a record is committed."""
+    raise HTTPException(
+        410,
+        "serial reservation has been removed; create the animal or grading session instead",
+    )
 
 
 @router.get("/next")
 async def peek_next_id(request: Request):
-    """Preview the next serial_id in the animals sequence (display-only)."""
+    """Preview the next committed serial_id (display-only)."""
     pool = await get_conn(request)
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT
-                CASE
-                    WHEN is_called THEN last_value + 1
-                    ELSE last_value
-                END AS next_id
-            FROM animals_serial_id_seq
-            """
-        )
-        return {"next_serial_id": row["next_id"]}
+        next_id = await get_next_committed_serial(conn)
+        return {"next_serial_id": next_id}
 
 
 @router.get("")
