@@ -90,17 +90,17 @@ Each service directory has its own README with detailed documentation:
 ## Grading Pipeline
 
 1. Operator fills in species, weight, provider on the grading page
-2. For new animals, the dashboard reserves a real serial ID from the DB service before capture
+2. For new animals, the dashboard opens a persisted grading session and displays the next committed serial ID without consuming it
 3. Pi prod server pre-checks EC2 reachability and camera health
-4. Camera proxy does in-place resolution switching (640x480 → 4656x3496) per camera
-5. Three full-res JPEG images sent to EC2 as multipart form
+4. New-animal grading uses a draft `analysis_key` through capture, EC2 analysis, and debug-image lookup until save
+5. Camera proxy does in-place resolution switching (640x480 → 4656x3496) per camera
 6. EC2 runs YOLO instance segmentation on each view, extracts body mask
 7. Measurements computed from mask contours using calibrated pixels-per-cm values
 8. Grade calculated from measurements + live weight
 9. Debug overlay images generated with measurement annotations
 10. Raw images → `goat-captures` S3 bucket, debug images → `goat-processed` bucket
 11. Operator reviews grade, measurements, and debug overlays in a modal
-12. On accept: animal record created/updated in PostgreSQL with the reserved serial ID, then the grade result is upserted
+12. On accept: DB finalizes the pending session in one transaction, assigns the real serial ID, creates the animal, and upserts the grade result
 
 ## Training Data Collection Pipeline
 
@@ -117,7 +117,7 @@ Separate from grading. Captures 20 frames per camera at 1.5-second intervals for
 - **Rate limiting** - login attempts tracked by IP and username independently. 5 attempts per 5-minute window, 15-minute lockout.
 - **S3 private buckets** - frontend bucket uses CloudFront OAC (no public access). Capture/training buckets are private with IAM policies.
 - **Pi auth gating** - every API request through Pi Caddy goes through `forward_auth` to a local JWT verifier. Browser-loaded stream and debug images use short-lived opaque tickets instead of bearer tokens in query strings.
-- **Sequence-backed serial IDs** - new animal grading sessions reserve serial IDs from PostgreSQL before capture, so retries and concurrent operators do not reuse previewed IDs.
+- **Gapless committed serial IDs** - new-animal grades hold a persisted draft session, not a burned serial. The real `serial_id` is assigned only when the save transaction commits, and one pending new-animal workflow is allowed at a time so the displayed next ID stays authoritative.
 - **One grade row per animal** - `grade_results.serial_id` is unique, and grade saves are true DB-backed upserts.
 - **API key for Pi→EC2** - service-to-service grading calls use a shared API key in `X-API-Key` header over Tailscale. Simpler than JWT for machine-to-machine.
 
