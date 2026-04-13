@@ -131,13 +131,6 @@ CREATE TABLE IF NOT EXISTS grade_results (
     graded_at           TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_grade_results_serial ON grade_results(serial_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_grade_results_serial_unique ON grade_results(serial_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_grade_results_analysis_key_unique
-    ON grade_results(analysis_key)
-    WHERE analysis_key IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_grade_results_date ON grade_results(graded_at);
-
 ALTER TABLE grade_results
     ADD COLUMN IF NOT EXISTS grade_details JSONB;
 
@@ -146,6 +139,13 @@ ALTER TABLE grade_results
 
 ALTER TABLE grade_results
     ADD COLUMN IF NOT EXISTS analysis_key TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_grade_results_serial ON grade_results(serial_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_grade_results_serial_unique ON grade_results(serial_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_grade_results_analysis_key_unique
+    ON grade_results(analysis_key)
+    WHERE analysis_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_grade_results_date ON grade_results(graded_at);
 
 -- Persisted draft grading sessions for new-animal reviews
 CREATE TABLE IF NOT EXISTS grading_sessions (
