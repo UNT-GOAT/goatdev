@@ -1,7 +1,7 @@
 ![HerdSync](frontend/logos/light_trans_v3.png#gh-light-mode-only)
 ![HerdSync](frontend/logos/dark_trans_v3.png#gh-dark-mode-only)
 
-AI-powered livestock grading and management platform. Camera-based body measurement using computer vision for goats and lambs - three angles, automated YOLO segmentation, calibrated pixel-to-centimeter conversion, and a grade with documented reasoning. Built for [Clean Chicken and Co.](https://www.cleanchickens.com), a livestock facility in Elk River, Minnesota.
+AI-powered livestock grading and management platform. Camera-based body measurement using computer vision for goats and lambs - three angles, automated YOLO segmentation, calibrated pixel-to-centimeter conversion, and a grade with documented reasoning. Built for [Clean Chickens and Co.](https://www.cleanchickens.com), a livestock facility in Elk River, Minnesota.
 
 UNT Computer Science Capstone · Spring 2026
 
