@@ -1,4 +1,4 @@
-# HerdSync
+![HerdSync](frontend/logos/dark_trans_v3.png)
 
 AI-powered livestock grading and management platform. Camera-based body measurement using computer vision for goats and lambs - three angles, automated YOLO segmentation, calibrated pixel-to-centimeter conversion, and a grade with documented reasoning. Built for [Clean Chicken and Co.](https://www.cleanchickens.com), a livestock facility in Elk River, Minnesota.
 
@@ -26,19 +26,19 @@ Current facility grading criteria and rationale live in [`goat-api/README.md`](g
 
 ![Architecture](readme_assets/arch_diagrams/herdsync_architecture_dark.png)
 
-| Component           | Technology                           | Purpose                                           |
-| ------------------- | ------------------------------------ | ------------------------------------------------- |
+| Component           | Technology                           | Purpose                                             |
+| ------------------- | ------------------------------------ | --------------------------------------------------- |
 | **Frontend**        | Vanilla JS, CloudFront, S3           | Dashboard, grading UI, ticketed stream/debug access |
-| **Auth Service**    | FastAPI, RS256 JWT, PostgreSQL       | Authentication, user management, JWKS             |
-| **DB Service**      | FastAPI, asyncpg, PostgreSQL         | Animal, provider, grade, and audit data           |
-| **DB Proxy**        | FastAPI, httpx                       | Auth-gated reverse proxy with audit logging       |
-| **Grading API**     | FastAPI, PyTorch, YOLO, OpenCV       | Image analysis, measurement extraction, grading   |
-| **Camera Proxy**    | Flask, gevent, OpenCV, shared memory | USB camera ownership, MJPEG streaming, capture    |
-| **Prod Server**     | Flask                                | Grading workflow: capture → EC2 → grade           |
-| **Training Server** | Flask                                | Burst capture → S3 upload for model training      |
-| **Heater Control**  | Flask, RPi.GPIO, DS18B20             | Camera enclosure thermostat with failsafe         |
-| **Auth Verifier**   | Flask, PyJWT                         | Pi-local JWT validation for Caddy                 |
-| **Status Display**  | Pillow, SPI LCD                      | Real-time system health on 2.4" ILI9341           |
+| **Auth Service**    | FastAPI, RS256 JWT, PostgreSQL       | Authentication, user management, JWKS               |
+| **DB Service**      | FastAPI, asyncpg, PostgreSQL         | Animal, provider, grade, and audit data             |
+| **DB Proxy**        | FastAPI, httpx                       | Auth-gated reverse proxy with audit logging         |
+| **Grading API**     | FastAPI, PyTorch, YOLO, OpenCV       | Image analysis, measurement extraction, grading     |
+| **Camera Proxy**    | Flask, gevent, OpenCV, shared memory | USB camera ownership, MJPEG streaming, capture      |
+| **Prod Server**     | Flask                                | Grading workflow: capture → EC2 → grade             |
+| **Training Server** | Flask                                | Burst capture → S3 upload for model training        |
+| **Heater Control**  | Flask, RPi.GPIO, DS18B20             | Camera enclosure thermostat with failsafe           |
+| **Auth Verifier**   | Flask, PyJWT                         | Pi-local JWT validation for Caddy                   |
+| **Status Display**  | Pillow, SPI LCD                      | Real-time system health on 2.4" ILI9341             |
 
 **Cloud (AWS us-east-2):** EC2 t3.medium runs 4 Docker containers (auth, db, db-proxy, goat-api) behind a Caddy reverse proxy. RDS PostgreSQL 17.2 for data. S3 for frontend hosting, raw captures, debug images, and training data. CloudFront CDN serves the frontend and routes all API traffic (/auth/_, /db/_, /api/\*) to EC2.
 
