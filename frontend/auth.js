@@ -80,6 +80,7 @@ const HerdAuth = (() => {
         sessionStorage.removeItem(KEYS.expiresAt);
         localStorage.removeItem(KEYS.refreshToken);
         localStorage.removeItem(KEYS.user);
+        localStorage.removeItem('herdsync_active_new_animal_capture_session');
         _currentUser = null;
         if (_refreshTimer) {
             clearTimeout(_refreshTimer);

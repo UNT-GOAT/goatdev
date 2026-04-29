@@ -144,6 +144,39 @@
             : 1)
         );
       }
+      const ACTIVE_CAPTURE_SESSION_KEY =
+        "herdsync_active_new_animal_capture_session";
+      function _readActiveCaptureSessionMarker() {
+        try {
+          const raw = localStorage.getItem(ACTIVE_CAPTURE_SESSION_KEY);
+          return raw ? JSON.parse(raw) : null;
+        } catch (err) {
+          return null;
+        }
+      }
+      function _writeActiveCaptureSessionMarker(session) {
+        if (!session || session.status !== "capturing" || !session.id) {
+          localStorage.removeItem(ACTIVE_CAPTURE_SESSION_KEY);
+          return;
+        }
+        localStorage.setItem(
+          ACTIVE_CAPTURE_SESSION_KEY,
+          JSON.stringify({
+            id: session.id,
+            username: _currentUser?.username || null,
+          }),
+        );
+      }
+      function _shouldDiscardFreshLoginCaptureSession(session) {
+        if (!session || session.status !== "capturing" || !_currentUser?.username) {
+          return false;
+        }
+        if (session.created_by && session.created_by !== _currentUser.username) {
+          return false;
+        }
+        const marker = _readActiveCaptureSessionMarker();
+        return !marker || marker.id !== session.id || marker.username !== _currentUser.username;
+      }
       function syncPendingNewAnimalSession(session) {
         _pendingNewAnimalSession = session || null;
         _gradeSessionId = session ? session.id : null;
@@ -152,6 +185,7 @@
           _cachedNextId = session.next_serial_id;
           nextGradeId = session.next_serial_id;
         }
+        _writeActiveCaptureSessionMarker(session);
         return _pendingNewAnimalSession;
       }
       function hasPendingNewAnimalSession() {
@@ -170,6 +204,10 @@
       async function loadPendingNewAnimalSession() {
         try {
           const session = await dbFetch("/grading/sessions/pending");
+          if (_shouldDiscardFreshLoginCaptureSession(session)) {
+            await discardNewAnimalSession(session.id);
+            return null;
+          }
           return syncPendingNewAnimalSession(session);
         } catch (err) {
           if (!String(err.message || "").startsWith("404")) {
