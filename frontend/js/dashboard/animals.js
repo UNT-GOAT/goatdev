@@ -208,6 +208,25 @@
       // ADD ANIMAL
       function openAddAnimal() {
         if (hasPendingNewAnimalSession()) {
+          if (
+            _pendingNewAnimalSession?.status === "review_pending" &&
+            _pendingNewAnimalSession.result_payload
+          ) {
+            restorePendingNewAnimalReview();
+            showToast(
+              "error",
+              "Reopened the pending grade review. Save or discard it before adding another animal.",
+            );
+            return;
+          }
+          if (_pendingNewAnimalSession?.status === "capturing") {
+            restorePendingNewAnimalCapture();
+            showToast(
+              "error",
+              "Recovered a pending grading draft. Resume or discard it from Grading before adding another animal.",
+            );
+            return;
+          }
           showToast("error", pendingNewAnimalGateMessage());
           return;
         }

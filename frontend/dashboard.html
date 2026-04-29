@@ -572,6 +572,26 @@
                 style="border: 1px solid var(--border)"
               >
                 <div class="section-label mb-14">New Grade</div>
+                <div
+                  class="pending-grade-banner mb-14"
+                  id="pendingGradeBanner"
+                  style="display: none"
+                >
+                  <div>
+                    <div class="pending-grade-banner-title" id="pendingGradeBannerTitle">
+                      Pending Draft
+                    </div>
+                    <div class="pending-grade-banner-copy" id="pendingGradeBannerCopy"></div>
+                  </div>
+                  <div class="pending-grade-banner-actions">
+                    <button class="btn btn-sm" onclick="restorePendingNewAnimalCapture()">
+                      Resume Draft
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="discardPendingNewAnimalCapture()">
+                      Discard Draft
+                    </button>
+                  </div>
+                </div>
                 <div class="flex gap-12 mb-14 flex-wrap items-end">
                   <div style="flex: 1; min-width: 100px">
                     <label class="field-label">Next Serial ID</label

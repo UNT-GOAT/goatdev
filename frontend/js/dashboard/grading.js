@@ -220,6 +220,51 @@
         );
       }
 
+      function _openGradingPage() {
+        document
+          .querySelectorAll(".nav-btn")
+          .forEach((b) => b.classList.remove("active"));
+        document.querySelector('[data-page="grading"]').classList.add("active");
+        document
+          .querySelectorAll(".page")
+          .forEach((p) => p.classList.remove("active"));
+        document.getElementById("page-grading").classList.add("active");
+        document.getElementById("pageTitle").textContent = "Grading";
+        currentPage = "grading";
+        setCamerasForPage("grading");
+      }
+
+      function _formatPendingSessionTime(value) {
+        if (!value) return "recently";
+        try {
+          return new Date(value).toLocaleString("en-US", {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          });
+        } catch (err) {
+          return "recently";
+        }
+      }
+
+      function renderPendingNewAnimalBanner() {
+        const banner = document.getElementById("pendingGradeBanner");
+        if (!banner) return;
+        const session = _pendingNewAnimalSession;
+        if (!session || session.status !== "capturing") {
+          banner.style.display = "none";
+          return;
+        }
+        document.getElementById("pendingGradeBannerTitle").textContent =
+          "Pending New-Animal Draft";
+        document.getElementById("pendingGradeBannerCopy").textContent =
+          "Started " +
+          _formatPendingSessionTime(session.updated_at || session.created_at) +
+          ". Resume it here or discard it if it is stale.";
+        banner.style.display = "";
+      }
+
       function updateNewAnimalCreationGateUI() {
         const gateActive = hasPendingNewAnimalSession();
         const gateMessage = pendingNewAnimalGateMessage();
@@ -240,6 +285,65 @@
           gradeBtn.disabled =
             (gateActive && !_canResumePendingNewAnimalCapture()) || !piConnected;
         }
+        renderPendingNewAnimalBanner();
+      }
+
+      function restorePendingNewAnimalCapture() {
+        if (!_canResumePendingNewAnimalCapture()) {
+          updateNewAnimalCreationGateUI();
+          return false;
+        }
+        const session = _pendingNewAnimalSession;
+        _gradeExistingId = null;
+        _gradeSessionId = session.id;
+        _gradeAnalysisKey = session.analysis_key;
+        pendingGradeResult = null;
+        _reviewCurrentResult = null;
+        _gradeAnimalCreated = false;
+        nextGradeId = session.next_serial_id;
+        _openGradingPage();
+        document.getElementById("gradeSpecies").value = session.species || "goat";
+        onGradeSpeciesChange();
+        document.getElementById("gradeDesc").value = session.description || "";
+        document.getElementById("gradeWeight").value =
+          session.live_weight != null ? Number(session.live_weight) : "";
+        document.getElementById("gradeSerial").value = session.next_serial_id || "";
+        document.getElementById("gradeSerialHint").textContent =
+          "Pending new-animal draft is holding this next ID";
+        document.getElementById("gradeSerialHint").className =
+          "field-hint invalid";
+        document.getElementById("gradeLog").innerHTML = "";
+        document.getElementById("gradeLog").style.display = "none";
+        populateProviderSelect(document.getElementById("gradeProv"));
+        updateNewAnimalCreationGateUI();
+        return true;
+      }
+
+      async function discardPendingNewAnimalCapture() {
+        if (!_pendingNewAnimalSession || _pendingNewAnimalSession.status !== "capturing") {
+          updateNewAnimalCreationGateUI();
+          return;
+        }
+        try {
+          await discardNewAnimalSession(_pendingNewAnimalSession.id);
+          _gradeSessionId = null;
+          _gradeAnalysisKey = null;
+          pendingGradeResult = null;
+          _reviewCurrentResult = null;
+          _gradeAnimalCreated = false;
+          _gradeExistingId = null;
+          document.getElementById("gradeWeight").value = "";
+          document.getElementById("gradeProv").value = "";
+          document.getElementById("gradeKillDate").value = "";
+          document.getElementById("gradeLog").innerHTML = "";
+          document.getElementById("gradeLog").style.display = "none";
+          await loadPendingNewAnimalSession();
+          computeNextGradeId();
+          updateNewAnimalCreationGateUI();
+          showToast("success", "Discarded pending grading draft");
+        } catch (err) {
+          showToast("error", err.message);
+        }
       }
 
       function restorePendingNewAnimalReview() {
@@ -257,17 +361,7 @@
         _gradeSessionId = session.id;
         _gradeAnalysisKey = session.analysis_key;
         nextGradeId = session.next_serial_id;
-        document
-          .querySelectorAll(".nav-btn")
-          .forEach((b) => b.classList.remove("active"));
-        document.querySelector('[data-page="grading"]').classList.add("active");
-        document
-          .querySelectorAll(".page")
-          .forEach((p) => p.classList.remove("active"));
-        document.getElementById("page-grading").classList.add("active");
-        document.getElementById("pageTitle").textContent = "Grading";
-        currentPage = "grading";
-        setCamerasForPage("grading");
+        _openGradingPage();
         document.getElementById("gradeSpecies").value = session.species || "goat";
         onGradeSpeciesChange();
         if (session.description) {
