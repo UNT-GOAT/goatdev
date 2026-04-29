@@ -437,6 +437,10 @@
         border-color: var(--text-muted);
         color: var(--text-primary);
       }
+      .btn.is-gated {
+        opacity: 0.7;
+        cursor: not-allowed;
+      }
       .btn-accent {
         border-color: var(--accent);
         background: var(--accent-dim);
@@ -445,6 +449,10 @@
       }
       .btn-accent:hover {
         background: var(--accent-hover);
+      }
+      .btn.is-gated:hover {
+        border-color: var(--accent);
+        color: var(--accent);
       }
       .btn-solid {
         border: none;

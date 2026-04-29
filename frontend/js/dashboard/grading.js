@@ -225,7 +225,8 @@
         const gateMessage = pendingNewAnimalGateMessage();
         const addBtn = document.getElementById("addAnimalOpenBtn");
         if (addBtn) {
-          addBtn.disabled = gateActive;
+          addBtn.classList.toggle("is-gated", gateActive);
+          addBtn.setAttribute("aria-disabled", gateActive ? "true" : "false");
           addBtn.title = gateActive ? gateMessage : "";
         }
         const addSaveBtn = document.getElementById("addAnimalSaveBtn");
