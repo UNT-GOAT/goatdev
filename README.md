@@ -25,7 +25,8 @@ Current facility grading criteria and rationale live in [`goat-api/README.md`](g
 
 ## Architecture
 
-![Architecture](readme_assets/arch_diagrams/herdsync_architecture_dark.png)
+![Architecture](readme_assets/arch_diagrams/herdsync_architecture_dark.png#gh-dark-mode-only)
+![Architecture](readme_assets/arch_diagrams/herdsync_architecture.png#gh-light-mode-only)
 
 | Component           | Technology                           | Purpose                                             |
 | ------------------- | ------------------------------------ | --------------------------------------------------- |
